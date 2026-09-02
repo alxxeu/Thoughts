@@ -115,8 +115,8 @@ struct CardView: View {
             }
             .gesture(resizeGesture)
             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottomTrailing)
-            // ПРИМЕЧАНИЕ: Внешний .padding(10) полностью удален, кнопка прижата к углам
             .opacity(isHovering ? 1 : 0)
+            .animation(.easeInOut(duration: 0.15), value: isHovering)
             .zIndex(101)
 
             
@@ -153,11 +153,12 @@ struct CardView: View {
                 // 3. Сама иконка крестика (видна всегда, когда мышь над карточкой)
                 Image(systemName: "xmark")
                     .font(.system(size: 9, weight: .black))
-                    .foregroundStyle(isPressingDelete ? .red : .white.opacity(0.55))
+                    .foregroundStyle(isPressingDelete ? .red : .white.opacity(0.3))
             }
             .contentShape(Circle())
             .padding(5)
             .opacity(isHovering ? 1 : 0) // Сам крестик появляется при ховере карточки
+            .animation(.easeInOut(duration: 0.15), value: isHovering)
             .zIndex(103)
             .onHover { inside in
                 // Переключаем локальное состояние ховера кнопки

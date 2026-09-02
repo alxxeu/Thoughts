@@ -61,6 +61,8 @@ struct ContentView: View {
     @State private var newlyCreatedCardID: UUID? = nil
     @State private var isWindowResizing = false
     @State private var resizeDebounceTask: Task<Void, Never>?
+    @State private var isPlacementPreviewVisible = false
+
 
     var body: some View {
         GeometryReader { proxy in
@@ -80,9 +82,35 @@ struct ContentView: View {
                         card: card,
                         viewModel: viewModel,
                         canvasSize: proxy.size,
-                        onPlacementPreviewChange: { placementPreview = $0 },
-                        onEdgeHintsChange: { edgeHints = $0 }
-                    )
+                        onPlacementPreviewChange: { preview in
+                                                   // Отменяем прошлый запланированный таймер проявления
+                                                   resizeDebounceTask?.cancel()
+                                                   
+                                                   if let preview {
+                                                       // Если координаты изменились, обновляем их жестко и мгновенно
+                                                       var transaction = Transaction()
+                                                       transaction.animation = nil
+                                                       withTransaction(transaction) {
+                                                           placementPreview = preview
+                                                       }
+                                                       
+                                                       // Запускаем мягкое появление из прозрачности ровно через 0.12 сек
+                                                       resizeDebounceTask = Task {
+                                                           try? await Task.sleep(for: .seconds(0.05))
+                                                           guard !Task.isCancelled else { return }
+                                                           withAnimation(.easeOut(duration: 0.2)) {
+                                                               // Используем локальный флаг видимости (добавим на Шаге 2)
+                                                               isPlacementPreviewVisible = true
+                                                           }
+                                                       }
+                                                   } else {
+                                                       // Если вылетели из магнитной зоны — мгновенно тушим маячок
+                                                       isPlacementPreviewVisible = false
+                                                       placementPreview = nil
+                                                   }
+                                               },
+                                               onEdgeHintsChange: { edgeHints = $0 }
+                                           )
                     .frame(width: card.size.width, height: card.size.height, alignment: SwiftUI.Alignment.topLeading)
                     .offset(x: adaptedPosition.x, y: adaptedPosition.y)
                     .onAppear {
@@ -101,6 +129,7 @@ struct ContentView: View {
                         .frame(width: placementPreview.width, height: placementPreview.height, alignment: SwiftUI.Alignment.topLeading)
                         .offset(x: placementPreview.minX, y: placementPreview.minY)
                         .allowsHitTesting(false)
+                        .opacity(isPlacementPreviewVisible ? 1.0 : 0.0)
                 }
 
                 ForEach(Array(edgeHints.enumerated()), id: \.offset) { _, hint in
