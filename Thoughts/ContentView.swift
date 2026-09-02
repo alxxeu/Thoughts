@@ -69,6 +69,7 @@ struct ContentView: View {
                     .contentShape(Rectangle())
                     .gesture(canvasDragGesture(in: proxy.size))
                     .onTapGesture {
+                        NotificationCenter.default.post(name: NSNotification.Name("ClearTextSelection"), object: nil)
                         NSApp.keyWindow?.makeFirstResponder(nil)
                     }
 
@@ -169,6 +170,7 @@ struct ContentView: View {
     private func canvasDragGesture(in canvasSize: CGSize) -> some Gesture {
         DragGesture(minimumDistance: 4, coordinateSpace: .named("canvas"))
             .onChanged { value in
+                NotificationCenter.default.post(name: NSNotification.Name("ClearTextSelection"), object: nil)
                 NSApp.keyWindow?.makeFirstResponder(nil)
                 if creationStart == nil {
                     creationStart = clamped(value.startLocation, in: canvasSize)

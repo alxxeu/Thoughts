@@ -27,6 +27,7 @@ struct CardView: View {
                 .fill(Color.clear)
                 .glassEffect(in: .rect(cornerRadius: 16.0))
             
+            // НАТИВНЫЙ РЕДАКТОР С ПОДДЕРЖКОЙ ATTRIBUTEDSTRING И ХОТКЕЕВ (Cmd+B / Cmd+I)
             TextEditor(text: $card.text)
                 .font(.system(size: 15))
                 .lineSpacing(4)
@@ -43,6 +44,10 @@ struct CardView: View {
                 .onChange(of: isTextFocused) { _, isFocused in
                     if isFocused {
                         viewModel.bringToFront(card)
+                        NotificationCenter.default.post(name: NSNotification.Name("ClearTextSelection"), object: nil)
+                    } else {
+                        // Решаем проблему залипания выделения: при потере фокуса сбрасываем First Responder окна
+                        NSApp.keyWindow?.makeFirstResponder(nil)
                     }
                 }
                 .mask(alignment: .top) {
@@ -54,6 +59,27 @@ struct CardView: View {
                             .frame(height: 15)
                     }
                 }
+                .onReceive(NotificationCenter.default.publisher(for: NSNotification.Name("FocusNewCard"))) { notification in
+                    if let targetID = notification.object as? UUID, targetID == card.id {
+                        isTextFocused = true
+                    }
+                }
+                .onReceive(NotificationCenter.default.publisher(for: NSNotification.Name("ClearTextSelection"))) { _ in
+                                  // Используем глобальный поиск всех NSTextView внутри главного окна Mac
+                                  if let window = NSApp.keyWindow {
+                                      func clearSelectionInViews(subviews: [NSView]) {
+                                          for view in subviews {
+                                              if let textView = view as? NSTextView {
+                                                  // Принудительно стираем выделение букв в ноль
+                                                  textView.setSelectedRange(NSRange(location: 0, length: 0))
+                                              } else {
+                                                  clearSelectionInViews(subviews: view.subviews)
+                                              }
+                                          }
+                                      }
+                                      clearSelectionInViews(subviews: window.contentView?.subviews ?? [])
+                                  }
+                              }
             
             // КАСТОМНЫЙ ИНТУИТИВНЫЙ УГОЛОК ИЗМЕНЕНИЯ РАЗМЕРА (RESIZE HANDLE)
             Path { path in

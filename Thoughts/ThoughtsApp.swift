@@ -11,6 +11,9 @@ struct ThoughtsApp: App {
         }
         .windowStyle(.hiddenTitleBar)
         .windowResizability(.contentSize)
+        .commands {
+                    TextFormattingCommands()
+        }
     }
 }
 
