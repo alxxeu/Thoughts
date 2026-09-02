@@ -9,19 +9,19 @@ enum EdgeHint: Equatable {
 }
 
 @Observable
-@MainActor
 final class BoardViewModel {
     var cards: [Card] = []
+
+    private let store = BoardStore.shared
+    private var saveTask: Task<Void, Never>?
 
     static let minCardSize: CGFloat = 120
     static let cardSizeStep: CGFloat = 60
     static let canvasSidePadding: CGFloat = 24
     static let topCreationLimit: CGFloat = 40
 
-    private var saveTask: Task<Void, Never>?
-
     init() {
-        self.cards = BoardStore.shared.load()
+        cards = store.load()
     }
 
     static func snap(_ value: CGFloat) -> CGFloat {
@@ -45,19 +45,22 @@ final class BoardViewModel {
     func bringToFront(_ card: Card) {
         guard let index = cards.firstIndex(where: { $0.id == card.id }) else { return }
         cards.append(cards.remove(at: index))
-        saveImmediately()
     }
 
+    // Мгновенное сохранение — вызывается на create/delete/move-end/resize-end
     func saveImmediately() {
-        BoardStore.shared.save(cards)
+        saveTask?.cancel()
+        saveTask = nil
+        store.save(cards)
     }
 
+    // Debounce 450ms — вызывается на каждое изменение текста
     func scheduleDebouncedSave() {
         saveTask?.cancel()
-        saveTask = Task {
-            try? await Task.sleep(for: .seconds(0.5))
-            guard !Task.isCancelled else { return }
-            saveImmediately()
+        saveTask = Task { [weak self] in
+            try? await Task.sleep(nanoseconds: 450_000_000)
+            guard !Task.isCancelled, let self else { return }
+            self.store.save(self.cards)
         }
     }
 }
@@ -131,8 +134,6 @@ extension BoardViewModel {
         return best?.point
     }
 
-    // Линии для одиночных краёв (как раньше) + отдельная угловая зона,
-    // которая перекрывает линии, если карточка реально в углу канваса.
     static func edgeHints(
         movingPosition: CGPoint,
         movingSize: CGSize,
@@ -141,7 +142,7 @@ extension BoardViewModel {
         let pad = canvasSidePadding
         let top = topCreationLimit
         let lineThreshold: CGFloat = 35
-        let cornerZone: CGFloat = 60
+        let cornerZone: CGFloat = 120
         let armLength: CGFloat = 60
 
         let distTop = movingPosition.y - top

@@ -45,7 +45,7 @@ struct CornerBracket: Shape {
                 to: CGPoint(x: rect.maxX, y: rect.maxY - r),
                 control: CGPoint(x: rect.maxX, y: rect.maxY)
             )
-            path.addLine(to: CGPoint(x: rect.maxX, y: rect.maxY - length))
+            path.addLine(to: CGPoint(x: rect.maxX, y: rect.maxY + length))
         }
 
         return path
@@ -69,8 +69,8 @@ struct ContentView: View {
                     .contentShape(Rectangle())
                     .gesture(canvasDragGesture(in: proxy.size))
                     .onTapGesture {
-                           NSApp.keyWindow?.makeFirstResponder(nil)
-                       }
+                        NSApp.keyWindow?.makeFirstResponder(nil)
+                    }
 
                 ForEach(viewModel.cards) { card in
                     let adaptedPosition = adaptivePosition(for: card, in: proxy.size)
@@ -84,13 +84,11 @@ struct ContentView: View {
                     )
                     .frame(width: card.size.width, height: card.size.height, alignment: SwiftUI.Alignment.topLeading)
                     .offset(x: adaptedPosition.x, y: adaptedPosition.y)
-                    // ВСТАВИТЬ СЮДА: Проверяем, является ли карточка новой
                     .onAppear {
                         if newlyCreatedCardID == card.id {
-                            // Магия SwiftUI: даем системе 50мс отрендерить слой, а затем активируем фокус
                             DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) {
                                 NotificationCenter.default.post(name: NSNotification.Name("FocusNewCard"), object: card.id)
-                                newlyCreatedCardID = nil // Сбрасываем флаг
+                                newlyCreatedCardID = nil
                             }
                         }
                     }
@@ -141,7 +139,6 @@ struct ContentView: View {
             .frame(width: proxy.size.width, height: proxy.size.height)
             .animation(.easeOut(duration: 0.12), value: edgeHints.count)
             
-            // Включаем пружинную анимацию только при физическом изменении размеров окна macOS
             .onChange(of: proxy.size) { _, _ in
                 isWindowResizing = true
                 
@@ -178,7 +175,7 @@ struct ContentView: View {
                 }
                 guard let start = creationStart else { return }
                 let current = clamped(value.location, in: canvasSize)
-                
+
                 let origin = CGPoint(x: min(start.x, current.x), y: min(start.y, current.y))
                 let size = CGSize(
                     width: max(BoardViewModel.minCardSize, abs(current.x - start.x)),
@@ -186,16 +183,12 @@ struct ContentView: View {
                 )
                 draftFrame = CGRect(origin: origin, size: size)
             }
-        
             .onEnded { _ in
                 defer { creationStart = nil; draftFrame = nil }
                 guard let frame = draftFrame else { return }
                 
-                // Предполагаем, что addCard возвращает созданную карточку или её ID.
-                // Если ваш метод addCard ничего не возвращает, сохраните ID последней карточки из массива:
                 viewModel.addCard(at: frame.origin, size: frame.size)
                 
-                // Берем ID только что созданной карточки и включаем фокус
                 if let newCard = viewModel.cards.last {
                     newlyCreatedCardID = newCard.id
                 }
@@ -208,4 +201,9 @@ struct ContentView: View {
             y: min(max(BoardViewModel.topCreationLimit, point.y), canvasSize.height - BoardViewModel.canvasSidePadding)
         )
     }
+}
+
+#Preview {
+    ContentView()
+        .frame(width: 900, height: 600)
 }

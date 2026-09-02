@@ -5,7 +5,7 @@ final class Card: Identifiable, Codable {
     let id: UUID
     var position: CGPoint
     var size: CGSize
-    var text: String // Вернули обратно стандартную String
+    var text: String
 
     init(id: UUID = .init(), position: CGPoint, size: CGSize, text: String = "") {
         self.id = id

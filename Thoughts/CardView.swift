@@ -27,33 +27,24 @@ struct CardView: View {
                 .fill(Color.clear)
                 .glassEffect(in: .rect(cornerRadius: 16.0))
             
-            MacRichTextEditor(text: $card.text, isFocused: _isTextFocused.projectedValue)
-                           .frame(maxWidth: .infinity, maxHeight: .infinity)
-                           .padding(20)
-                           .zIndex(0)
-                           .onChange(of: card.text) {
-                               viewModel.scheduleDebouncedSave()
-                           }
-                           .onChange(of: isTextFocused) { _, isFocused in
-                               if isFocused {
-                                   viewModel.bringToFront(card)
-                               }
-                           }
-                           .mask(alignment: .top) {
-                               VStack(spacing: 0) {
-                                   LinearGradient(colors: [.clear, .black], startPoint: .top, endPoint: .bottom)
-                                       .frame(height: 15)
-                                   Color.black
-                                   LinearGradient(colors: [.black, .clear], startPoint: .top, endPoint: .bottom)
-                                       .frame(height: 15)
-                               }
-                           }
-                           .onReceive(NotificationCenter.default.publisher(for: NSNotification.Name("FocusNewCard"))) { notification in
-                               if let targetID = notification.object as? UUID, targetID == card.id {
-                                   isTextFocused = true
-                               }
-                           }
-
+            TextEditor(text: $card.text)
+                .font(.system(size: 15))
+                .lineSpacing(4)
+                .scrollContentBackground(.hidden)
+                .background(Color.clear)
+                .focused($isTextFocused)
+                .scrollIndicators(.hidden)
+                .padding(20)
+                .scrollClipDisabled()
+                .zIndex(0)
+                .onChange(of: card.text) {
+                    viewModel.scheduleDebouncedSave()
+                }
+                .onChange(of: isTextFocused) { _, isFocused in
+                    if isFocused {
+                        viewModel.bringToFront(card)
+                    }
+                }
                 .mask(alignment: .top) {
                     VStack(spacing: 0) {
                         LinearGradient(colors: [.clear, .black], startPoint: .top, endPoint: .bottom)
@@ -64,34 +55,25 @@ struct CardView: View {
                     }
                 }
             
-            
-                .onReceive(NotificationCenter.default.publisher(for: NSNotification.Name("FocusNewCard"))) { notification in
-                    if let targetID = notification.object as? UUID, targetID == card.id {
-                        // Железно выставляем фокус текстового поля на Mac
-                        isTextFocused = true
-                    }
-                }
-            
             // КАСТОМНЫЙ ИНТУИТИВНЫЙ УГОЛОК ИЗМЕНЕНИЯ РАЗМЕРА (RESIZE HANDLE)
             Path { path in
-                // 1. Начинаем сверху на правой грани (X: 14, Y: 0)
-                               path.move(to: CGPoint(x: 8, y: 0))
-                               
-                               // 2. Ведем ровную вертикальную линию вниз почти до самого угла
-                               path.addLine(to: CGPoint(x: 8, y: 0))
-                               
-                               // 3. Закругляем сам угол к нижней грани с радиусом 6 поинтов
-                               path.addQuadCurve(
-                                   to: CGPoint(x: 0, y: 8),
-                                   control: CGPoint(x: 8, y: 8) // Точка жесткого угла
-                               )
-                               
-                               // 4. Дорисовываем ровный горизонтальный хвостик влево (до X: 0, Y: 14)
-                               path.addLine(to: CGPoint(x: 0, y: 8))
-                           }
-                           .stroke(Color.white.opacity(0.3), style: StrokeStyle(lineWidth: 2, lineCap: .round, lineJoin: .round))
-                           .frame(width: 8, height: 8) // Жестко задаем размер квадрата 14х14
-                           .contentShape(Rectangle())
+                // Математически смещаем штрих на 10 поинтов от правого нижнего края зоны 32x32:
+                // Точка начала на правой грани (X: 22, Y: 14)
+                path.move(to: CGPoint(x: 22, y: 14))
+                path.addLine(to: CGPoint(x: 22, y: 14))
+                
+                // Закругляем к нижней грани (X: 14, Y: 22) с точкой притяжения в (22, 22)
+                path.addQuadCurve(
+                    to: CGPoint(x: 14, y: 22),
+                    control: CGPoint(x: 22, y: 22)
+                )
+                path.addLine(to: CGPoint(x: 14, y: 22))
+            }
+            .stroke(Color.white.opacity(0.3), style: StrokeStyle(lineWidth: 2, lineCap: .round, lineJoin: .round))
+            
+            // Задаем один монолитный фрейм 32x32 без внутренней вложенности и БЕЗ внешнего .padding
+            .frame(width: 32, height: 32)
+            .contentShape(Rectangle()) // Теперь вся зона 32х32 в самом углу карточки кликабельна
             .onHover { inside in
                 if inside {
                     let selector = NSSelectorFromString("_windowResizeNorthWestSouthEastCursor")
@@ -107,10 +89,10 @@ struct CardView: View {
             }
             .gesture(resizeGesture)
             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottomTrailing)
-            .padding(8) // Немного подогнали отступ, чтобы уголок идеально сел в скругление карточки
+            // ПРИМЕЧАНИЕ: Внешний .padding(10) полностью удален, кнопка прижата к углам
             .opacity(isHovering ? 1 : 0)
-            .animation(.easeInOut(duration: 0.15), value: isHovering)
-            .zIndex(102)
+            .zIndex(101)
+
             
             Rectangle()
                 .fill(Color.clear)
@@ -127,7 +109,6 @@ struct CardView: View {
                     }
                 }
             
-            // КРЕСТИК УДАЛЕНИЯ С ЖЕЛЕЗНЫМ ТАЙМЕРОМ:
             // КРЕСТИК УДАЛЕНИЯ С РАЗДЕЛЬНЫМ ХОВЕРОМ
             ZStack {
                 // 1. Фоновая подложка теперь загорается ТОЛЬКО при наведении на сам крестик или при его зажатии
@@ -145,13 +126,12 @@ struct CardView: View {
                 
                 // 3. Сама иконка крестика (видна всегда, когда мышь над карточкой)
                 Image(systemName: "xmark")
-                    .font(.system(size: 10, weight: .black))
-                    .foregroundStyle(isPressingDelete ? .red : .white.opacity(0.3))
+                    .font(.system(size: 9, weight: .black))
+                    .foregroundStyle(isPressingDelete ? .red : .white.opacity(0.55))
             }
             .contentShape(Circle())
             .padding(5)
             .opacity(isHovering ? 1 : 0) // Сам крестик появляется при ховере карточки
-            .animation(.easeInOut(duration: 0.2), value: isHovering)
             .zIndex(103)
             .onHover { inside in
                 // Переключаем локальное состояние ховера кнопки
@@ -163,7 +143,7 @@ struct CardView: View {
                     NSCursor.arrow.set()
                 }
             }
-            .onLongPressGesture(minimumDuration: 0.4, maximumDistance: 10, perform: {
+            .onLongPressGesture(minimumDuration: 0.5, maximumDistance: 10, perform: {
                 Task { @MainActor in
                     viewModel.deleteCard(card)
                     NSCursor.arrow.set()
@@ -172,7 +152,7 @@ struct CardView: View {
             }, onPressingChanged: { pressing in
                 if pressing {
                     isPressingDelete = true
-                    withAnimation(.linear(duration: 0.4)) {
+                    withAnimation(.linear(duration: 0.5)) {
                         deleteProgress = 1.0
                     }
                 } else {
@@ -196,17 +176,13 @@ struct CardView: View {
     
     private func resetDeleteState() {
         isPressingDelete = false
-        // Принудительно отменяем текущую запущенную линейную анимацию,
-        // чтобы круг мгновенно перестал заполняться дальше
         withAnimation(.none) {
-            deleteProgress = 0.0
-        }
-        // Плавно возвращаем подложку в исходное прозрачное состояние
-        withAnimation(.easeOut(duration: 0.12)) {
-            isPressingDelete = false
-        }
-    }
-
+              deleteProgress = 0.0
+          }
+          withAnimation(.easeOut(duration: 0.12)) {
+              isPressingDelete = false
+          }
+      }
     
     private var moveGesture: some Gesture {
         DragGesture(coordinateSpace: .named("canvas"))
@@ -247,31 +223,29 @@ struct CardView: View {
                 )
             }
             .onEnded { _ in
-                            NSCursor.openHand.set()
-                            
-                            // При отпускании мыши карточка должна плавно притянуться к финальному snap-эффекту бордеров
-                            if let preview = BoardViewModel.placementPreview(
-                                movingId: card.id,
-                                movingPosition: card.position,
-                                movingSize: card.size,
-                                others: viewModel.cards,
-                                canvasSize: canvasSize
-                            ) {
-                                withAnimation(.easeOut(duration: 0.12)) {
-                                    card.position = preview
-                                }
-                            } else {
-                                let snapped = BoardViewModel.snappedToEdges(
-                                    position: card.position,
-                                    size: card.size,
-                                    canvasSize: canvasSize
-                                )
-                                if snapped != card.position {
-                                    withAnimation(.easeOut(duration: 0.12)) {
-                                        card.position = snapped
-                                    }
-                                }
-                            }
+                NSCursor.openHand.set()
+                if let preview = BoardViewModel.placementPreview(
+                    movingId: card.id,
+                    movingPosition: card.position,
+                    movingSize: card.size,
+                    others: viewModel.cards,
+                    canvasSize: canvasSize
+                ) {
+                    withAnimation(.easeOut(duration: 0.12)) {
+                        card.position = preview
+                    }
+                } else {
+                    let snapped = BoardViewModel.snappedToEdges(
+                        position: card.position,
+                        size: card.size,
+                        canvasSize: canvasSize
+                    )
+                    if snapped != card.position {
+                        withAnimation(.easeOut(duration: 0.12)) {
+                            card.position = snapped
+                        }
+                    }
+                }
                 
                 onPlacementPreviewChange(nil)
                 onEdgeHintsChange([])
@@ -308,83 +282,5 @@ struct CardView: View {
                 dragResizeSize = nil
                 viewModel.saveImmediately()
             }
-    }
-}
-
-// Нативная обертка для NSTextView, которая открывает полноценный Rich Text на Mac
-struct MacRichTextEditor: NSViewRepresentable {
-    @Binding var text: String
-    @FocusState.Binding var isFocused: Bool
-
-    func makeNSView(context: Context) -> NSScrollView {
-        let scrollView = NSScrollView()
-        scrollView.drawsBackground = false
-        scrollView.hasVerticalScroller = false
-        scrollView.hasHorizontalScroller = false
-        
-        let textView = NSTextView()
-        textView.autoresizingMask = [.width, .height]
-        textView.isSelectable = true
-        textView.isEditable = true
-        textView.drawsBackground = false
-        textView.font = .systemFont(ofSize: 15)
-        
-        // ВКЛЮЧАЕМ РИЧ-ТЕКСТ И СИСТЕМНЫЕ ХОТКЕИ (Cmd+B / Cmd+I)
-        textView.isRichText = true
-        textView.importsGraphics = false
-        textView.allowsUndo = true
-        
-        textView.delegate = context.coordinator
-        scrollView.documentView = textView
-        
-        return scrollView
-    }
-
-    func updateNSView(_ nsView: NSScrollView, context: Context) {
-        guard let textView = nsView.documentView as? NSTextView else { return }
-        
-        if textView.string != text {
-            textView.string = text
-        }
-        
-        // Управляем фокусом ввода из SwiftUI на Mac
-        DispatchQueue.main.async {
-            if isFocused && nsView.window?.firstResponder != textView {
-                nsView.window?.makeFirstResponder(textView)
-            } else if !isFocused && nsView.window?.firstResponder == textView {
-                if nsView.window?.firstResponder == textView {
-                    nsView.window?.makeFirstResponder(nil)
-                }
-            }
-        }
-    }
-
-    func makeCoordinator() -> Coordinator {
-        Coordinator(self)
-    }
-
-    class Coordinator: NSObject, NSTextViewDelegate {
-        var parent: MacRichTextEditor
-
-        init(_ parent: MacRichTextEditor) {
-            self.parent = parent
-        }
-
-        func textDidChange(_ notification: Notification) {
-            guard let textView = notification.object as? NSTextView else { return }
-            self.parent.text = textView.string
-        }
-        
-        func textDidBeginEditing(_ notification: Notification) {
-            if !self.parent.isFocused {
-                self.parent.isFocused = true
-            }
-        }
-        
-        func textDidEndEditing(_ notification: Notification) {
-            if self.parent.isFocused {
-                self.parent.isFocused = false
-            }
-        }
     }
 }
