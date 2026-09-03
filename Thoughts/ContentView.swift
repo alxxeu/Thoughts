@@ -1,6 +1,5 @@
 import SwiftUI
 
-// Восстановленная структура угловых линий для привязки карточек
 struct CornerBracket: Shape {
     var corner: EdgeHint.Corner
     var radius: CGFloat = 14
@@ -27,7 +26,7 @@ struct CornerBracket: Shape {
                 to: CGPoint(x: rect.maxX, y: rect.minY + r),
                 control: CGPoint(x: rect.maxX, y: rect.minY)
             )
-            path.addLine(to: CGPoint(x: rect.maxX, y: rect.minY + length))
+            path.addLine(to: CGPoint(x: rect.maxX + length, y: rect.minY))
 
         case .bottomLeft:
             path.move(to: CGPoint(x: rect.minX, y: rect.maxY - length))
@@ -45,7 +44,7 @@ struct CornerBracket: Shape {
                 to: CGPoint(x: rect.maxX, y: rect.maxY - r),
                 control: CGPoint(x: rect.maxX, y: rect.maxY)
             )
-            path.addLine(to: CGPoint(x: rect.maxX, y: rect.maxY + length))
+            path.addLine(to: CGPoint(x: rect.maxX + length, y: rect.maxY))
         }
 
         return path
@@ -65,7 +64,10 @@ struct ContentView: View {
     @State private var isEditingWorkspaceName = false
     @State private var workspaceNameDraft = ""
     @FocusState private var isWorkspaceNameFieldFocused: Bool
-
+    
+    // Состояние и таймер для подсказки пустого спэйса
+    @State private var showEmptyHint = false
+    @State private var emptyHintTask: Task<Void, Never>?
 
     var body: some View {
         GeometryReader { proxy in
@@ -86,28 +88,23 @@ struct ContentView: View {
                         viewModel: viewModel,
                         canvasSize: proxy.size,
                         onPlacementPreviewChange: { preview in
-                            // Отменяем прошлый запланированный таймер проявления
                             resizeDebounceTask?.cancel()
                             
                             if let preview {
-                                // Если координаты изменились, обновляем их жестко и мгновенно
                                 var transaction = Transaction()
                                 transaction.animation = nil
                                 withTransaction(transaction) {
                                     placementPreview = preview
                                 }
                                 
-                                // Запускаем мягкое появление из прозрачности ровно через 0.12 сек
                                 resizeDebounceTask = Task {
                                     try? await Task.sleep(for: .seconds(0.05))
                                     guard !Task.isCancelled else { return }
                                     withAnimation(.easeOut(duration: 0.2)) {
-                                        // Используем локальный флаг видимости (добавим на Шаге 2)
                                         isPlacementPreviewVisible = true
                                     }
                                 }
                             } else {
-                                // Если вылетели из магнитной зоны — мгновенно тушим маячок
                                 isPlacementPreviewVisible = false
                                 placementPreview = nil
                             }
@@ -170,7 +167,7 @@ struct ContentView: View {
                 
                 HStack(spacing: 0) {
                     Color.clear
-                        .frame(width: 76) // отступ под системные traffic-light кнопки
+                        .frame(width: 76)
                     Color.clear
                         .contentShape(Rectangle())
                         .gesture(WindowDragGesture())
@@ -196,41 +193,74 @@ struct ContentView: View {
         }
         .background(Color.clear)
         .overlay(alignment: .top) {
-            Group {
-                if isEditingWorkspaceName {
-                    TextField("Space name", text: $workspaceNameDraft)
-                        .textFieldStyle(.plain)
-                        .font(.system(size: 11, weight: .semibold))
-                        .foregroundStyle(.white.opacity(0.85))
-                        .multilineTextAlignment(.center)
-                        .frame(width: 100)
-                        .focused($isWorkspaceNameFieldFocused)
-                        .onSubmit { commitWorkspaceRename() }
-                        .onExitCommand { cancelWorkspaceRename() }
-                        .onChange(of: isWorkspaceNameFieldFocused) { _, focused in
-                            if !focused { commitWorkspaceRename() }
-                        }
-                } else {
-                    Text(viewModel.activeWorkspace?.name ?? "Space \(viewModel.activeSlot)")
-                        .font(.system(size: 11, weight: .semibold))
-                        .foregroundStyle(.white.opacity(0.5))
+            VStack(spacing: 6) {
+                Group {
+                    if isEditingWorkspaceName {
+                        TextField("Space name", text: $workspaceNameDraft)
+                            .textFieldStyle(.plain)
+                            .font(.system(size: 11, weight: .semibold))
+                            .foregroundStyle(.white.opacity(0.85))
+                            .multilineTextAlignment(.center)
+                            .frame(width: 100)
+                            .focused($isWorkspaceNameFieldFocused)
+                            .onSubmit { commitWorkspaceRename() }
+                            .onExitCommand { cancelWorkspaceRename() }
+                            .onChange(of: isWorkspaceNameFieldFocused) { _, focused in
+                                if !focused { commitWorkspaceRename() }
+                            }
+                    } else {
+                        Text(viewModel.activeWorkspace?.name ?? "Space \(viewModel.activeSlot)")
+                            .font(.system(size: 11, weight: .semibold))
+                            .foregroundStyle(.white.opacity(0.5))
+                    }
                 }
-            }
-            .padding(.horizontal, 10)
-            .padding(.vertical, 5)
-            .background(Capsule().fill(Color.white.opacity(0.06)))
-            .contentShape(Capsule())
-            .onTapGesture {
-                if !isEditingWorkspaceName {
-                    startWorkspaceRename()
+                .padding(.horizontal, 10)
+                .padding(.vertical, 5)
+                .background(Capsule().fill(Color.white.opacity(0.06)))
+                .contentShape(Capsule())
+                .onTapGesture {
+                    if !isEditingWorkspaceName {
+                        startWorkspaceRename()
+                    }
+                }
+                
+                // Текст подсказки
+                if showEmptyHint && viewModel.cards.isEmpty {
+                    Text("Drag anywhere to create your first card")
+                        .font(.system(size: 11, weight: .regular))
+                        .foregroundStyle(.white.opacity(0.3))
+                        .transition(.opacity.combined(with: .move(edge: .top)))
                 }
             }
             .padding(.top, 10)
         }
-        
+        .onAppear {
+            updateEmptyHintState()
+        }
+        .onChange(of: viewModel.activeSlot) { _, _ in
+            updateEmptyHintState()
+        }
+        .onChange(of: viewModel.cards.isEmpty) { _, _ in
+            updateEmptyHintState()
+        }
         .onReceive(NotificationCenter.default.publisher(for: .switchWorkspace)) { notification in
             if let slot = notification.object as? Int {
                 viewModel.switchWorkspace(to: slot)
+            }
+        }
+    }
+
+    private func updateEmptyHintState() {
+        emptyHintTask?.cancel()
+        showEmptyHint = false
+        
+        guard viewModel.cards.isEmpty else { return }
+        
+        emptyHintTask = Task {
+            try? await Task.sleep(for: .seconds(2.5))
+            guard !Task.isCancelled else { return }
+            withAnimation(.easeInOut(duration: 0.35)) {
+                showEmptyHint = true
             }
         }
     }
