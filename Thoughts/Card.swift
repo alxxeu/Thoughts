@@ -1,5 +1,11 @@
 import SwiftUI
 
+enum CardPrivacyMode: String, Codable {
+    case none
+    case spoiler
+    case lock
+}
+
 enum CardTagColor: String, CaseIterable, Codable, Identifiable {
     case red, orange, yellow, green, blue, indigo, purple
     
@@ -25,6 +31,7 @@ final class Card: Identifiable, Codable {
     var size: CGSize
     var text: AttributedString = AttributedString("")
     var tagColor: CardTagColor? = nil
+    var privacyMode: CardPrivacyMode = .none
 
     init(id: UUID = .init(), position: CGPoint, size: CGSize, text: String = "", tagColor: CardTagColor? = nil) {
         self.id = id
@@ -39,31 +46,33 @@ final class Card: Identifiable, Codable {
     }
 
     enum CodingKeys: String, CodingKey {
-        case id, position, size, text, tagColor
+        case id, position, size, text, tagColor, privacyMode
     }
 
     required init(from decoder: Decoder) throws {
-        let container = try decoder.container(keyedBy: CodingKeys.self)
-        id = try container.decode(UUID.self, forKey: .id)
-        position = try container.decode(CGPoint.self, forKey: .position)
-        size = try container.decode(CGSize.self, forKey: .size)
-        tagColor = try container.decodeIfPresent(CardTagColor.self, forKey: .tagColor)
-        
-        if let decodedText = try? container.decode(AttributedString.self, forKey: .text) {
-            text = decodedText
-        } else if let flatString = try? container.decode(String.self, forKey: .text) {
-            text = AttributedString(flatString)
-        } else {
-            text = AttributedString("")
+            let container = try decoder.container(keyedBy: CodingKeys.self)
+            id = try container.decode(UUID.self, forKey: .id)
+            position = try container.decode(CGPoint.self, forKey: .position)
+            size = try container.decode(CGSize.self, forKey: .size)
+            tagColor = try container.decodeIfPresent(CardTagColor.self, forKey: .tagColor)
+            privacyMode = try container.decodeIfPresent(CardPrivacyMode.self, forKey: .privacyMode) ?? .none
+            
+            if let decodedText = try? container.decode(AttributedString.self, forKey: .text) {
+                text = decodedText
+            } else if let flatString = try? container.decode(String.self, forKey: .text) {
+                text = AttributedString(flatString)
+            } else {
+                text = AttributedString("")
+            }
+        }
+
+        func encode(to encoder: Encoder) throws {
+            var container = encoder.container(keyedBy: CodingKeys.self)
+            try container.encode(id, forKey: .id)
+            try container.encode(position, forKey: .position)
+            try container.encode(size, forKey: .size)
+            try container.encode(text, forKey: .text)
+            try container.encodeIfPresent(tagColor, forKey: .tagColor)
+            try container.encode(privacyMode, forKey: .privacyMode)
         }
     }
-
-    func encode(to encoder: Encoder) throws {
-        var container = encoder.container(keyedBy: CodingKeys.self)
-        try container.encode(id, forKey: .id)
-        try container.encode(position, forKey: .position)
-        try container.encode(size, forKey: .size)
-        try container.encode(text, forKey: .text)
-        try container.encodeIfPresent(tagColor, forKey: .tagColor)
-    }
-}

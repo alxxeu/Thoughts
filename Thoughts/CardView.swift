@@ -16,20 +16,25 @@ struct CardView: View {
     @State private var deleteTimer: Timer? = nil
     @State private var isShowingTagPopover = false
     @State private var isHoveringTagButton = false
+    @State private var isRevealed = false
+    @State private var relockTask: Task<Void, Never>? = nil // Таймер автоблокировки
     
     @FocusState private var isTextFocused: Bool
     
     private var pad: CGFloat { BoardViewModel.canvasSidePadding }
     private var topLimit: CGFloat { BoardViewModel.topCreationLimit }
+    private var isPrivacyLocked: Bool {
+        card.privacyMode != .none && !isRevealed
+    }
     
     var body: some View {
         ZStack(alignment: SwiftUI.Alignment.topLeading) {
-            // ВЕРНУЛИ РОДНОЙ GLASS EFFECT:
+            // РОДНОЙ GLASS EFFECT:
             RoundedRectangle(cornerRadius: 16)
                 .fill(Color.clear)
                 .glassEffect(in: .rect(cornerRadius: 16.0))
             
-            // НАТИВНЫЙ РЕДАКТОР С ПОДДЕРЖКОЙ ATTRIBUTEDSTRING И ХОТКЕЕВ (Cmd+B / Cmd+I)
+            // ТЕКСТОВЫЙ РЕДАКТОР
             TextEditor(text: $card.text)
                 .font(.system(size: 15))
                 .lineSpacing(4)
@@ -41,19 +46,22 @@ struct CardView: View {
                 .scrollClipDisabled()
                 .zIndex(0)
                 .onChange(of: card.text) {
-                        viewModel.scheduleDebouncedSave()
-                        detectAndEnableLinks() // Сканируем текст при каждом изменении
-                    }
+                    viewModel.scheduleDebouncedSave()
+                    detectAndEnableLinks()
+                }
                 .onAppear {
-                        detectAndEnableLinks() // Сканируем текст при загрузке карточки
-                    }
+                    detectAndEnableLinks()
+                }
                 .onChange(of: isTextFocused) { _, isFocused in
                     if isFocused {
+                        cancelRelock()
                         viewModel.bringToFront(card)
                         NotificationCenter.default.post(name: NSNotification.Name("ClearTextSelection"), object: nil)
                     } else {
-                        // Решаем проблему залипания выделения: при потере фокуса сбрасываем First Responder окна
                         NSApp.keyWindow?.makeFirstResponder(nil)
+                        if isRevealed {
+                            scheduleRelock()
+                        }
                     }
                 }
                 .mask(alignment: .top) {
@@ -71,40 +79,62 @@ struct CardView: View {
                     }
                 }
                 .onReceive(NotificationCenter.default.publisher(for: NSNotification.Name("ClearTextSelection"))) { _ in
-                                  // Используем глобальный поиск всех NSTextView внутри главного окна Mac
-                                  if let window = NSApp.keyWindow {
-                                      func clearSelectionInViews(subviews: [NSView]) {
-                                          for view in subviews {
-                                              if let textView = view as? NSTextView {
-                                                  // Принудительно стираем выделение букв в ноль
-                                                  textView.setSelectedRange(NSRange(location: 0, length: 0))
-                                              } else {
-                                                  clearSelectionInViews(subviews: view.subviews)
-                                              }
-                                          }
-                                      }
-                                      clearSelectionInViews(subviews: window.contentView?.subviews ?? [])
-                                  }
-                              }
+                    if let window = NSApp.keyWindow {
+                        func clearSelectionInViews(subviews: [NSView]) {
+                            for view in subviews {
+                                if let textView = view as? NSTextView {
+                                    textView.setSelectedRange(NSRange(location: 0, length: 0))
+                                } else {
+                                    clearSelectionInViews(subviews: view.subviews)
+                                }
+                            }
+                        }
+                        clearSelectionInViews(subviews: window.contentView?.subviews ?? [])
+                    }
+                }
             
-            // КНОПКА ТЕГА (ВЕРХНИЙ ПРАВЫЙ УГОЛ)
+            // ОВЕРЛЕЙ СПОЙЛЕРА И ЛОКА:
+            if isPrivacyLocked {
+                StarFieldOverlayView(mode: card.privacyMode) {
+                    if card.privacyMode == .spoiler {
+                        withAnimation(.easeInOut(duration: 0.35)) {
+                            isRevealed = true
+                        }
+                        if !isTextFocused { scheduleRelock() }
+                    } else if card.privacyMode == .lock {
+                        viewModel.authenticateWithTouchID { success in
+                            if success {
+                                withAnimation(.easeInOut(duration: 0.35)) {
+                                    isRevealed = true
+                                }
+                                if !isTextFocused { scheduleRelock() }
+                            }
+                        }
+                    }
+                }
+                // Плавный проявляющийся переход с легким масштабированием
+                .transition(.opacity.combined(with: .scale(scale: 0.96)))
+                .zIndex(99)
+            }
+            
+            // КНОПКА ТЕГА
             Button {
+                guard !isPrivacyLocked else { return }
                 isShowingTagPopover.toggle()
             } label: {
                 ZStack {
-                    // Фиксированная кликабельная зона 16x16, удерживающая центр на месте
                     Color.clear
                         .frame(width: 16, height: 16)
                     
                     Circle()
                         .fill(card.tagColor != nil ? card.tagColor!.color : Color.white.opacity(0.15))
                         .frame(width: 10, height: 10)
-                        // Масштабируем с 10px до 16px (10 * 1.6 = 16) ровно из центра:
                         .scaleEffect(isHoveringTagButton ? 1.6 : 1.0)
                 }
                 .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
+            .disabled(isPrivacyLocked)
             .onHover { inside in
                 isHoveringTagButton = inside
                 if inside {
@@ -114,27 +144,23 @@ struct CardView: View {
                 }
             }
             .popover(isPresented: $isShowingTagPopover, arrowEdge: .bottom) {
-                TagPopoverView(selectedColor: $card.tagColor) {
+                TagPopoverView(selectedColor: $card.tagColor, privacyMode: $card.privacyMode) {
                     isShowingTagPopover = false
                     viewModel.saveImmediately()
                 }
             }
             .padding(7)
             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topTrailing)
-            .opacity(card.tagColor != nil ? 1 : (isHovering ? 1 : 0))
+            .opacity(card.tagColor != nil ? 1 : (isHovering && !isPrivacyLocked ? 1 : 0))
             .animation(.spring(response: 0.2, dampingFraction: 0.7), value: isHoveringTagButton)
             .animation(.easeInOut(duration: 0.15), value: isHovering)
             .animation(.easeInOut(duration: 0.15), value: card.tagColor)
             .zIndex(104)
             
-            // КАСТОМНЫЙ ИНТУИТИВНЫЙ УГОЛОК ИЗМЕНЕНИЯ РАЗМЕРА (RESIZE HANDLE)
+            // RESIZE HANDLE
             Path { path in
-                // Математически смещаем штрих на 10 поинтов от правого нижнего края зоны 32x32:
-                // Точка начала на правой грани (X: 22, Y: 14)
                 path.move(to: CGPoint(x: 22, y: 14))
                 path.addLine(to: CGPoint(x: 22, y: 14))
-                
-                // Закругляем к нижней грани (X: 14, Y: 22) с точкой притяжения в (22, 22)
                 path.addQuadCurve(
                     to: CGPoint(x: 14, y: 22),
                     control: CGPoint(x: 22, y: 22)
@@ -142,10 +168,8 @@ struct CardView: View {
                 path.addLine(to: CGPoint(x: 14, y: 22))
             }
             .stroke(Color.white.opacity(0.3), style: StrokeStyle(lineWidth: 2, lineCap: .round, lineJoin: .round))
-            
-            // Задаем один монолитный фрейм 32x32 без внутренней вложенности и БЕЗ внешнего .padding
             .frame(width: 32, height: 32)
-            .contentShape(Rectangle()) // Теперь вся зона 32х32 в самом углу карточки кликабельна
+            .contentShape(Rectangle())
             .onHover { inside in
                 if inside {
                     let selector = NSSelectorFromString("_windowResizeNorthWestSouthEastCursor")
@@ -164,8 +188,8 @@ struct CardView: View {
             .opacity(isHovering ? 1 : 0)
             .animation(.easeInOut(duration: 0.15), value: isHovering)
             .zIndex(101)
-
             
+            // DRAG HANDLE
             Rectangle()
                 .fill(Color.clear)
                 .contentShape(Rectangle())
@@ -181,35 +205,30 @@ struct CardView: View {
                     }
                 }
             
-            // КРЕСТИК УДАЛЕНИЯ С РАЗДЕЛЬНЫМ ХОВЕРОМ
+            // КНОПКА УДАЛЕНИЯ
             ZStack {
-                // 1. Фоновая подложка теперь загорается ТОЛЬКО при наведении на сам крестик или при его зажатии
                 Circle()
                     .fill(Color.white.opacity(isPressingDelete ? 0.15 : (isHoveringDeleteButton ? 0.08 : 0.0)))
                     .frame(width: 20, height: 20)
                     .animation(.easeIn(duration: 0.1), value: isHoveringDeleteButton)
                 
-                // 2. Индикатор прогресса удаления
                 Circle()
                     .trim(from: 0.0, to: deleteProgress)
                     .stroke(Color.red, style: StrokeStyle(lineWidth: 1.5, lineCap: .round))
                     .frame(width: 20, height: 20)
                     .rotationEffect(.degrees(-90))
                 
-                // 3. Сама иконка крестика (видна всегда, когда мышь над карточкой)
                 Image(systemName: "xmark")
                     .font(.system(size: 9, weight: .black))
                     .foregroundStyle(isPressingDelete ? .red : .white.opacity(0.3))
             }
             .contentShape(Circle())
             .padding(5)
-            .opacity(isHovering ? 1 : 0) // Сам крестик появляется при ховере карточки
+            .opacity(isHovering ? 1 : 0)
             .animation(.easeInOut(duration: 0.15), value: isHovering)
             .zIndex(103)
             .onHover { inside in
-                // Переключаем локальное состояние ховера кнопки
                 isHoveringDeleteButton = inside
-                
                 if inside {
                     NSCursor.pointingHand.set()
                 } else {
@@ -233,7 +252,6 @@ struct CardView: View {
                 }
             })
         }
-        
         .frame(
             width: dragResizeSize?.width ?? card.size.width,
             height: dragResizeSize?.height ?? card.size.height
@@ -245,17 +263,29 @@ struct CardView: View {
                     viewModel.bringToFront(card)
                 }
         )
-    }
+        
+        .animation(.easeInOut(duration: 0.35), value: isPrivacyLocked)
+                .onChange(of: card.privacyMode) { _, newMode in
+                    cancelRelock()
+                    if newMode != .none {
+                        withAnimation(.easeInOut(duration: 0.35)) {
+                            isRevealed = false
+                        }
+                    }
+                }
+            }
+    
+    // MARK: - Helper Methods & Gestures
     
     private func resetDeleteState() {
         isPressingDelete = false
         withAnimation(.none) {
-              deleteProgress = 0.0
-          }
-          withAnimation(.easeOut(duration: 0.12)) {
-              isPressingDelete = false
-          }
-      }
+            deleteProgress = 0.0
+        }
+        withAnimation(.easeOut(duration: 0.12)) {
+            isPressingDelete = false
+        }
+    }
     
     private var moveGesture: some Gesture {
         DragGesture(coordinateSpace: .named("canvas"))
@@ -364,13 +394,9 @@ struct CardView: View {
             func scanViews(_ subviews: [NSView]) {
                 for view in subviews {
                     if let textView = view as? NSTextView {
-                        // 1. Отключаем форматированный текст и графику при вставке
                         textView.isRichText = false
                         textView.importsGraphics = false
-                        
-                        // 2. Включаем автоматическое распознавание URL
                         textView.isAutomaticLinkDetectionEnabled = true
-                        // 3. Подсвечиваем существующие ссылки в тексте
                         textView.checkTextInDocument(nil)
                     } else {
                         scanViews(view.subviews)
@@ -380,5 +406,24 @@ struct CardView: View {
             
             scanViews(window.contentView?.subviews ?? [])
         }
+    }
+    
+    private func scheduleRelock() {
+        relockTask?.cancel()
+        relockTask = Task {
+            try? await Task.sleep(nanoseconds: 5_000_000_000) // 5 секунд
+            if !Task.isCancelled {
+                await MainActor.run {
+                    withAnimation(.easeInOut(duration: 0.3)) {
+                        isRevealed = false
+                    }
+                }
+            }
+        }
+    }
+    
+    private func cancelRelock() {
+        relockTask?.cancel()
+        relockTask = nil
     }
 }

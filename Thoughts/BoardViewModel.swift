@@ -1,3 +1,4 @@
+import LocalAuthentication
 import SwiftUI
 
 enum EdgeHint: Equatable {
@@ -12,6 +13,7 @@ enum EdgeHint: Equatable {
 final class BoardViewModel {
     var workspaces: [Workspace] = []
     var activeSlot: Int = 1
+    var isSpaceUnlocked: Bool = false
     private var cardsByWorkspace: [Int: [Card]] = [:]
 
     var cards: [Card] {
@@ -85,6 +87,26 @@ final class BoardViewModel {
             try? await Task.sleep(nanoseconds: 450_000_000)
             guard !Task.isCancelled, let self else { return }
             self.store.save(workspaces: self.workspaces, cardsByWorkspace: self.cardsByWorkspace)
+        }
+    }
+    
+    func authenticateWithTouchID(completion: @escaping (Bool) -> Void) {
+        let context = LAContext()
+        var error: NSError?
+        
+        if context.canEvaluatePolicy(.deviceOwnerAuthenticationWithBiometrics, error: &error) ||
+           context.canEvaluatePolicy(.deviceOwnerAuthentication, error: &error) {
+            let reason = "Разблокировать карточку"
+            context.evaluatePolicy(.deviceOwnerAuthentication, localizedReason: reason) { success, _ in
+                DispatchQueue.main.async {
+                    completion(success)
+                }
+            }
+        } else {
+            // Если Touch ID недоступен в системе — разрешаем разблокировку
+            DispatchQueue.main.async {
+                completion(true)
+            }
         }
     }
 }
