@@ -1,17 +1,37 @@
 import SwiftUI
 
+enum CardTagColor: String, CaseIterable, Codable, Identifiable {
+    case red, orange, yellow, green, blue, indigo, purple
+    
+    var id: String { rawValue }
+    
+    var color: Color {
+        switch self {
+        case .red: return .red
+        case .orange: return .orange
+        case .yellow: return .yellow
+        case .green: return .green
+        case .blue: return .blue
+        case .indigo: return .indigo
+        case .purple: return .purple
+        }
+    }
+}
+
 @Observable
 final class Card: Identifiable, Codable {
     let id: UUID
     var position: CGPoint
     var size: CGSize
-    var text: AttributedString = AttributedString("") // Нативный Rich Text тип
+    var text: AttributedString = AttributedString("")
+    var tagColor: CardTagColor? = nil
 
-    init(id: UUID = .init(), position: CGPoint, size: CGSize, text: String = "") {
+    init(id: UUID = .init(), position: CGPoint, size: CGSize, text: String = "", tagColor: CardTagColor? = nil) {
         self.id = id
         self.position = position
         self.size = size
         self.text = AttributedString(text)
+        self.tagColor = tagColor
     }
 
     var frame: CGRect {
@@ -19,7 +39,7 @@ final class Card: Identifiable, Codable {
     }
 
     enum CodingKeys: String, CodingKey {
-        case id, position, size, text
+        case id, position, size, text, tagColor
     }
 
     required init(from decoder: Decoder) throws {
@@ -27,18 +47,13 @@ final class Card: Identifiable, Codable {
         id = try container.decode(UUID.self, forKey: .id)
         position = try container.decode(CGPoint.self, forKey: .position)
         size = try container.decode(CGSize.self, forKey: .size)
+        tagColor = try container.decodeIfPresent(CardTagColor.self, forKey: .tagColor)
         
-        // 1. Пытаемся нативно декодировать AttributedString (если он был сохранен с форматированием)
         if let decodedText = try? container.decode(AttributedString.self, forKey: .text) {
             text = decodedText
-        }
-        // 2. Логика обратной совместимости: если в файле лежит старая плоская String,
-        // мы безопасно прочитаем её и обернем в AttributedString, предотвращая вылет
-        else if let flatString = try? container.decode(String.self, forKey: .text) {
+        } else if let flatString = try? container.decode(String.self, forKey: .text) {
             text = AttributedString(flatString)
-        }
-        // 3. Страховка на случай непредвиденных сбоев данных
-        else {
+        } else {
             text = AttributedString("")
         }
     }
@@ -48,8 +63,7 @@ final class Card: Identifiable, Codable {
         try container.encode(id, forKey: .id)
         try container.encode(position, forKey: .position)
         try container.encode(size, forKey: .size)
-        
-        // Нативно кодируем AttributedString в JSON со всеми стилями букв
         try container.encode(text, forKey: .text)
+        try container.encodeIfPresent(tagColor, forKey: .tagColor)
     }
 }

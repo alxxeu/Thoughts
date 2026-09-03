@@ -14,6 +14,8 @@ struct CardView: View {
     @State private var deleteProgress: CGFloat = 0.0
     @State private var isPressingDelete = false
     @State private var deleteTimer: Timer? = nil
+    @State private var isShowingTagPopover = false
+    @State private var isHoveringTagButton = false
     
     @FocusState private var isTextFocused: Bool
     
@@ -84,6 +86,46 @@ struct CardView: View {
                                       clearSelectionInViews(subviews: window.contentView?.subviews ?? [])
                                   }
                               }
+            
+            // КНОПКА ТЕГА (ВЕРХНИЙ ПРАВЫЙ УГОЛ)
+            Button {
+                isShowingTagPopover.toggle()
+            } label: {
+                ZStack {
+                    // Фиксированная кликабельная зона 16x16, удерживающая центр на месте
+                    Color.clear
+                        .frame(width: 16, height: 16)
+                    
+                    Circle()
+                        .fill(card.tagColor != nil ? card.tagColor!.color : Color.white.opacity(0.15))
+                        .frame(width: 10, height: 10)
+                        // Масштабируем с 10px до 16px (10 * 1.6 = 16) ровно из центра:
+                        .scaleEffect(isHoveringTagButton ? 1.6 : 1.0)
+                }
+                .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .onHover { inside in
+                isHoveringTagButton = inside
+                if inside {
+                    NSCursor.pointingHand.set()
+                } else {
+                    NSCursor.arrow.set()
+                }
+            }
+            .popover(isPresented: $isShowingTagPopover, arrowEdge: .bottom) {
+                TagPopoverView(selectedColor: $card.tagColor) {
+                    isShowingTagPopover = false
+                    viewModel.saveImmediately()
+                }
+            }
+            .padding(7)
+            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topTrailing)
+            .opacity(card.tagColor != nil ? 1 : (isHovering ? 1 : 0))
+            .animation(.spring(response: 0.2, dampingFraction: 0.7), value: isHoveringTagButton)
+            .animation(.easeInOut(duration: 0.15), value: isHovering)
+            .animation(.easeInOut(duration: 0.15), value: card.tagColor)
+            .zIndex(104)
             
             // КАСТОМНЫЙ ИНТУИТИВНЫЙ УГОЛОК ИЗМЕНЕНИЯ РАЗМЕРА (RESIZE HANDLE)
             Path { path in
