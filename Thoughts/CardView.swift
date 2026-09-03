@@ -206,51 +206,53 @@ struct CardView: View {
                 }
             
             // КНОПКА УДАЛЕНИЯ
-            ZStack {
-                Circle()
-                    .fill(Color.white.opacity(isPressingDelete ? 0.15 : (isHoveringDeleteButton ? 0.08 : 0.0)))
-                    .frame(width: 20, height: 20)
-                    .animation(.easeIn(duration: 0.1), value: isHoveringDeleteButton)
-                
-                Circle()
-                    .trim(from: 0.0, to: deleteProgress)
-                    .stroke(Color.red, style: StrokeStyle(lineWidth: 1.5, lineCap: .round))
-                    .frame(width: 20, height: 20)
-                    .rotationEffect(.degrees(-90))
-                
-                Image(systemName: "xmark")
-                    .font(.system(size: 9, weight: .black))
-                    .foregroundStyle(isPressingDelete ? .red : .white.opacity(0.3))
-            }
-            .contentShape(Circle())
-            .padding(5)
-            .opacity(isHovering ? 1 : 0)
-            .animation(.easeInOut(duration: 0.15), value: isHovering)
-            .zIndex(103)
-            .onHover { inside in
-                isHoveringDeleteButton = inside
-                if inside {
-                    NSCursor.pointingHand.set()
-                } else {
-                    NSCursor.arrow.set()
+            if !isPrivacyLocked {
+                ZStack {
+                    Circle()
+                        .fill(Color.white.opacity(isPressingDelete ? 0.15 : (isHoveringDeleteButton ? 0.08 : 0.0)))
+                        .frame(width: 20, height: 20)
+                        .animation(.easeIn(duration: 0.1), value: isHoveringDeleteButton)
+                    
+                    Circle()
+                        .trim(from: 0.0, to: deleteProgress)
+                        .stroke(Color.red, style: StrokeStyle(lineWidth: 1.5, lineCap: .round))
+                        .frame(width: 20, height: 20)
+                        .rotationEffect(.degrees(-90))
+                    
+                    Image(systemName: "xmark")
+                        .font(.system(size: 9, weight: .black))
+                        .foregroundStyle(isPressingDelete ? .red : .white.opacity(0.3))
                 }
-            }
-            .onLongPressGesture(minimumDuration: 0.5, maximumDistance: 10, perform: {
-                Task { @MainActor in
-                    viewModel.deleteCard(card)
-                    NSCursor.arrow.set()
-                    resetDeleteState()
-                }
-            }, onPressingChanged: { pressing in
-                if pressing {
-                    isPressingDelete = true
-                    withAnimation(.linear(duration: 0.5)) {
-                        deleteProgress = 1.0
+                .contentShape(Circle())
+                .padding(5)
+                .opacity(isHovering ? 1 : 0)
+                .animation(.easeInOut(duration: 0.15), value: isHovering)
+                .zIndex(103)
+                .onHover { inside in
+                    isHoveringDeleteButton = inside
+                    if inside {
+                        NSCursor.pointingHand.set()
+                    } else {
+                        NSCursor.arrow.set()
                     }
-                } else {
-                    resetDeleteState()
                 }
-            })
+                .onLongPressGesture(minimumDuration: 0.5, maximumDistance: 10, perform: {
+                    Task { @MainActor in
+                        viewModel.deleteCard(card)
+                        NSCursor.arrow.set()
+                        resetDeleteState()
+                    }
+                }, onPressingChanged: { pressing in
+                    if pressing {
+                        isPressingDelete = true
+                        withAnimation(.linear(duration: 0.5)) {
+                            deleteProgress = 1.0
+                        }
+                    } else {
+                        resetDeleteState()
+                    }
+                })
+            }
         }
         .frame(
             width: dragResizeSize?.width ?? card.size.width,
