@@ -10,7 +10,18 @@ enum EdgeHint: Equatable {
 
 @Observable
 final class BoardViewModel {
-    var cards: [Card] = []
+    var workspaces: [Workspace] = []
+    var activeSlot: Int = 1
+    private var cardsByWorkspace: [Int: [Card]] = [:]
+
+    var cards: [Card] {
+        get { cardsByWorkspace[activeSlot] ?? [] }
+        set { cardsByWorkspace[activeSlot] = newValue }
+    }
+
+    var activeWorkspace: Workspace? {
+        workspaces.first { $0.slot == activeSlot }
+    }
 
     private let store = BoardStore.shared
     private var saveTask: Task<Void, Never>?
@@ -21,11 +32,24 @@ final class BoardViewModel {
     static let topCreationLimit: CGFloat = 40
 
     init() {
-        cards = store.load()
+        let loaded = store.load()
+        workspaces = loaded.workspaces
+        cardsByWorkspace = loaded.cardsByWorkspace
     }
 
     static func snap(_ value: CGFloat) -> CGFloat {
         max(minCardSize, (value / cardSizeStep).rounded() * cardSizeStep)
+    }
+
+    func switchWorkspace(to slot: Int) {
+        activeSlot = min(9, max(1, slot))
+    }
+    
+    func renameActiveWorkspace(to name: String) {
+        guard let index = workspaces.firstIndex(where: { $0.slot == activeSlot }) else { return }
+        let trimmed = name.trimmingCharacters(in: .whitespacesAndNewlines)
+        workspaces[index].name = trimmed.isEmpty ? "Space \(activeSlot)" : trimmed
+        saveImmediately()
     }
 
     @discardableResult
@@ -44,23 +68,23 @@ final class BoardViewModel {
 
     func bringToFront(_ card: Card) {
         guard let index = cards.firstIndex(where: { $0.id == card.id }) else { return }
-        cards.append(cards.remove(at: index))
+        var current = cards
+        current.append(current.remove(at: index))
+        cards = current
     }
 
-    // Мгновенное сохранение — вызывается на create/delete/move-end/resize-end
     func saveImmediately() {
         saveTask?.cancel()
         saveTask = nil
-        store.save(cards)
+        store.save(workspaces: workspaces, cardsByWorkspace: cardsByWorkspace)
     }
 
-    // Debounce 450ms — вызывается на каждое изменение текста
     func scheduleDebouncedSave() {
         saveTask?.cancel()
         saveTask = Task { [weak self] in
             try? await Task.sleep(nanoseconds: 450_000_000)
             guard !Task.isCancelled, let self else { return }
-            self.store.save(self.cards)
+            self.store.save(workspaces: self.workspaces, cardsByWorkspace: self.cardsByWorkspace)
         }
     }
 }

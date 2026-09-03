@@ -3,16 +3,29 @@ import AppKit
 
 @main
 struct ThoughtsApp: App {
+    @State private var viewModel = BoardViewModel()
+
     var body: some Scene {
         WindowGroup {
-            ContentView()
-                .background(VisualEffectBlur(material: .sidebar, blendingMode: .behindWindow))
+            ContentView(viewModel: viewModel)
+                .background(VisualEffectBlur(material: .hudWindow, blendingMode: .behindWindow))
                 .ignoresSafeArea()
         }
         .windowStyle(.hiddenTitleBar)
         .windowResizability(.contentSize)
         .commands {
-                    TextFormattingCommands()
+            TextFormattingCommands()
+            CommandMenu("Spaces") {
+                ForEach(viewModel.workspaces) { workspace in
+                    Button(workspace.name) {
+                        NotificationCenter.default.post(name: .switchWorkspace, object: workspace.slot)
+                    }
+                    .keyboardShortcut(
+                        KeyEquivalent(Character("\(workspace.slot)")),
+                        modifiers: .option
+                    )
+                }
+            }
         }
     }
 }

@@ -53,7 +53,7 @@ struct CornerBracket: Shape {
 }
 
 struct ContentView: View {
-    @State private var viewModel = BoardViewModel()
+    var viewModel: BoardViewModel
     @State private var creationStart: CGPoint?
     @State private var draftFrame: CGRect?
     @State private var placementPreview: CGRect?
@@ -62,6 +62,9 @@ struct ContentView: View {
     @State private var isWindowResizing = false
     @State private var resizeDebounceTask: Task<Void, Never>?
     @State private var isPlacementPreviewVisible = false
+    @State private var isEditingWorkspaceName = false
+    @State private var workspaceNameDraft = ""
+    @FocusState private var isWorkspaceNameFieldFocused: Bool
 
 
     var body: some View {
@@ -74,7 +77,7 @@ struct ContentView: View {
                         NotificationCenter.default.post(name: NSNotification.Name("ClearTextSelection"), object: nil)
                         NSApp.keyWindow?.makeFirstResponder(nil)
                     }
-
+                
                 ForEach(viewModel.cards) { card in
                     let adaptedPosition = adaptivePosition(for: card, in: proxy.size)
                     
@@ -83,34 +86,34 @@ struct ContentView: View {
                         viewModel: viewModel,
                         canvasSize: proxy.size,
                         onPlacementPreviewChange: { preview in
-                                                   // Отменяем прошлый запланированный таймер проявления
-                                                   resizeDebounceTask?.cancel()
-                                                   
-                                                   if let preview {
-                                                       // Если координаты изменились, обновляем их жестко и мгновенно
-                                                       var transaction = Transaction()
-                                                       transaction.animation = nil
-                                                       withTransaction(transaction) {
-                                                           placementPreview = preview
-                                                       }
-                                                       
-                                                       // Запускаем мягкое появление из прозрачности ровно через 0.12 сек
-                                                       resizeDebounceTask = Task {
-                                                           try? await Task.sleep(for: .seconds(0.05))
-                                                           guard !Task.isCancelled else { return }
-                                                           withAnimation(.easeOut(duration: 0.2)) {
-                                                               // Используем локальный флаг видимости (добавим на Шаге 2)
-                                                               isPlacementPreviewVisible = true
-                                                           }
-                                                       }
-                                                   } else {
-                                                       // Если вылетели из магнитной зоны — мгновенно тушим маячок
-                                                       isPlacementPreviewVisible = false
-                                                       placementPreview = nil
-                                                   }
-                                               },
-                                               onEdgeHintsChange: { edgeHints = $0 }
-                                           )
+                            // Отменяем прошлый запланированный таймер проявления
+                            resizeDebounceTask?.cancel()
+                            
+                            if let preview {
+                                // Если координаты изменились, обновляем их жестко и мгновенно
+                                var transaction = Transaction()
+                                transaction.animation = nil
+                                withTransaction(transaction) {
+                                    placementPreview = preview
+                                }
+                                
+                                // Запускаем мягкое появление из прозрачности ровно через 0.12 сек
+                                resizeDebounceTask = Task {
+                                    try? await Task.sleep(for: .seconds(0.05))
+                                    guard !Task.isCancelled else { return }
+                                    withAnimation(.easeOut(duration: 0.2)) {
+                                        // Используем локальный флаг видимости (добавим на Шаге 2)
+                                        isPlacementPreviewVisible = true
+                                    }
+                                }
+                            } else {
+                                // Если вылетели из магнитной зоны — мгновенно тушим маячок
+                                isPlacementPreviewVisible = false
+                                placementPreview = nil
+                            }
+                        },
+                        onEdgeHintsChange: { edgeHints = $0 }
+                    )
                     .frame(width: card.size.width, height: card.size.height, alignment: SwiftUI.Alignment.topLeading)
                     .offset(x: adaptedPosition.x, y: adaptedPosition.y)
                     .onAppear {
@@ -122,7 +125,7 @@ struct ContentView: View {
                         }
                     }
                 }
-
+                
                 if let placementPreview {
                     RoundedRectangle(cornerRadius: 12)
                         .fill(Color.white.opacity(0.05))
@@ -131,7 +134,7 @@ struct ContentView: View {
                         .allowsHitTesting(false)
                         .opacity(isPlacementPreviewVisible ? 1.0 : 0.0)
                 }
-
+                
                 ForEach(Array(edgeHints.enumerated()), id: \.offset) { _, hint in
                     switch hint {
                     case .edge(_, let frame):
@@ -142,7 +145,7 @@ struct ContentView: View {
                             .offset(x: frame.minX, y: frame.minY)
                             .allowsHitTesting(false)
                             .transition(AnyTransition.opacity)
-
+                        
                     case .corner(let corner, let frame):
                         CornerBracket(corner: corner)
                             .stroke(
@@ -156,7 +159,7 @@ struct ContentView: View {
                             .transition(AnyTransition.opacity)
                     }
                 }
-
+                
                 if let draftFrame {
                     RoundedRectangle(cornerRadius: 16)
                         .fill(Color.white.opacity(0.06))
@@ -164,7 +167,18 @@ struct ContentView: View {
                         .offset(x: draftFrame.minX, y: draftFrame.minY)
                         .allowsHitTesting(false)
                 }
+                
+                HStack(spacing: 0) {
+                    Color.clear
+                        .frame(width: 76) // отступ под системные traffic-light кнопки
+                    Color.clear
+                        .contentShape(Rectangle())
+                        .gesture(WindowDragGesture())
+                }
+                .frame(height: BoardViewModel.topCreationLimit)
+                .frame(maxWidth: .infinity, alignment: .topLeading)
             }
+            
             .coordinateSpace(name: "canvas")
             .frame(width: proxy.size.width, height: proxy.size.height)
             .animation(.easeOut(duration: 0.12), value: edgeHints.count)
@@ -181,6 +195,44 @@ struct ContentView: View {
             }
         }
         .background(Color.clear)
+        .overlay(alignment: .top) {
+            Group {
+                if isEditingWorkspaceName {
+                    TextField("Space name", text: $workspaceNameDraft)
+                        .textFieldStyle(.plain)
+                        .font(.system(size: 11, weight: .semibold))
+                        .foregroundStyle(.white.opacity(0.85))
+                        .multilineTextAlignment(.center)
+                        .frame(width: 100)
+                        .focused($isWorkspaceNameFieldFocused)
+                        .onSubmit { commitWorkspaceRename() }
+                        .onExitCommand { cancelWorkspaceRename() }
+                        .onChange(of: isWorkspaceNameFieldFocused) { _, focused in
+                            if !focused { commitWorkspaceRename() }
+                        }
+                } else {
+                    Text(viewModel.activeWorkspace?.name ?? "Space \(viewModel.activeSlot)")
+                        .font(.system(size: 11, weight: .semibold))
+                        .foregroundStyle(.white.opacity(0.5))
+                }
+            }
+            .padding(.horizontal, 10)
+            .padding(.vertical, 5)
+            .background(Capsule().fill(Color.white.opacity(0.06)))
+            .contentShape(Capsule())
+            .onTapGesture {
+                if !isEditingWorkspaceName {
+                    startWorkspaceRename()
+                }
+            }
+            .padding(.top, 10)
+        }
+        
+        .onReceive(NotificationCenter.default.publisher(for: .switchWorkspace)) { notification in
+            if let slot = notification.object as? Int {
+                viewModel.switchWorkspace(to: slot)
+            }
+        }
     }
 
     private func adaptivePosition(for card: Card, in canvasSize: CGSize) -> CGPoint {
@@ -232,9 +284,27 @@ struct ContentView: View {
             y: min(max(BoardViewModel.topCreationLimit, point.y), canvasSize.height - BoardViewModel.canvasSidePadding)
         )
     }
+    
+    private func startWorkspaceRename() {
+        workspaceNameDraft = viewModel.activeWorkspace?.name ?? "Space \(viewModel.activeSlot)"
+        isEditingWorkspaceName = true
+        DispatchQueue.main.async {
+            isWorkspaceNameFieldFocused = true
+        }
+    }
+
+    private func commitWorkspaceRename() {
+        guard isEditingWorkspaceName else { return }
+        viewModel.renameActiveWorkspace(to: workspaceNameDraft)
+        isEditingWorkspaceName = false
+    }
+
+    private func cancelWorkspaceRename() {
+        isEditingWorkspaceName = false
+    }
 }
 
 #Preview {
-    ContentView()
+    ContentView(viewModel: BoardViewModel())
         .frame(width: 900, height: 600)
 }
