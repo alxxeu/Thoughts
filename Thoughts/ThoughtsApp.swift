@@ -27,6 +27,9 @@ struct ThoughtsApp: App {
                 }
             }
         }
+        Settings {
+            SettingsView()
+        }
     }
 }
 

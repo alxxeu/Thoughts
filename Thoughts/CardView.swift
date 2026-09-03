@@ -39,8 +39,12 @@ struct CardView: View {
                 .scrollClipDisabled()
                 .zIndex(0)
                 .onChange(of: card.text) {
-                    viewModel.scheduleDebouncedSave()
-                }
+                        viewModel.scheduleDebouncedSave()
+                        detectAndEnableLinks() // Сканируем текст при каждом изменении
+                    }
+                .onAppear {
+                        detectAndEnableLinks() // Сканируем текст при загрузке карточки
+                    }
                 .onChange(of: isTextFocused) { _, isFocused in
                     if isFocused {
                         viewModel.bringToFront(card)
@@ -309,5 +313,30 @@ struct CardView: View {
                 dragResizeSize = nil
                 viewModel.saveImmediately()
             }
+    }
+    
+    private func detectAndEnableLinks() {
+        DispatchQueue.main.async {
+            guard let window = NSApp.keyWindow else { return }
+            
+            func scanViews(_ subviews: [NSView]) {
+                for view in subviews {
+                    if let textView = view as? NSTextView {
+                        // 1. Отключаем форматированный текст и графику при вставке
+                        textView.isRichText = false
+                        textView.importsGraphics = false
+                        
+                        // 2. Включаем автоматическое распознавание URL
+                        textView.isAutomaticLinkDetectionEnabled = true
+                        // 3. Подсвечиваем существующие ссылки в тексте
+                        textView.checkTextInDocument(nil)
+                    } else {
+                        scanViews(view.subviews)
+                    }
+                }
+            }
+            
+            scanViews(window.contentView?.subviews ?? [])
+        }
     }
 }

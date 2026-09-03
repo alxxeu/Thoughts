@@ -26,7 +26,7 @@ struct CornerBracket: Shape {
                 to: CGPoint(x: rect.maxX, y: rect.minY + r),
                 control: CGPoint(x: rect.maxX, y: rect.minY)
             )
-            path.addLine(to: CGPoint(x: rect.maxX + length, y: rect.minY))
+            path.addLine(to: CGPoint(x: rect.maxX, y: rect.minY + length))
 
         case .bottomLeft:
             path.move(to: CGPoint(x: rect.minX, y: rect.maxY - length))
@@ -44,7 +44,7 @@ struct CornerBracket: Shape {
                 to: CGPoint(x: rect.maxX, y: rect.maxY - r),
                 control: CGPoint(x: rect.maxX, y: rect.maxY)
             )
-            path.addLine(to: CGPoint(x: rect.maxX + length, y: rect.maxY))
+            path.addLine(to: CGPoint(x: rect.maxX, y: rect.maxY - length))
         }
 
         return path
