@@ -9,7 +9,7 @@ struct TagPopoverView: View {
     private let allColors: [CardTagColor] = [.red, .orange, .yellow, .green, .blue, .indigo, .purple]
     
     var body: some View {
-        VStack(spacing: 10) {
+        VStack(spacing: 6) {
             // 1. Сетка цветов
             LazyVGrid(columns: columns, spacing: 8) {
                 ForEach(allColors.prefix(3)) { tagColor in
@@ -35,52 +35,38 @@ struct TagPopoverView: View {
             Divider()
                 .opacity(0.3)
             
-            // Кнопки режимов приватности
-            HStack(alignment: .bottom, spacing: 8) {
-                            // SPOILER
-                            Button {
-                                withAnimation(.easeInOut(duration: 0.25)) {
-                                    privacyMode = (privacyMode == .spoiler) ? .none : .spoiler
-                                }
-                            } label: {
-                                VStack(spacing: 6) {
-                                    Image(systemName: privacyMode == .spoiler ? "sparkles.square.filled.on.square" : "sparkles.square.filled.on.square")
-                                        .font(.system(size: 18))
-                                        .foregroundStyle(privacyMode == .spoiler ? Color.white : Color.white.opacity(0.45))
-                                    
-                                    Text("Spoiler")
-                                        .font(.system(size: 9, weight: privacyMode == .spoiler ? .semibold : .regular))
-                                        .foregroundStyle(privacyMode == .spoiler ? Color.white : Color.white.opacity(0.55))
-                                }
-                                .frame(width: 40)
-                                .contentShape(Rectangle())
-                            }
-                            .buttonStyle(.plain)
-                            
-                            // LOCK
-                            Button {
-                                withAnimation(.easeInOut(duration: 0.25)) {
-                                    privacyMode = (privacyMode == .lock) ? .none : .lock
-                                }
-                            } label: {
-                                VStack(spacing: 6) {
-                                    Image(systemName: privacyMode == .lock ? "lock.square.fill" : "lock.square.fill")
-                                        .font(.system(size: 20))
-                                        .foregroundStyle(privacyMode == .lock ? Color.white : Color.white.opacity(0.45))
-                                    
-                                    Text("Lock")
-                                        .font(.system(size: 9, weight: privacyMode == .lock ? .semibold : .regular))
-                                        .foregroundStyle(privacyMode == .lock ? Color.white : Color.white.opacity(0.55))
-                                }
-                                .frame(width: 40)
-                                .contentShape(Rectangle())
-                            }
-                            .buttonStyle(.plain)
-                        }
+            // 2. Кнопки режимов приватности
+            HStack(alignment: .bottom, spacing: 2) {
+                // SPOILER
+                PrivacyActionButton(
+                    title: "Spoiler",
+                    iconName: "sparkles.square.filled.on.square",
+                    iconSize: 18,
+                    isSelected: privacyMode == .spoiler
+                ) {
+                    withAnimation(.easeInOut(duration: 0.25)) {
+                        privacyMode = (privacyMode == .spoiler) ? .none : .spoiler
                     }
-                    .padding(14)
+                    onSelect()
+                }
+                
+                // LOCK
+                PrivacyActionButton(
+                    title: "Lock",
+                    iconName: "lock.square.fill",
+                    iconSize: 20,
+                    isSelected: privacyMode == .lock
+                ) {
+                    withAnimation(.easeInOut(duration: 0.25)) {
+                        privacyMode = (privacyMode == .lock) ? .none : .lock
+                    }
+                    onSelect()
                 }
             }
+        }
+        .padding(10)
+    }
+}
 
 private struct TagCircleButton: View {
     let tagColor: CardTagColor?
@@ -128,6 +114,7 @@ private struct TagCircleButton: View {
 private struct PrivacyActionButton: View {
     let title: String
     let iconName: String
+    let iconSize: CGFloat
     let isSelected: Bool
     let action: () -> Void
     
@@ -137,22 +124,27 @@ private struct PrivacyActionButton: View {
         Button(action: action) {
             VStack(spacing: 4) {
                 Image(systemName: iconName)
-                    .font(.system(size: 20, weight: .regular))
-                    .foregroundStyle(isSelected ? .white : .white.opacity(0.5))
+                    .font(.system(size: iconSize))
+                    .frame(height: 20)
+                    .foregroundStyle(isSelected ? .white : (isHovered ? .white.opacity(0.85) : .white.opacity(0.45)))
                 
                 Text(title)
-                    .font(.system(size: 11, weight: .medium))
-                    .foregroundStyle(isSelected ? .white : .white.opacity(0.6))
+                    .font(.system(size: 9, weight: isSelected ? .semibold : .regular))
+                    .foregroundStyle(isSelected ? .white : (isHovered ? .white.opacity(0.85) : .white.opacity(0.55)))
             }
-            .frame(width: 48, height: 44)
+            .padding(.vertical, 5) // Внутренние отступы, чтобы иконка не упиралась в края
+            .frame(width: 46, height: 50) // Увеличена высота кнопки (было 42)
             .background(
                 RoundedRectangle(cornerRadius: 8)
                     .fill(isSelected ? Color.white.opacity(0.15) : (isHovered ? Color.white.opacity(0.08) : Color.clear))
             )
+            .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
         .onHover { inside in
-            isHovered = inside
+            withAnimation(.easeInOut(duration: 0.15)) {
+                isHovered = inside
+            }
             if inside { NSCursor.pointingHand.set() } else { NSCursor.arrow.set() }
         }
     }

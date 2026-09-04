@@ -19,7 +19,7 @@ struct CardView: View {
     @State private var isRevealed = false
     @State private var relockTask: Task<Void, Never>? = nil // Таймер автоблокировки
     
-    @FocusState private var isTextFocused: Bool
+    @State private var isTextFocused: Bool = false
     
     private var pad: CGFloat { BoardViewModel.canvasSidePadding }
     private var topLimit: CGFloat { BoardViewModel.topCreationLimit }
@@ -35,63 +35,42 @@ struct CardView: View {
                 .glassEffect(in: .rect(cornerRadius: 16.0))
             
             // ТЕКСТОВЫЙ РЕДАКТОР
-            TextEditor(text: $card.text)
-                .font(.system(size: 15))
-                .lineSpacing(4)
-                .scrollContentBackground(.hidden)
-                .background(Color.clear)
-                .focused($isTextFocused)
-                .scrollIndicators(.hidden)
-                .padding(20)
-                .scrollClipDisabled()
-                .zIndex(0)
-                .onChange(of: card.text) {
+            CardTextView(
+                text: $card.text,
+                isFocused: $isTextFocused,
+                cardSize: CGSize(
+                    width: dragResizeSize?.width ?? card.size.width,
+                    height: dragResizeSize?.height ?? card.size.height
+                ),
+                onTextChange: {
                     viewModel.scheduleDebouncedSave()
-                    detectAndEnableLinks()
-                }
-                .onAppear {
-                    detectAndEnableLinks()
-                }
-                .onChange(of: isTextFocused) { _, isFocused in
-                    if isFocused {
+                },
+                onFocusChange: { focused in
+                    if focused {
                         cancelRelock()
                         viewModel.bringToFront(card)
-                        NotificationCenter.default.post(name: NSNotification.Name("ClearTextSelection"), object: nil)
                     } else {
-                        NSApp.keyWindow?.makeFirstResponder(nil)
                         if isRevealed {
                             scheduleRelock()
                         }
                     }
                 }
-                .mask(alignment: .top) {
-                    VStack(spacing: 0) {
-                        LinearGradient(colors: [.clear, .black], startPoint: .top, endPoint: .bottom)
-                            .frame(height: 15)
-                        Color.black
-                        LinearGradient(colors: [.black, .clear], startPoint: .top, endPoint: .bottom)
-                            .frame(height: 15)
-                    }
+            )
+            .zIndex(0)
+            .mask(alignment: .top) {
+                VStack(spacing: 0) {
+                    LinearGradient(colors: [.clear, .black], startPoint: .top, endPoint: .bottom)
+                        .frame(height: 15)
+                    Color.black
+                    LinearGradient(colors: [.black, .clear], startPoint: .top, endPoint: .bottom)
+                        .frame(height: 15)
                 }
-                .onReceive(NotificationCenter.default.publisher(for: NSNotification.Name("FocusNewCard"))) { notification in
-                    if let targetID = notification.object as? UUID, targetID == card.id {
-                        isTextFocused = true
-                    }
+            }
+            .onReceive(NotificationCenter.default.publisher(for: NSNotification.Name("FocusNewCard"))) { notification in
+                if let targetID = notification.object as? UUID, targetID == card.id {
+                    isTextFocused = true
                 }
-                .onReceive(NotificationCenter.default.publisher(for: NSNotification.Name("ClearTextSelection"))) { _ in
-                    if let window = NSApp.keyWindow {
-                        func clearSelectionInViews(subviews: [NSView]) {
-                            for view in subviews {
-                                if let textView = view as? NSTextView {
-                                    textView.setSelectedRange(NSRange(location: 0, length: 0))
-                                } else {
-                                    clearSelectionInViews(subviews: view.subviews)
-                                }
-                            }
-                        }
-                        clearSelectionInViews(subviews: window.contentView?.subviews ?? [])
-                    }
-                }
+            }
             
             // ОВЕРЛЕЙ СПОЙЛЕРА И ЛОКА:
             if isPrivacyLocked {
@@ -387,27 +366,6 @@ struct CardView: View {
                 dragResizeSize = nil
                 viewModel.saveImmediately()
             }
-    }
-    
-    private func detectAndEnableLinks() {
-        DispatchQueue.main.async {
-            guard let window = NSApp.keyWindow else { return }
-            
-            func scanViews(_ subviews: [NSView]) {
-                for view in subviews {
-                    if let textView = view as? NSTextView {
-                        textView.isRichText = false
-                        textView.importsGraphics = false
-                        textView.isAutomaticLinkDetectionEnabled = true
-                        textView.checkTextInDocument(nil)
-                    } else {
-                        scanViews(view.subviews)
-                    }
-                }
-            }
-            
-            scanViews(window.contentView?.subviews ?? [])
-        }
     }
     
     private func scheduleRelock() {
