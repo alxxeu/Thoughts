@@ -1,4 +1,5 @@
 import SwiftUI
+import UniformTypeIdentifiers
 
 struct CardView: View {
     @Bindable var card: Card
@@ -20,7 +21,8 @@ struct CardView: View {
     @State private var relockTask: Task<Void, Never>? = nil // Таймер автоблокировки
     
     @State private var isTextFocused: Bool = false
-    
+    @FocusState private var isImageFocused: Bool
+
     private var pad: CGFloat { BoardViewModel.canvasSidePadding }
     private var topLimit: CGFloat { BoardViewModel.topCreationLimit }
     private var isPrivacyLocked: Bool {
@@ -34,44 +36,54 @@ struct CardView: View {
                 .fill(Color.clear)
                 .glassEffect(in: .rect(cornerRadius: 16.0))
             
-            // ТЕКСТОВЫЙ РЕДАКТОР
-            CardTextView(
-                text: $card.text,
-                isFocused: $isTextFocused,
-                cardSize: CGSize(
-                    width: dragResizeSize?.width ?? card.size.width,
-                    height: dragResizeSize?.height ?? card.size.height
-                ),
-                onTextChange: {
-                    viewModel.scheduleDebouncedSave()
-                },
-                onFocusChange: { focused in
-                    if focused {
-                        cancelRelock()
-                        viewModel.bringToFront(card)
-                    } else {
-                        if isRevealed {
-                            scheduleRelock()
+            // КОНТЕНТ КАРТОЧКИ: ТЕКСТ ИЛИ ИЗОБРАЖЕНИЕ (взаимоисключающие —
+            // карточка становится изображением, только если картинка вставлена
+            // Cmd+V в ещё пустую текстовую карточку, см. handleImagePaste).
+            if card.isImageCard {
+                imageContent
+                    .zIndex(0)
+            } else {
+                CardTextView(
+                    text: $card.text,
+                    isFocused: $isTextFocused,
+                    cardSize: CGSize(
+                        width: dragResizeSize?.width ?? card.size.width,
+                        height: dragResizeSize?.height ?? card.size.height
+                    ),
+                    onTextChange: {
+                        viewModel.scheduleDebouncedSave()
+                    },
+                    onFocusChange: { focused in
+                        if focused {
+                            cancelRelock()
+                            viewModel.bringToFront(card)
+                        } else {
+                            if isRevealed {
+                                scheduleRelock()
+                            }
                         }
+                    },
+                    onImagePaste: { data, uti in
+                        handleImagePaste(data: data, uti: uti)
+                    }
+                )
+                .zIndex(0)
+                .mask(alignment: .top) {
+                    VStack(spacing: 0) {
+                        LinearGradient(colors: [.clear, .black], startPoint: .top, endPoint: .bottom)
+                            .frame(height: 15)
+                        Color.black
+                        LinearGradient(colors: [.black, .clear], startPoint: .top, endPoint: .bottom)
+                            .frame(height: 15)
                     }
                 }
-            )
-            .zIndex(0)
-            .mask(alignment: .top) {
-                VStack(spacing: 0) {
-                    LinearGradient(colors: [.clear, .black], startPoint: .top, endPoint: .bottom)
-                        .frame(height: 15)
-                    Color.black
-                    LinearGradient(colors: [.black, .clear], startPoint: .top, endPoint: .bottom)
-                        .frame(height: 15)
+                .onReceive(NotificationCenter.default.publisher(for: NSNotification.Name("FocusNewCard"))) { notification in
+                    if let targetID = notification.object as? UUID, targetID == card.id {
+                        isTextFocused = true
+                    }
                 }
             }
-            .onReceive(NotificationCenter.default.publisher(for: NSNotification.Name("FocusNewCard"))) { notification in
-                if let targetID = notification.object as? UUID, targetID == card.id {
-                    isTextFocused = true
-                }
-            }
-            
+
             // ОВЕРЛЕЙ СПОЙЛЕРА И ЛОКА:
             if isPrivacyLocked {
                 StarFieldOverlayView(mode: card.privacyMode) {
@@ -368,6 +380,58 @@ struct CardView: View {
             }
     }
     
+    /// Содержимое карточки-изображения: системный `Image` с `.fit` — он сам
+    /// всегда корректно вписывает картинку в доступное место, без ручного
+    /// пересчёта размеров. `card.imageData` при этом никогда не изменяется,
+    /// поэтому при копировании обратно уходит исходное изображение как есть.
+    @ViewBuilder
+    private var imageContent: some View {
+        if let data = card.imageData, let nsImage = NSImage(data: data) {
+            Image(nsImage: nsImage)
+                .resizable()
+                .aspectRatio(contentMode: .fit)
+                .padding(12)
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+                .contentShape(Rectangle())
+                .focusable()
+                .focused($isImageFocused)
+                .onTapGesture {
+                    isImageFocused = true
+                    viewModel.bringToFront(card)
+                }
+                .onCopyCommand(perform: copyImageProviders)
+        } else {
+            Color.clear
+        }
+    }
+
+    /// Отдаёт исходные байты картинки в системный item provider для копирования —
+    /// без перекодирования, поэтому разрешение всегда остаётся оригинальным.
+    private func copyImageProviders() -> [NSItemProvider] {
+        guard let data = card.imageData else { return [] }
+        let typeIdentifier = card.imageUTType ?? UTType.png.identifier
+        let provider = NSItemProvider()
+        provider.registerDataRepresentation(forTypeIdentifier: typeIdentifier, visibility: .all) { completion in
+            completion(data, nil)
+            return nil
+        }
+        return [provider]
+    }
+
+    /// Ловит Cmd+V с изображением, перехваченным в CardNSTextView.paste.
+    /// Карточка превращается в карточку-изображение, только если в ней ещё
+    /// нет ни текста, ни картинки — так тип карточки определяется неявно,
+    /// без отдельного UI-переключателя.
+    private func handleImagePaste(data: Data, uti: String) {
+        guard !card.isImageCard else { return }
+        guard card.text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return }
+        card.imageData = data
+        card.imageUTType = uti
+        card.text = ""
+        isTextFocused = false
+        viewModel.saveImmediately()
+    }
+
     private func scheduleRelock() {
         relockTask?.cancel()
         relockTask = Task {

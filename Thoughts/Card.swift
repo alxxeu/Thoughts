@@ -30,8 +30,16 @@ final class Card: Identifiable, Codable {
     var position: CGPoint
     var size: CGSize
     var text: String = ""
+    /// Исходные байты вставленного изображения. Если заполнено — карточка
+    /// является карточкой-изображением, текстовый редактор в ней не показывается.
+    var imageData: Data? = nil
+    /// UTI формата imageData (например "public.png") — нужен, чтобы при
+    /// повторном копировании отдать системе изображение в исходном формате.
+    var imageUTType: String? = nil
     var tagColor: CardTagColor? = nil
     var privacyMode: CardPrivacyMode = .none
+
+    var isImageCard: Bool { imageData != nil }
 
     init(id: UUID = .init(), position: CGPoint, size: CGSize, text: String = "", tagColor: CardTagColor? = nil) {
         self.id = id
@@ -46,7 +54,7 @@ final class Card: Identifiable, Codable {
     }
 
     enum CodingKeys: String, CodingKey {
-        case id, position, size, text, tagColor, privacyMode
+        case id, position, size, text, imageData, imageUTType, tagColor, privacyMode
     }
 
     required init(from decoder: Decoder) throws {
@@ -56,6 +64,8 @@ final class Card: Identifiable, Codable {
         size = try container.decode(CGSize.self, forKey: .size)
         tagColor = try container.decodeIfPresent(CardTagColor.self, forKey: .tagColor)
         privacyMode = try container.decodeIfPresent(CardPrivacyMode.self, forKey: .privacyMode) ?? .none
+        imageData = try container.decodeIfPresent(Data.self, forKey: .imageData)
+        imageUTType = try container.decodeIfPresent(String.self, forKey: .imageUTType)
 
         // Устойчивое чтение обоих форматов: старые файлы на диске могли
         // сохранить text как AttributedString (в бытность RTF-эксперимента),
@@ -75,6 +85,8 @@ final class Card: Identifiable, Codable {
         try container.encode(position, forKey: .position)
         try container.encode(size, forKey: .size)
         try container.encode(text, forKey: .text)
+        try container.encodeIfPresent(imageData, forKey: .imageData)
+        try container.encodeIfPresent(imageUTType, forKey: .imageUTType)
         try container.encodeIfPresent(tagColor, forKey: .tagColor)
         try container.encode(privacyMode, forKey: .privacyMode)
     }

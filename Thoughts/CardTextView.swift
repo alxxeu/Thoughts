@@ -1,5 +1,6 @@
 import SwiftUI
 import AppKit
+import UniformTypeIdentifiers
 
 // MARK: - Divider Attachment
 
@@ -44,15 +45,42 @@ final class DividerAttachment: NSTextAttachment {
 // MARK: - Custom NSTextView (plain-text paste)
 
 private final class CardNSTextView: NSTextView {
+    /// Устанавливается сразу после создания в `makeNSView` — через него
+    /// картинка из буфера обмена уходит наружу в SwiftUI (превращение
+    /// карточки в карточку-изображение), см. `Coordinator.handleImagePaste`.
+    weak var coordinator: CardTextView.Coordinator?
+
     // Требование 4: вставка всегда plain text в стиле карточки.
     // Работает только с диапазоном вставки — существующие NSTextAttachment
     // (наши разделители) в остальном тексте не затрагиваются.
+    //
+    // Картинка в буфере перехватывается раньше проверки на plain text:
+    // если её не отловить здесь, она бы ушла в `super.paste(sender)` и,
+    // поскольку isRichText/importsGraphics включены (нужны для разделителей),
+    // вставилась бы как NSTextAttachment прямо в текст — а картинка должна
+    // становиться отдельной карточкой-изображением, а не частью текста.
     override func paste(_ sender: Any?) {
-        guard let plain = NSPasteboard.general.string(forType: .string) else {
+        let pasteboard = NSPasteboard.general
+        if let (data, uti) = Self.imageData(from: pasteboard) {
+            coordinator?.handleImagePaste(data: data, uti: uti)
+            return
+        }
+        guard let plain = pasteboard.string(forType: .string) else {
             super.paste(sender)
             return
         }
         insertText(plain, replacementRange: selectedRange())
+    }
+
+    private static func imageData(from pasteboard: NSPasteboard) -> (Data, String)? {
+        guard let types = pasteboard.types else { return nil }
+        for type in types {
+            guard let uttype = UTType(type.rawValue), uttype.conforms(to: .image) else { continue }
+            if let data = pasteboard.data(forType: type) {
+                return (data, type.rawValue)
+            }
+        }
+        return nil
     }
 }
 
@@ -64,6 +92,8 @@ struct CardTextView: NSViewRepresentable {
     var cardSize: CGSize
     var onTextChange: () -> Void
     var onFocusChange: (Bool) -> Void
+    /// Вызывается, когда в Cmd+V оказалась картинка (см. CardNSTextView.paste).
+    var onImagePaste: (Data, String) -> Void
 
     private static let dividerPlaceholder: Character = "\u{FFFC}"
 
@@ -76,10 +106,14 @@ struct CardTextView: NSViewRepresentable {
 
         let textView = CardNSTextView(frame: .zero)
         textView.delegate = context.coordinator
+        textView.coordinator = context.coordinator
         textView.drawsBackground = false
         textView.backgroundColor = .clear
         textView.isRichText = true
-        textView.importsGraphics = true
+        // Картинки мы ловим и обрабатываем сами в CardNSTextView.paste (см. выше),
+        // поэтому встроенный импорт графики AppKit тут не нужен — заодно это
+        // не даёт картинке проскочить в текст через drag-and-drop.
+        textView.importsGraphics = false
         textView.allowsUndo = true
         textView.isAutomaticLinkDetectionEnabled = true
         textView.isAutomaticQuoteSubstitutionEnabled = false
@@ -194,6 +228,17 @@ struct CardTextView: NSViewRepresentable {
 
         init(_ parent: CardTextView) {
             self.parent = parent
+        }
+
+        /// Вызывается из `CardNSTextView.paste` при обнаружении картинки в буфере.
+        /// `parent` берём в момент вызова — это последний известный SwiftUI-снимок
+        /// closure-параметров, чего достаточно, так как onImagePaste всё равно
+        /// замыкает на постоянные ссылочные объекты (card/viewModel), а не на
+        /// значения, устаревающие между рендерами.
+        func handleImagePaste(data: Data, uti: String) {
+            DispatchQueue.main.async { [weak self] in
+                self?.parent.onImagePaste(data, uti)
+            }
         }
 
         func textDidChange(_ notification: Notification) {
