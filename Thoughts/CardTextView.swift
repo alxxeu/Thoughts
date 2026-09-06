@@ -83,6 +83,88 @@ private final class CardNSTextView: NSTextView {
             path.stroke()
         }
     }
+
+    /// Единая точка, через которую AppKit проводит ЛЮБОЕ изменение
+    /// выделения — мышью (клик, drag), клавиатурой (стрелки, Shift+стрелки,
+    /// Cmd+←), программно. В отличие от doCommandBy (который ловит только
+    /// именованные клавиатурные команды и не видит мышь вообще), это
+    /// гарантированно перехватывает абсолютно все пути — поэтому именно здесь
+    /// не даём выделению/курсору заходить ДО конца маркера списка.
+    override func setSelectedRange(_ charRange: NSRange, affinity: NSSelectionAffinity, stillSelecting stillSelectingFlag: Bool) {
+        super.setSelectedRange(Self.clampSelectionRange(charRange, in: self), affinity: affinity, stillSelecting: stillSelectingFlag)
+    }
+
+    private static func clampSelectionRange(_ range: NSRange, in textView: NSTextView) -> NSRange {
+        guard let textStorage = textView.textStorage, textStorage.length > 0 else { return range }
+        let ns = textStorage.string as NSString
+
+        func clamp(_ location: Int) -> Int {
+            guard location >= 0, location <= ns.length, ns.length > 0 else { return location }
+            let probeLocation = min(location, ns.length - 1)
+            var lineRange = ns.paragraphRange(for: NSRange(location: probeLocation, length: 0))
+            if lineRange.length > 0,
+               ns.substring(with: NSRange(location: lineRange.location + lineRange.length - 1, length: 1)) == "\n" {
+                lineRange.length -= 1
+            }
+            guard let prefix = detectListPrefix(in: ns, lineRange: lineRange) else { return location }
+            let contentStart = lineRange.location + prefix.length
+            // >= (не >): позиция РОВНО на первом символе маркера тоже должна
+            // поджиматься к концу маркера — иначе Cmd+←/Home всё ещё могли
+            // поставить курсор перед самим значком.
+            guard location >= lineRange.location, location < contentStart else { return location }
+            return contentStart
+        }
+
+        let start = clamp(range.location)
+        let end = clamp(range.location + range.length)
+        let newStart = min(start, end)
+        let newEnd = max(start, end)
+        return NSRange(location: newStart, length: newEnd - newStart)
+    }
+
+    /// Маркер списка, обнаруженный в начале строки.
+    enum ListPrefix {
+        case bullet
+        case numbered(Int)
+
+        var length: Int {
+            switch self {
+            case .bullet: return 2 // "• "
+            case .numbered(let n): return "\(n). ".count
+            }
+        }
+
+        /// Аттрибутированная строка нового маркера продолжения списка
+        /// (без ведущего "\n" — его добавляет вызывающий код).
+        func attributedMarker(baseAttributes: [NSAttributedString.Key: Any]) -> NSAttributedString {
+            switch self {
+            case .bullet:
+                return NSAttributedString(string: "• ", attributes: baseAttributes)
+            case .numbered(let n):
+                return NSAttributedString(string: "\(n + 1). ", attributes: baseAttributes)
+            }
+        }
+    }
+
+    /// "• " -> маркированный список, "1. "/"12. " и т.п. -> нумерованный.
+    /// Отдельной "активации" для чисел не нужно — "1. " уже выглядит как
+    /// корректный маркер, распознаётся здесь же в момент нажатия Enter.
+    static func detectListPrefix(in ns: NSString, lineRange: NSRange) -> ListPrefix? {
+        guard lineRange.length >= 2 else { return nil }
+        let line = ns.substring(with: lineRange)
+
+        if line.hasPrefix("• ") {
+            return .bullet
+        }
+
+        let digits = line.prefix { $0.isNumber }
+        guard !digits.isEmpty, let number = Int(digits) else { return nil }
+
+        let rest = line[line.index(line.startIndex, offsetBy: digits.count)...]
+        guard rest.hasPrefix(". ") else { return nil }
+
+        return .numbered(number)
+    }
 }
 
 // MARK: - CardTextView
@@ -238,11 +320,157 @@ struct CardTextView: NSViewRepresentable {
             self.parent = parent
         }
 
+        /// Стандартный хук NSTextViewDelegate для перехвата команд редактирования
+        /// (Enter, Tab и т.п.) до их выполнения по умолчанию — то, как в Cocoa
+        /// принято реализовывать "умный" Enter для списков, а не постфактум
+        /// разбирать текст в textDidChange.
+        func textView(_ textView: NSTextView, doCommandBy commandSelector: Selector) -> Bool {
+            if commandSelector == #selector(NSResponder.insertNewline(_:)) {
+                return continueListIfNeeded(in: textView)
+            }
+            if commandSelector == #selector(NSResponder.deleteBackward(_:)) {
+                return removeMarkerOnBackspaceIfNeeded(in: textView)
+            }
+            if commandSelector == #selector(NSResponder.moveLeft(_:)) {
+                return jumpOverMarkerOnMoveLeftIfNeeded(in: textView)
+            }
+            return false
+        }
+
+        /// Обычная ← ровно на границе маркера (курсор уже стоит сразу после
+        /// него) перепрыгивает в конец предыдущей строки вместо захода
+        /// "внутрь" маркера. `moveToBeginningOfLine:` (Cmd+←) и вообще любое
+        /// выделение отдельно не перехватываются здесь — их без исключений
+        /// покрывает CardNSTextView.setSelectedRange(_:affinity:stillSelecting:),
+        /// куда в итоге стекается любое изменение selection независимо от
+        /// источника (клавиатура, мышь, drag) — просто не даёт встать раньше
+        /// конца маркера, без специального "прыжка".
+        private func jumpOverMarkerOnMoveLeftIfNeeded(in textView: NSTextView) -> Bool {
+            let cursor = textView.selectedRange()
+            guard cursor.length == 0 else { return false }
+
+            let ns = textView.string as NSString
+            var lineRange = ns.paragraphRange(for: NSRange(location: cursor.location, length: 0))
+            if lineRange.length > 0,
+               ns.substring(with: NSRange(location: lineRange.location + lineRange.length - 1, length: 1)) == "\n" {
+                lineRange.length -= 1
+            }
+
+            guard let prefix = CardNSTextView.detectListPrefix(in: ns, lineRange: lineRange) else { return false }
+            let contentStart = lineRange.location + prefix.length
+            guard cursor.location == contentStart else { return false }
+
+            let previousLineEnd = max(0, lineRange.location - 1)
+            textView.setSelectedRange(NSRange(location: previousLineEnd, length: 0))
+            return true
+        }
+
+        /// Backspace сразу после маркера убирает маркер целиком одним
+        /// нажатием — симметрично с Enter на пустом пункте, и не даёт
+        /// курсору "провалиться" внутрь маркера (между значком и пробелом),
+        /// как это было бы при обычном посимвольном удалении. Если после
+        /// маркера ещё есть текст — строка становится обычной (маркер снят),
+        /// как в стандартных списках Notes/Word; если пусто — исчезает вся
+        /// строка целиком.
+        private func removeMarkerOnBackspaceIfNeeded(in textView: NSTextView) -> Bool {
+            let cursor = textView.selectedRange()
+            guard cursor.length == 0, cursor.location > 0 else { return false }
+
+            let ns = textView.string as NSString
+            var lineRange = ns.paragraphRange(for: NSRange(location: cursor.location, length: 0))
+            if lineRange.length > 0,
+               ns.substring(with: NSRange(location: lineRange.location + lineRange.length - 1, length: 1)) == "\n" {
+                lineRange.length -= 1
+            }
+
+            guard let prefix = CardNSTextView.detectListPrefix(in: ns, lineRange: lineRange) else { return false }
+            // Курсор должен стоять ровно сразу после маркера — иначе это
+            // обычный backspace где-то в тексте пункта, не наша забота.
+            guard cursor.location == lineRange.location + prefix.length else { return false }
+
+            textView.textStorage?.beginEditing()
+            textView.textStorage?.replaceCharacters(in: NSRange(location: lineRange.location, length: prefix.length), with: "")
+            textView.textStorage?.endEditing()
+
+            let affectedRange = NSRange(location: lineRange.location, length: max(0, (textView.string as NSString).length - lineRange.location))
+            textView.layoutManager?.invalidateLayout(forCharacterRange: affectedRange, actualCharacterRange: nil)
+            textView.layoutManager?.ensureLayout(forCharacterRange: affectedRange)
+            textView.needsDisplay = true
+
+            textView.setSelectedRange(NSRange(location: lineRange.location, length: 0))
+            textView.didChangeText()
+
+            return true
+        }
+
+        /// Требование: Enter на непустом пункте списка ("• текст" или "N. текст")
+        /// продолжает список новым маркером на следующей строке; Enter на
+        /// пустом пункте ("• "/"N. " без текста) убирает маркер вместо
+        /// переноса строки — как в стандартных списках Notes/TextEdit.
+        private func continueListIfNeeded(in textView: NSTextView) -> Bool {
+            let cursor = textView.selectedRange()
+            guard cursor.length == 0 else { return false }
+
+            let ns = textView.string as NSString
+            var lineRange = ns.paragraphRange(for: NSRange(location: cursor.location, length: 0))
+            if lineRange.length > 0,
+               ns.substring(with: NSRange(location: lineRange.location + lineRange.length - 1, length: 1)) == "\n" {
+                lineRange.length -= 1
+            }
+
+            guard let prefix = CardNSTextView.detectListPrefix(in: ns, lineRange: lineRange) else { return false }
+
+            let contentRange = NSRange(location: lineRange.location + prefix.length, length: lineRange.length - prefix.length)
+            let hasContent = contentRange.length > 0
+                && !ns.substring(with: contentRange).trimmingCharacters(in: .whitespaces).isEmpty
+
+            let newCursorLocation: Int
+            textView.textStorage?.beginEditing()
+            if hasContent {
+                let base = CardTextView.baseAttributes()
+                let insertion = NSMutableAttributedString(string: "\n", attributes: base)
+                insertion.append(prefix.attributedMarker(baseAttributes: base))
+                textView.textStorage?.replaceCharacters(in: cursor, with: insertion)
+                newCursorLocation = cursor.location + insertion.length
+            } else {
+                textView.textStorage?.replaceCharacters(in: lineRange, with: "")
+                newCursorLocation = lineRange.location
+            }
+            textView.textStorage?.endEditing()
+
+            // Без явной инвалидации TextKit мог рисовать по ещё не
+            // пересчитанному layout сразу после правки — маркер либо
+            // оставался "приклеенным" к предыдущей строке, либо для удаления
+            // пустого пункта требовалось нажать Enter дважды (первый раз
+            // просто ничего не перерисовывал).
+            let affectedRange = NSRange(location: lineRange.location, length: max(0, (textView.string as NSString).length - lineRange.location))
+            textView.layoutManager?.invalidateLayout(forCharacterRange: affectedRange, actualCharacterRange: nil)
+            textView.layoutManager?.ensureLayout(forCharacterRange: affectedRange)
+            textView.needsDisplay = true
+
+            // setSelectedRange — только ПОСЛЕ endEditing(): пока транзакция
+            // редактирования textStorage не закрыта, layout ещё не
+            // пересчитан, и попытка выставить selection в этот момент уводит
+            // NSTextView в зависшее состояние (переставали работать Enter,
+            // ввод, выделение, удаление — вплоть до потери фокуса).
+            textView.setSelectedRange(NSRange(location: newCursorLocation, length: 0))
+
+            // Прямая правка textStorage (replaceCharacters) не уведомляет
+            // делегата сама по себе — didChangeText() обязателен, иначе
+            // card.text не синхронизируется с этим изменением, и следующий
+            // ререндер (updateNSView увидит рассинхрон) затирает только что
+            // вставленную строку старым значением card.text.
+            textView.didChangeText()
+
+            return true
+        }
+
         func textDidChange(_ notification: Notification) {
             guard let textView = notification.object as? NSTextView else { return }
 
             applyTypingAttributes(to: textView)
             replaceDashLineWithDividerIfNeeded(in: textView)
+            replaceDashPrefixWithBulletIfNeeded(in: textView)
 
             parent.text = textView.string
             parent.onTextChange()
@@ -319,6 +547,38 @@ struct CardTextView: NSViewRepresentable {
             // разделителем — визуально линия и следующая строка сливались.
             let newLocation = min(paragraphRange.location + attachmentString.length + 1, (textView.string as NSString).length)
             textView.setSelectedRange(NSRange(location: newLocation, length: 0))
+            // См. комментарий в continueListIfNeeded — обязателен после
+            // прямой правки textStorage, иначе card.text не подхватит вставку.
+            textView.didChangeText()
+        }
+
+        // "- " в начале строки -> "• " (стандартный маркер списка).
+        private func replaceDashPrefixWithBulletIfNeeded(in textView: NSTextView) {
+            let selectedLocation = textView.selectedRange().location
+            guard selectedLocation > 0 else { return }
+
+            let ns = textView.string as NSString
+            guard selectedLocation <= ns.length,
+                  ns.substring(with: NSRange(location: selectedLocation - 1, length: 1)) == " "
+            else { return }
+
+            let paragraphRange = ns.paragraphRange(for: NSRange(location: selectedLocation, length: 0))
+            let prefixRange = NSRange(location: paragraphRange.location, length: selectedLocation - paragraphRange.location)
+            guard prefixRange.length == 2, ns.substring(with: prefixRange) == "- " else { return }
+
+            let bulletString = NSAttributedString(string: "•", attributes: CardTextView.baseAttributes())
+
+            textView.textStorage?.beginEditing()
+            textView.textStorage?.replaceCharacters(in: NSRange(location: prefixRange.location, length: 1), with: bulletString)
+            textView.textStorage?.endEditing()
+
+            // Замена того же размера (1 символ на 1 символ) — позиция курсора
+            // не сдвигается, но выставляем явно на случай, если TextKit
+            // сбросит selection при replaceCharacters.
+            textView.setSelectedRange(NSRange(location: selectedLocation, length: 0))
+            // См. комментарий в continueListIfNeeded — обязателен после
+            // прямой правки textStorage, иначе card.text не подхватит вставку.
+            textView.didChangeText()
         }
     }
 }
