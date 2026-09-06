@@ -29,7 +29,7 @@ final class Card: Identifiable, Codable {
     let id: UUID
     var position: CGPoint
     var size: CGSize
-    var text: AttributedString = AttributedString("")
+    var text: String = ""
     var tagColor: CardTagColor? = nil
     var privacyMode: CardPrivacyMode = .none
 
@@ -37,7 +37,7 @@ final class Card: Identifiable, Codable {
         self.id = id
         self.position = position
         self.size = size
-        self.text = AttributedString(text)
+        self.text = text
         self.tagColor = tagColor
     }
 
@@ -50,29 +50,32 @@ final class Card: Identifiable, Codable {
     }
 
     required init(from decoder: Decoder) throws {
-            let container = try decoder.container(keyedBy: CodingKeys.self)
-            id = try container.decode(UUID.self, forKey: .id)
-            position = try container.decode(CGPoint.self, forKey: .position)
-            size = try container.decode(CGSize.self, forKey: .size)
-            tagColor = try container.decodeIfPresent(CardTagColor.self, forKey: .tagColor)
-            privacyMode = try container.decodeIfPresent(CardPrivacyMode.self, forKey: .privacyMode) ?? .none
-            
-            if let decodedText = try? container.decode(AttributedString.self, forKey: .text) {
-                text = decodedText
-            } else if let flatString = try? container.decode(String.self, forKey: .text) {
-                text = AttributedString(flatString)
-            } else {
-                text = AttributedString("")
-            }
-        }
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        id = try container.decode(UUID.self, forKey: .id)
+        position = try container.decode(CGPoint.self, forKey: .position)
+        size = try container.decode(CGSize.self, forKey: .size)
+        tagColor = try container.decodeIfPresent(CardTagColor.self, forKey: .tagColor)
+        privacyMode = try container.decodeIfPresent(CardPrivacyMode.self, forKey: .privacyMode) ?? .none
 
-        func encode(to encoder: Encoder) throws {
-            var container = encoder.container(keyedBy: CodingKeys.self)
-            try container.encode(id, forKey: .id)
-            try container.encode(position, forKey: .position)
-            try container.encode(size, forKey: .size)
-            try container.encode(text, forKey: .text)
-            try container.encodeIfPresent(tagColor, forKey: .tagColor)
-            try container.encode(privacyMode, forKey: .privacyMode)
+        // Устойчивое чтение обоих форматов: старые файлы на диске могли
+        // сохранить text как AttributedString (в бытность RTF-эксперимента),
+        // новые пишут его как обычную String.
+        if let flatString = try? container.decode(String.self, forKey: .text) {
+            text = flatString
+        } else if let decodedAttributed = try? container.decode(AttributedString.self, forKey: .text) {
+            text = String(decodedAttributed.characters)
+        } else {
+            text = ""
         }
     }
+
+    func encode(to encoder: Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        try container.encode(id, forKey: .id)
+        try container.encode(position, forKey: .position)
+        try container.encode(size, forKey: .size)
+        try container.encode(text, forKey: .text)
+        try container.encodeIfPresent(tagColor, forKey: .tagColor)
+        try container.encode(privacyMode, forKey: .privacyMode)
+    }
+}
