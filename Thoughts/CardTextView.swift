@@ -3,47 +3,42 @@ import AppKit
 
 // MARK: - Divider Attachment
 
-/// Векторный разделитель. Ширина не фиксируется при создании — она
-/// пересчитывается NSTextView на каждый layout pass через attachmentBounds(for:...),
-/// беря актуальную ширину textContainer, поэтому линия всегда растягивается
-/// на всю ширину карточки, включая изменение размера в реальном времени.
+/// Маркер разделителя в тексте. Сам по себе ничего не рисует и не занимает
+/// заметного места — реальная линия рисуется отдельно, поверх обычного
+/// прохода отрисовки, в `CardNSTextView.draw(_:)`. Такой подход (вместо
+/// кастомных `image(forBounds:)`/`NSTextAttachmentCell`) полностью убирает
+/// рассинхрон между тем, что TextKit насчитал для layout, и тем, что
+/// реально попадает на экран — здесь позиция строки берётся из ЖИВОГО
+/// `layoutManager` в момент самой отрисовки, каждый раз заново.
 final class DividerAttachment: NSTextAttachment {
+    /// Высота строки, которую резервирует под себя разделитель в тексте —
+    /// заметно больше обычной строки (15pt шрифт + 4pt lineSpacing ≈ 22pt),
+    /// чтобы всегда был чёткий зазор до соседних строк сверху и снизу.
+    static let rowHeight: CGFloat = 30
+
     override func attachmentBounds(
         for textContainer: NSTextContainer?,
         proposedLineFragment lineFrag: NSRect,
         glyphPosition position: NSPoint,
         characterIndex charIndex: Int
     ) -> NSRect {
-        let width = textContainer?.size.width ?? lineFrag.width
-        return NSRect(x: 0, y: -4, width: max(width, 1), height: 16)
+        // Минимальная невидимая "заглушка" (не 0 — вырожденный по площади
+        // rect некоторые внутренности TextKit могут обработать как особый
+        // случай и пропустить генерацию глифа). Реальная ширина линии не
+        // нужна здесь, она вычисляется отдельно в CardNSTextView.draw(_:).
+        NSRect(x: 0, y: 0, width: 1, height: Self.rowHeight)
     }
 
-    override func image(
-        forBounds imageBounds: NSRect,
-        textContainer: NSTextContainer?,
-        characterIndex charIndex: Int
-    ) -> NSImage? {
-        let size = imageBounds.size
-        guard size.width > 0, size.height > 0 else { return nil }
-
-        let image = NSImage(size: size)
-        image.lockFocus()
-        let path = NSBezierPath()
-        let y = size.height / 2
-        path.move(to: NSPoint(x: 0, y: y))
-        path.line(to: NSPoint(x: size.width, y: y))
-        path.lineWidth = 1
-        NSColor.white.withAlphaComponent(0.12).setStroke()
-        path.stroke()
-        image.unlockFocus()
-
-        return image
+    override func image(forBounds imageBounds: NSRect, textContainer: NSTextContainer?, characterIndex charIndex: Int) -> NSImage? {
+        nil
     }
 }
 
-// MARK: - Custom NSTextView (plain-text paste)
+// MARK: - Custom NSTextView (plain-text paste + divider drawing)
 
 private final class CardNSTextView: NSTextView {
+    static let dividerLineColor = NSColor.white.withAlphaComponent(0.22)
+
     // Требование 4: вставка всегда plain text в стиле карточки.
     // Работает только с диапазоном вставки — существующие NSTextAttachment
     // (наши разделители) в остальном тексте не затрагиваются.
@@ -57,6 +52,36 @@ private final class CardNSTextView: NSTextView {
     override func paste(_ sender: Any?) {
         guard let plain = NSPasteboard.general.string(forType: .string) else { return }
         insertText(plain, replacementRange: selectedRange())
+    }
+
+    /// Рисует линии разделителей поверх обычного текста. Проходит по всем
+    /// диапазонам с атрибутом `.attachment` типа `DividerAttachment` и для
+    /// каждого берёт СВЕЖИЙ line fragment rect у layoutManager — то есть
+    /// позиция всегда соответствует текущему, только что посчитанному layout,
+    /// без риска отрисовать линию по устаревшим/закэшированным координатам.
+    override func draw(_ dirtyRect: NSRect) {
+        super.draw(dirtyRect)
+
+        guard let layoutManager, let textContainer, let textStorage else { return }
+        let fullRange = NSRange(location: 0, length: textStorage.length)
+        let origin = textContainerOrigin
+
+        textStorage.enumerateAttribute(.attachment, in: fullRange) { value, range, _ in
+            guard value is DividerAttachment else { return }
+
+            let glyphRange = layoutManager.glyphRange(forCharacterRange: range, actualCharacterRange: nil)
+            guard glyphRange.length > 0 else { return }
+
+            let lineRect = layoutManager.lineFragmentRect(forGlyphAt: glyphRange.location, effectiveRange: nil)
+            let y = (origin.y + lineRect.midY).rounded()
+
+            let path = NSBezierPath()
+            path.move(to: NSPoint(x: origin.x, y: y))
+            path.line(to: NSPoint(x: origin.x + textContainer.size.width, y: y))
+            path.lineWidth = 1
+            Self.dividerLineColor.setStroke()
+            path.stroke()
+        }
     }
 }
 
@@ -183,13 +208,24 @@ struct CardTextView: NSViewRepresentable {
 
         for character in text {
             if character == dividerPlaceholder {
-                result.append(NSAttributedString(attachment: DividerAttachment()))
+                result.append(Self.dividerAttributedString(with: base))
             } else {
                 result.append(NSAttributedString(string: String(character), attributes: base))
             }
         }
 
         return result
+    }
+
+    /// Attachment-строка с теми же атрибутами (в т.ч. `lineSpacing` в
+    /// paragraphStyle), что у обычного текста — иначе параграф разделителя
+    /// получает другую метрику строки, чем соседний текст, и высота
+    /// `attachmentBounds` перестаёт совпадать с реальным зазором до
+    /// следующей строки (она "налезает" сверху).
+    fileprivate static func dividerAttributedString(with baseAttributes: [NSAttributedString.Key: Any] = baseAttributes()) -> NSAttributedString {
+        let attachmentString = NSMutableAttributedString(attachment: DividerAttachment())
+        attachmentString.addAttributes(baseAttributes, range: NSRange(location: 0, length: attachmentString.length))
+        return attachmentString
     }
 
     // MARK: - Coordinator
@@ -259,13 +295,29 @@ struct CardTextView: NSViewRepresentable {
             let lineText = ns.substring(with: paragraphRange)
             guard lineText.allSatisfy({ $0 == "-" }) else { return }
 
-            let attachmentString = NSAttributedString(attachment: DividerAttachment())
+            let attachmentString = CardTextView.dividerAttributedString()
 
             textView.textStorage?.beginEditing()
             textView.textStorage?.replaceCharacters(in: paragraphRange, with: attachmentString)
             textView.textStorage?.endEditing()
 
-            let newLocation = min(paragraphRange.location + 1, (textView.string as NSString).length)
+            // Без явной инвалидации TextKit может не пересчитать
+            // attachmentBounds/не перерисовать линию сразу — она появлялась
+            // только после следующего внешнего relayout (например, ресайза
+            // карточки). Форсируем layout и отрисовку строки с разделителем
+            // немедленно после вставки.
+            let insertedRange = NSRange(location: paragraphRange.location, length: attachmentString.length)
+            textView.layoutManager?.invalidateLayout(forCharacterRange: insertedRange, actualCharacterRange: nil)
+            textView.layoutManager?.ensureLayout(forCharacterRange: insertedRange)
+            textView.needsDisplay = true
+
+            // +1 за attachment и ещё +1 за оставшийся "\n" сразу после него
+            // (paragraphRange не включает этот "\n", он не был заменён) —
+            // курсор должен встать уже В СЛЕДУЮЩЕМ параграфе. Раньше он
+            // вставал МЕЖДУ attachment-ом и этим "\n", из-за чего весь текст,
+            // напечатанный сразу после, попадал в один параграф с
+            // разделителем — визуально линия и следующая строка сливались.
+            let newLocation = min(paragraphRange.location + attachmentString.length + 1, (textView.string as NSString).length)
             textView.setSelectedRange(NSRange(location: newLocation, length: 0))
         }
     }
