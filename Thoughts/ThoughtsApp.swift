@@ -4,6 +4,7 @@ import AppKit
 @main
 struct ThoughtsApp: App {
     @State private var viewModel = BoardViewModel()
+    @State private var quitGuard = QuitGuard()
 
     init() {
         // По умолчанию AppKit при зажатии буквенной клавиши в NSTextView
@@ -23,6 +24,14 @@ struct ThoughtsApp: App {
         .windowStyle(.hiddenTitleBar)
         .windowResizability(.contentSize)
         .commands {
+            // Заменяет системный пункт Quit (и его Cmd+Q) — см. подробное
+            // объяснение почему в QuitGuard.swift.
+            CommandGroup(replacing: .appTermination) {
+                Button("Quit Thoughts") {
+                    quitGuard.handleQuitRequested()
+                }
+                .keyboardShortcut("q", modifiers: .command)
+            }
             TextFormattingCommands()
             CommandMenu("Spaces") {
                 ForEach(viewModel.workspaces) { workspace in
