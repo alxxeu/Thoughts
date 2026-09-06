@@ -29,10 +29,19 @@ struct CardView: View {
     
     var body: some View {
         ZStack(alignment: SwiftUI.Alignment.topLeading) {
-            // РОДНОЙ GLASS EFFECT:
-            RoundedRectangle(cornerRadius: 16)
-                .fill(Color.clear)
-                .glassEffect(in: .rect(cornerRadius: 16.0))
+            // РОДНОЙ GLASS EFFECT (доступен только с macOS 26) — на более
+            // старых системах (минимум приложения — macOS 15) используем
+            // обычный системный Material как визуально близкий аналог.
+            Group {
+                if #available(macOS 26.0, *) {
+                    RoundedRectangle(cornerRadius: 16)
+                        .fill(Color.clear)
+                        .glassEffect(in: .rect(cornerRadius: 16.0))
+                } else {
+                    RoundedRectangle(cornerRadius: 16)
+                        .fill(.ultraThinMaterial)
+                }
+            }
             
             CardTextView(
                 text: $card.text,

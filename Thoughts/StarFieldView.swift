@@ -6,9 +6,20 @@ struct StarFieldOverlayView: View {
     
     var body: some View {
         ZStack {
-            RoundedRectangle(cornerRadius: 16)
-                .fill(Color.black.opacity(0.1))
-                .glassEffect(in: .rect(cornerRadius: 16.0))
+            // .glassEffect доступен только с macOS 26 — на более старых
+            // системах (минимум приложения — macOS 15) используем обычный
+            // системный Material как визуально близкий аналог.
+            Group {
+                if #available(macOS 26.0, *) {
+                    RoundedRectangle(cornerRadius: 16)
+                        .fill(Color.black.opacity(0.1))
+                        .glassEffect(in: .rect(cornerRadius: 16.0))
+                } else {
+                    RoundedRectangle(cornerRadius: 16)
+                        .fill(.ultraThinMaterial)
+                        .overlay(RoundedRectangle(cornerRadius: 16).fill(Color.black.opacity(0.1)))
+                }
+            }
             
             // 3. Анимированное звездное поле с мягкой маской затухания по краям
             StarFieldCanvas()
