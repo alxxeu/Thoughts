@@ -1,8 +1,17 @@
 import SwiftUI
 import AppKit
+import CoreSpotlight
 
 @main
 struct ThoughtsApp: App {
+    // SwiftUI-модификатор .onContinueUserActivity на View ненадёжен для уже
+    // запущенного macOS-приложения: ОС переключает фокус на приложение сама,
+    // на уровне активации процесса, ещё до того, как SwiftUI пытается
+    // доставить саму NSUserActivity — доставка в этот момент часто просто не
+    // происходит. Поэтому продолжение Spotlight-активности обрабатываем
+    // напрямую через NSApplicationDelegate — единственный гарантированно
+    // рабочий на macOS хук для этого случая.
+    @NSApplicationDelegateAdaptor(AppDelegate.self) private var appDelegate
     @State private var viewModel = BoardViewModel()
     @State private var quitGuard = QuitGuard()
 
@@ -13,6 +22,7 @@ struct ThoughtsApp: App {
         // для данного приложения (домен defaults этого процесса), глобальную
         // системную настройку не трогаем.
         UserDefaults.standard.register(defaults: ["ApplePressAndHoldEnabled": false])
+        appDelegate.viewModel = viewModel
     }
 
     var body: some Scene {
@@ -48,6 +58,34 @@ struct ThoughtsApp: App {
         Settings {
             SettingsView()
         }
+    }
+
+}
+
+/// Обрабатывает продолжение Spotlight-активности через нативный AppKit-хук.
+/// SwiftUI-эквивалент (.onContinueUserActivity на View) на macOS ненадёжен
+/// для уже запущенного приложения — см. комментарий в ThoughtsApp.
+final class AppDelegate: NSObject, NSApplicationDelegate {
+    var viewModel: BoardViewModel?
+
+    func application(
+        _ application: NSApplication,
+        continue userActivity: NSUserActivity,
+        restorationHandler: @escaping ([any NSUserActivityRestoring]) -> Void
+    ) -> Bool {
+        guard userActivity.activityType == CSSearchableItemActionType,
+              let identifier = userActivity.userInfo?[CSSearchableItemActivityIdentifier] as? String,
+              let cardID = SpotlightIndexer.cardID(from: identifier) else {
+            return false
+        }
+
+        NSApp.activate(ignoringOtherApps: true)
+        if let window = NSApp.windows.first {
+            if window.isMiniaturized { window.deminiaturize(nil) }
+            window.makeKeyAndOrderFront(nil)
+        }
+        viewModel?.focusOnCard(id: cardID)
+        return true
     }
 }
 

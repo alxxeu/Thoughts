@@ -37,6 +37,7 @@ final class BoardViewModel {
         let loaded = store.load()
         workspaces = loaded.workspaces
         cardsByWorkspace = loaded.cardsByWorkspace
+        reindexSpotlight()
     }
 
     static func snap(_ value: CGFloat) -> CGFloat {
@@ -79,6 +80,7 @@ final class BoardViewModel {
         saveTask?.cancel()
         saveTask = nil
         store.save(workspaces: workspaces, cardsByWorkspace: cardsByWorkspace)
+        reindexSpotlight()
     }
 
     func scheduleDebouncedSave() {
@@ -87,9 +89,47 @@ final class BoardViewModel {
             try? await Task.sleep(nanoseconds: 450_000_000)
             guard !Task.isCancelled, let self else { return }
             self.store.save(workspaces: self.workspaces, cardsByWorkspace: self.cardsByWorkspace)
+            self.reindexSpotlight()
         }
     }
-    
+
+    private func reindexSpotlight() {
+        let snapshots = workspaces.flatMap { workspace in
+            (cardsByWorkspace[workspace.slot] ?? []).map {
+                SpotlightCardSnapshot(
+                    id: $0.id,
+                    text: $0.text,
+                    privacyMode: $0.privacyMode,
+                    workspaceName: workspace.name
+                )
+            }
+        }
+        SpotlightIndexer.reindexAll(snapshots)
+    }
+
+    /// Находит карточку и её спэйс по идентификатору, полученному из
+    /// Spotlight-активности.
+    func locateCard(id: UUID) -> (workspace: Workspace, card: Card)? {
+        for workspace in workspaces {
+            if let card = (cardsByWorkspace[workspace.slot] ?? []).first(where: { $0.id == id }) {
+                return (workspace, card)
+            }
+        }
+        return nil
+    }
+
+    /// Переключает на спэйс с искомой карточкой и просит её подсветиться.
+    /// Небольшая задержка — чтобы CardView для нужного спэйса успел
+    /// подписаться на уведомление после переключения (по аналогии с
+    /// задержкой перед FocusNewCard для только что созданных карточек).
+    func focusOnCard(id: UUID) {
+        guard let located = locateCard(id: id) else { return }
+        switchWorkspace(to: located.workspace.slot)
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
+            NotificationCenter.default.post(name: .highlightCard, object: id)
+        }
+    }
+
     func authenticateWithTouchID(completion: @escaping (Bool) -> Void) {
         let context = LAContext()
         var error: NSError?

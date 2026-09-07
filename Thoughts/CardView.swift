@@ -18,6 +18,8 @@ struct CardView: View {
     @State private var isHoveringTagButton = false
     @State private var isRevealed = false
     @State private var relockTask: Task<Void, Never>? = nil // Таймер автоблокировки
+    @State private var isHighlighted = false
+    @State private var unhighlightTask: Task<Void, Never>? = nil
     
     @State private var isTextFocused: Bool = false
 
@@ -240,6 +242,13 @@ struct CardView: View {
                     }
                 })
             }
+
+            // ПОДСВЕТКА ПРИ ПЕРЕХОДЕ ИЗ SPOTLIGHT
+            RoundedRectangle(cornerRadius: 16)
+                .stroke(Color.white.opacity(isHighlighted ? 0.9 : 0), lineWidth: 2)
+                .shadow(color: .white.opacity(isHighlighted ? 0.7 : 0), radius: isHighlighted ? 16 : 0)
+                .allowsHitTesting(false)
+                .zIndex(106)
         }
         .frame(
             width: dragResizeSize?.width ?? card.size.width,
@@ -259,6 +268,21 @@ struct CardView: View {
                     if newMode != .none {
                         withAnimation(.easeInOut(duration: 0.35)) {
                             isRevealed = false
+                        }
+                    }
+                }
+                .onReceive(NotificationCenter.default.publisher(for: .highlightCard)) { notification in
+                    guard let targetID = notification.object as? UUID, targetID == card.id else { return }
+                    viewModel.bringToFront(card)
+                    unhighlightTask?.cancel()
+                    withAnimation(.easeInOut(duration: 0.3)) {
+                        isHighlighted = true
+                    }
+                    unhighlightTask = Task {
+                        try? await Task.sleep(for: .seconds(1.6))
+                        guard !Task.isCancelled else { return }
+                        withAnimation(.easeInOut(duration: 0.5)) {
+                            isHighlighted = false
                         }
                     }
                 }
