@@ -17,7 +17,7 @@ struct CardView: View {
     @State private var isShowingTagPopover = false
     @State private var isHoveringTagButton = false
     @State private var isRevealed = false
-    @State private var relockTask: Task<Void, Never>? = nil // Таймер автоблокировки
+    @State private var relockTask: Task<Void, Never>? = nil // Таймер автоблокировки после клика вне карточки
     @State private var isHighlighted = false
     @State private var unhighlightTask: Task<Void, Never>? = nil
     
@@ -57,12 +57,7 @@ struct CardView: View {
                 },
                 onFocusChange: { focused in
                     if focused {
-                        cancelRelock()
                         viewModel.bringToFront(card)
-                    } else {
-                        if isRevealed {
-                            scheduleRelock()
-                        }
                     }
                 }
             )
@@ -89,14 +84,12 @@ struct CardView: View {
                         withAnimation(.easeInOut(duration: 0.35)) {
                             isRevealed = true
                         }
-                        if !isTextFocused { scheduleRelock() }
                     } else if card.privacyMode == .lock {
                         viewModel.authenticateWithTouchID { success in
                             if success {
                                 withAnimation(.easeInOut(duration: 0.35)) {
                                     isRevealed = true
                                 }
-                                if !isTextFocused { scheduleRelock() }
                             }
                         }
                     }
@@ -259,9 +252,10 @@ struct CardView: View {
             DragGesture(minimumDistance: 0, coordinateSpace: .local)
                 .onChanged { _ in
                     viewModel.bringToFront(card)
+                    NotificationCenter.default.post(name: .cardWasClicked, object: card.id)
                 }
         )
-        
+
         .animation(.easeInOut(duration: 0.35), value: isPrivacyLocked)
                 .onChange(of: card.privacyMode) { _, newMode in
                     cancelRelock()
@@ -269,6 +263,25 @@ struct CardView: View {
                         withAnimation(.easeInOut(duration: 0.35)) {
                             isRevealed = false
                         }
+                    }
+                }
+                // Раскрытая по клику на спойлер/лок карточка остаётся
+                // активной, пока пользователь не кликнет вне неё — на пустой
+                // холст (ClearTextSelection) или на другую карточку
+                // (cardWasClicked с чужим id). Сама блокировка при этом не
+                // мгновенная, а с 5-секундной отсрочкой — успеешь кликнуть
+                // обратно на эту же карточку и блокировка отменится.
+                .onReceive(NotificationCenter.default.publisher(for: NSNotification.Name("ClearTextSelection"))) { _ in
+                    if isRevealed {
+                        scheduleRelock()
+                    }
+                }
+                .onReceive(NotificationCenter.default.publisher(for: .cardWasClicked)) { notification in
+                    guard let clickedID = notification.object as? UUID else { return }
+                    if clickedID == card.id {
+                        cancelRelock()
+                    } else if isRevealed {
+                        scheduleRelock()
                     }
                 }
                 .onReceive(NotificationCenter.default.publisher(for: .highlightCard)) { notification in
@@ -413,7 +426,7 @@ struct CardView: View {
             }
         }
     }
-    
+
     private func cancelRelock() {
         relockTask?.cancel()
         relockTask = nil

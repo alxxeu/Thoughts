@@ -99,23 +99,23 @@ struct VisualEffectBlur: NSViewRepresentable {
         visualEffectView.material = material
         visualEffectView.blendingMode = blendingMode
         visualEffectView.state = .active
+        context.coordinator.visualEffectView = visualEffectView
 
-        // Единственное, что реально и стабильно чинит пропавший
-        // .behindWindow-фон, — это фактическая смена геометрии окна (выход
-        // из fullscreen и обратно). state (.active/.followsWindowActiveState)
-        // тут ни при чём — подложка переприкрепляется к бэкинг-стору окна
-        // только при настоящем relayout. Поэтому вместо isHidden-тогла
-        // (не трогает геометрию, не помогал) — короткий nudge реального
-        // фрейма окна на 1pt туда-обратно, без анимации: та же суть, что и
-        // переключение fullscreen, но незаметно для глаза.
+        // И геометрический nudge окна, и одиночный тогл blendingMode
+        // срабатывают через раз: уведомление приходит раньше, чем
+        // WindowServer реально заканчивает переход между Spaces, и
+        // последующая анимация иногда переигрывает фикс обратно в
+        // сломанное состояние. Поэтому не чиним сразу, а с небольшой
+        // задержкой после последнего уведомления (когда переход уже
+        // точно завершился), и сразу обоими приёмами вместе.
         for name: Notification.Name in [
             NSWindow.didChangeOcclusionStateNotification,
             NSWindow.didBecomeKeyNotification,
             NSApplication.didBecomeActiveNotification
         ] {
             context.coordinator.observers.append(
-                NotificationCenter.default.addObserver(forName: name, object: nil, queue: .main) { [weak visualEffectView] _ in
-                    context.coordinator.nudge(visualEffectView?.window)
+                NotificationCenter.default.addObserver(forName: name, object: nil, queue: .main) { _ in
+                    context.coordinator.scheduleNudge()
                 }
             )
         }
@@ -124,8 +124,8 @@ struct VisualEffectBlur: NSViewRepresentable {
                 forName: NSWorkspace.activeSpaceDidChangeNotification,
                 object: nil,
                 queue: .main
-            ) { [weak visualEffectView] _ in
-                context.coordinator.nudge(visualEffectView?.window)
+            ) { _ in
+                context.coordinator.scheduleNudge()
             }
         )
 
@@ -150,17 +150,28 @@ struct VisualEffectBlur: NSViewRepresentable {
 
     final class Coordinator {
         var observers: [NSObjectProtocol] = []
-        private var isNudging = false
+        weak var visualEffectView: NSVisualEffectView?
+        private var pendingNudge: DispatchWorkItem?
 
-        func nudge(_ window: NSWindow?) {
-            guard let window, !isNudging else { return }
-            isNudging = true
+        func scheduleNudge() {
+            pendingNudge?.cancel()
+            let work = DispatchWorkItem { [weak self] in
+                self?.performNudge()
+            }
+            pendingNudge = work
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.25, execute: work)
+        }
+
+        private func performNudge() {
+            guard let view = visualEffectView, let window = view.window else { return }
+            view.blendingMode = .withinWindow
+            view.blendingMode = .behindWindow
+
             let original = window.frame
             var shifted = original
             shifted.size.width += 1
             window.setFrame(shifted, display: true, animate: false)
             window.setFrame(original, display: true, animate: false)
-            isNudging = false
         }
     }
 }
