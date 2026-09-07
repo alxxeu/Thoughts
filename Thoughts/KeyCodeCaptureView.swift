@@ -42,9 +42,27 @@ struct KeyCodeCaptureView: NSViewRepresentable {
         private static let deleteKeyCode: UInt16 = 51
         private static let forwardDeleteKeyCode: UInt16 = 117
 
+        /// Cmd/Option/Control/Function — системные модификаторы для
+        /// шорткатов (например, Option+1-9 для переключения Spaces), а не
+        /// часть ввода passcode. Shift сюда намеренно не входит — Shift
+        /// это обычный модификатор при наборе (Shift+буква и т.п.), а
+        /// сравниваем мы всё равно по keyCode самой клавиши, не по
+        /// итоговому символу.
+        private static let shortcutModifiers: NSEvent.ModifierFlags = [.command, .option, .control, .function]
+
         override var acceptsFirstResponder: Bool { true }
 
         override func keyDown(with event: NSEvent) {
+            guard event.modifierFlags.intersection(Self.shortcutModifiers).isEmpty else {
+                // Не глотаем системные шорткаты как ввод passcode — даём
+                // главному меню шанс обработать их самому (например,
+                // переключение Spaces по Option+1-9).
+                if NSApp.mainMenu?.performKeyEquivalent(with: event) != true {
+                    super.keyDown(with: event)
+                }
+                return
+            }
+
             if event.keyCode == Self.deleteKeyCode || event.keyCode == Self.forwardDeleteKeyCode {
                 onDelete?()
             } else {
