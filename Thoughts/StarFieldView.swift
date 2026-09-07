@@ -47,7 +47,9 @@ struct StarFieldOverlayView: View {
     }
 }
 
-private struct StarFieldCanvas: View {
+/// Не private — переиспользуется и в SpaceLockOverlayView (полноэкранная
+/// блокировка Space), не только в оверлее заметки.
+struct StarFieldCanvas: View {
     var body: some View {
         TimelineView(.animation) { timeline in
             Canvas { context, size in

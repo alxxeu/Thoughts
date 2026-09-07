@@ -1,3 +1,4 @@
+import AppKit
 import LocalAuthentication
 import SwiftUI
 
@@ -13,8 +14,24 @@ enum EdgeHint: Equatable {
 final class BoardViewModel {
     var workspaces: [Workspace] = []
     var activeSlot: Int = 1
-    var isSpaceUnlocked: Bool = false
     private var cardsByWorkspace: [Int: [Card]] = [:]
+
+    let securitySettings = SecuritySettings.shared
+
+    /// Слоты защищённых (Workspace.isProtected == true) Space, прошедшие
+    /// аутентификацию в ЭТОЙ сессии. Runtime-only, никогда не персистится:
+    /// при старте приложения всегда пусто, поэтому любой защищённый Space
+    /// стартует заблокированным. Отдельно от Workspace.isProtected —
+    /// именно поэтому после успешной разблокировки Space "числится как
+    /// имеющий блокировку", но при этом сейчас открыт.
+    private var unlockedProtectedSlots: Set<Int> = []
+    private var idleLockTasks: [Int: Task<Void, Never>] = [:]
+
+    var isActiveSpaceLocked: Bool {
+        securitySettings.isPasscodeEnabled
+            && (activeWorkspace?.isProtected ?? false)
+            && !unlockedProtectedSlots.contains(activeSlot)
+    }
 
     var cards: [Card] {
         get { cardsByWorkspace[activeSlot] ?? [] }
@@ -45,9 +62,91 @@ final class BoardViewModel {
     }
 
     func switchWorkspace(to slot: Int) {
+        // Переключение между Spaces больше не трогает лок-состояние —
+        // каждый Space независим: незащищённые остаются как есть,
+        // защищённые сохраняют своё locked/unlocked ровно таким, каким его
+        // оставили в прошлый раз (или каким его успел сделать idle-таймер
+        // в фоне, пока Space не был активен).
         activeSlot = min(9, max(1, slot))
     }
-    
+
+    // MARK: - Space Lock
+
+    /// Разблокировывает текущий активный Space и запускает его idle-таймер
+    /// (если Auto-Lock не выключен). Вызывается из SpaceLockOverlayView
+    /// после успешного прохождения выбранного способа разблокировки.
+    /// Workspace.isProtected при этом НЕ меняется — Space по-прежнему
+    /// "числится" защищённым, просто сейчас открыт.
+    func unlockActiveSpace() {
+        unlockedProtectedSlots.insert(activeSlot)
+        scheduleIdleLock(for: activeSlot)
+    }
+
+    /// Cmd+L — включает защиту для текущего Space (если ещё не включена) и
+    /// сразу блокирует его. No-op, если мастер-переключатель Space Lock
+    /// выключен в Security-настройках, или Space уже и так заблокирован
+    /// (повторное нажатие на lock screen не должно ничего запускать заново).
+    func lockActiveSpaceManually() {
+        guard securitySettings.isPasscodeEnabled, !isActiveSpaceLocked else { return }
+        setSpaceProtected(true, slot: activeSlot)
+    }
+
+    /// Включает/выключает защиту для произвольного (не обязательно
+    /// активного) Space — используется списком переключателей в Security
+    /// Settings (замена прежнему Cmd+Shift+L). Включение сразу блокирует
+    /// Space; выключение сразу открывает его без аутентификации, так как
+    /// сам доступ к этому списку в Settings уже требует, чтобы активный
+    /// Space не был заблокирован (см. SettingsView).
+    func setSpaceProtected(_ isProtected: Bool, slot: Int) {
+        guard let index = workspaces.firstIndex(where: { $0.slot == slot }) else { return }
+        workspaces[index].isProtected = isProtected
+        relock(slot: slot)
+        saveImmediately()
+    }
+
+    /// Единая точка входа для сброса idle-таймера — вызывается из
+    /// централизованного NSEvent-монитора в AppDelegate на любое
+    /// взаимодействие пользователя (клик, драг, ввод текста, скролл,
+    /// движение мыши и т.д.), а не из отдельных компонентов. Сбрасывает
+    /// таймер только активного Space — с другими Space пользователь
+    /// физически не может взаимодействовать, пока они не выбраны.
+    func recordInteraction() {
+        guard unlockedProtectedSlots.contains(activeSlot) else { return }
+        scheduleIdleLock(for: activeSlot)
+    }
+
+    /// Не создаёт нового таймера на каждое взаимодействие — переиспользует
+    /// тот же паттерн, что и scheduleDebouncedSave: отменить предыдущий
+    /// Task и поставить новый. У каждого разблокированного защищённого
+    /// Space — свой собственный такой Task, поэтому auto-lock срабатывает
+    /// независимо для каждого, даже пока пользователь работает в другом.
+    private func scheduleIdleLock(for slot: Int) {
+        idleLockTasks[slot]?.cancel()
+        idleLockTasks[slot] = nil
+
+        guard securitySettings.autoLockInterval != .never else { return }
+
+        let interval = securitySettings.autoLockInterval.rawValue
+        idleLockTasks[slot] = Task { [weak self] in
+            try? await Task.sleep(nanoseconds: UInt64(interval * 1_000_000_000))
+            guard !Task.isCancelled, let self else { return }
+            self.relock(slot: slot)
+        }
+    }
+
+    private func relock(slot: Int) {
+        idleLockTasks[slot]?.cancel()
+        idleLockTasks[slot] = nil
+        unlockedProtectedSlots.remove(slot)
+        if slot == activeSlot {
+            // Нельзя оставлять активный NSTextView под lock overlay —
+            // снимаем фокус тем же способом, что уже используется при
+            // клике по пустому холсту в ContentView.
+            NSApp.keyWindow?.makeFirstResponder(nil)
+        }
+    }
+
+
     func renameActiveWorkspace(to name: String) {
         guard let index = workspaces.firstIndex(where: { $0.slot == activeSlot }) else { return }
         let trimmed = name.trimmingCharacters(in: .whitespacesAndNewlines)

@@ -14,6 +14,7 @@ struct ThoughtsApp: App {
     @NSApplicationDelegateAdaptor(AppDelegate.self) private var appDelegate
     @State private var viewModel = BoardViewModel()
     @State private var quitGuard = QuitGuard()
+    @Environment(\.openSettings) private var openSettings
 
     init() {
         // По умолчанию AppKit при зажатии буквенной клавиши в NSTextView
@@ -43,6 +44,25 @@ struct ThoughtsApp: App {
                 .keyboardShortcut("q", modifiers: .command)
             }
             TextFormattingCommands()
+            CommandGroup(after: .toolbar) {
+                Button("Lock Space") {
+                    NotificationCenter.default.post(name: .lockCurrentSpace, object: nil)
+                }
+                .keyboardShortcut("l", modifiers: .command)
+                .disabled(!viewModel.securitySettings.isPasscodeEnabled)
+            }
+            // Настройки могут ослабить/сменить способ разблокировки — из
+            // заблокированного Space нельзя сбежать в Settings и таким
+            // образом обойти lock screen. .disabled() на командах меню
+            // ненадёжен как единственная защита (может не обновиться
+            // мгновенно), поэтому основной барьер — в самом SettingsView.
+            CommandGroup(replacing: .appSettings) {
+                Button("Settings…") {
+                    openSettings()
+                }
+                .keyboardShortcut(",", modifiers: .command)
+                .disabled(viewModel.isActiveSpaceLocked)
+            }
             CommandMenu("Spaces") {
                 ForEach(viewModel.workspaces) { workspace in
                     Button(workspace.name) {
@@ -56,7 +76,7 @@ struct ThoughtsApp: App {
             }
         }
         Settings {
-            SettingsView()
+            SettingsView(viewModel: viewModel)
         }
     }
 
@@ -67,6 +87,26 @@ struct ThoughtsApp: App {
 /// для уже запущенного приложения — см. комментарий в ThoughtsApp.
 final class AppDelegate: NSObject, NSApplicationDelegate {
     var viewModel: BoardViewModel?
+    private var interactionMonitor: Any?
+
+    /// Единая точка сброса idle-таймера Space Lock: один NSEvent-монитор
+    /// на всё приложение вместо разбросанных вызовов по компонентам —
+    /// ловит клики, драги, ввод текста, скролл и движение мыши
+    /// централизованно, независимо от того, какой конкретно View/NSView
+    /// их обработал.
+    func applicationDidFinishLaunching(_ notification: Notification) {
+        NSApp.windows.first?.acceptsMouseMovedEvents = true
+        interactionMonitor = NSEvent.addLocalMonitorForEvents(
+            matching: [
+                .leftMouseDown, .rightMouseDown, .otherMouseDown,
+                .leftMouseDragged, .rightMouseDragged,
+                .keyDown, .scrollWheel, .mouseMoved
+            ]
+        ) { [weak self] event in
+            self?.viewModel?.recordInteraction()
+            return event
+        }
+    }
 
     func application(
         _ application: NSApplication,

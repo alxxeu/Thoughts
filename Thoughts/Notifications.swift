@@ -7,4 +7,6 @@ extension Notification.Name {
     /// её UUID). Используется другими карточками, чтобы понять, что клик
     /// произошёл вне их — см. relock-логику в CardView.
     static let cardWasClicked = Notification.Name("CardWasClicked")
+    /// Cmd+L — блокирует текущий активный Space (см. ThoughtsApp/ContentView).
+    static let lockCurrentSpace = Notification.Name("LockCurrentSpace")
 }

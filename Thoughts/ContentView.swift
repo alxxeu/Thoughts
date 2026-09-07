@@ -70,6 +70,30 @@ struct ContentView: View {
     @State private var emptyHintTask: Task<Void, Never>?
 
     var body: some View {
+        Group {
+            if viewModel.isActiveSpaceLocked {
+                // Полностью отдельная ветка дерева: карточки и canvas этого
+                // Space physически не существуют, пока он заблокирован —
+                // то же самое "выгружение", что происходит при обычном
+                // переключении между Spaces (ForEach(viewModel.cards) для
+                // невыбранного слота тоже не рендерится). Никакого
+                // отдельного blur-слоя поверх живого контента не нужно.
+                SpaceLockOverlayView(viewModel: viewModel)
+            } else {
+                unlockedSpaceContent
+            }
+        }
+        .onReceive(NotificationCenter.default.publisher(for: .switchWorkspace)) { notification in
+            if let slot = notification.object as? Int {
+                viewModel.switchWorkspace(to: slot)
+            }
+        }
+        .onReceive(NotificationCenter.default.publisher(for: .lockCurrentSpace)) { _ in
+            viewModel.lockActiveSpaceManually()
+        }
+    }
+
+    private var unlockedSpaceContent: some View {
         GeometryReader { proxy in
             ZStack(alignment: SwiftUI.Alignment.topLeading) {
                 Color.clear
@@ -79,7 +103,7 @@ struct ContentView: View {
                         NotificationCenter.default.post(name: NSNotification.Name("ClearTextSelection"), object: nil)
                         NSApp.keyWindow?.makeFirstResponder(nil)
                     }
-                
+
                 ForEach(viewModel.cards) { card in
                     let adaptedPosition = adaptivePosition(for: card, in: proxy.size)
                     
@@ -242,11 +266,6 @@ struct ContentView: View {
         }
         .onChange(of: viewModel.cards.isEmpty) { _, _ in
             updateEmptyHintState()
-        }
-        .onReceive(NotificationCenter.default.publisher(for: .switchWorkspace)) { notification in
-            if let slot = notification.object as? Int {
-                viewModel.switchWorkspace(to: slot)
-            }
         }
     }
 

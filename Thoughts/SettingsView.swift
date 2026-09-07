@@ -2,25 +2,57 @@ import SwiftUI
 import ServiceManagement
 
 struct SettingsView: View {
+    var viewModel: BoardViewModel
+
     // Проверяем текущий статус автозапуска в системе при загрузке
     @State private var launchAtLogin: Bool = (SMAppService.mainApp.status == .enabled)
 
     var body: some View {
-        TabView {
-            Form {
-                Section {
-                    Toggle("Launch at Login", isOn: $launchAtLogin)
-                        .onChange(of: launchAtLogin) { _, newValue in
-                            updateLaunchAtLogin(enabled: newValue)
+        Group {
+            if viewModel.isActiveSpaceLocked {
+                // Основной барьер против побега из заблокированного Space
+                // в Settings: .disabled() на пункте меню в ThoughtsApp
+                // ненадёжен как единственная защита (Commands не всегда
+                // обновляются мгновенно), а здесь содержимое окна физически
+                // не существует, пока активный Space заблокирован — так же,
+                // как карточки не существуют под SpaceLockOverlayView.
+                lockedPlaceholder
+                    .frame(width: 460, height: 420)
+            } else {
+                TabView {
+                    Form {
+                        Section {
+                            Toggle("Launch at Login", isOn: $launchAtLogin)
+                                .toggleStyle(.switch)
+                                .onChange(of: launchAtLogin) { _, newValue in
+                                    updateLaunchAtLogin(enabled: newValue)
+                                }
+                        }
+                    }
+                    .formStyle(.grouped)
+                    .tabItem {
+                        Label("General", systemImage: "gearshape")
+                    }
+
+                    SecuritySettingsTab(viewModel: viewModel)
+                        .tabItem {
+                            Label("Security", systemImage: "lock.shield")
                         }
                 }
-            }
-            .padding(20)
-            .tabItem {
-                Label("General", systemImage: "gearshape")
+                .frame(width: 460, height: 420)
             }
         }
-        .frame(width: 420, height: 220)
+    }
+
+    private var lockedPlaceholder: some View {
+        VStack(spacing: 10) {
+            Image(systemName: "lock.fill")
+                .font(.system(size: 24))
+                .foregroundStyle(.secondary)
+            Text("Unlock the current Space to access Settings")
+                .font(.system(size: 12))
+                .foregroundStyle(.secondary)
+        }
     }
 
     private func updateLaunchAtLogin(enabled: Bool) {
