@@ -51,6 +51,37 @@ struct CornerBracket: Shape {
     }
 }
 
+/// Невидимая зона для перетаскивания окна за верхнюю полосу (тайтлбар скрыт
+/// через .windowStyle(.hiddenTitleBar)). WindowDragGesture доступен только с
+/// macOS 15 — на macOS 14 используем NSWindow.performDrag(with:) напрямую.
+struct WindowDragArea: View {
+    var body: some View {
+        Group {
+            if #available(macOS 15.0, *) {
+                Color.clear
+                    .contentShape(Rectangle())
+                    .gesture(WindowDragGesture())
+            } else {
+                LegacyWindowDragView()
+            }
+        }
+    }
+}
+
+private struct LegacyWindowDragView: NSViewRepresentable {
+    func makeNSView(context: Context) -> DraggableNSView {
+        DraggableNSView()
+    }
+
+    func updateNSView(_ nsView: DraggableNSView, context: Context) {}
+}
+
+private final class DraggableNSView: NSView {
+    override func mouseDown(with event: NSEvent) {
+        window?.performDrag(with: event)
+    }
+}
+
 struct ContentView: View {
     var viewModel: BoardViewModel
     @State private var creationStart: CGPoint?
@@ -192,9 +223,7 @@ struct ContentView: View {
                 HStack(spacing: 0) {
                     Color.clear
                         .frame(width: 76)
-                    Color.clear
-                        .contentShape(Rectangle())
-                        .gesture(WindowDragGesture())
+                    WindowDragArea()
                 }
                 .frame(height: BoardViewModel.topCreationLimit)
                 .frame(maxWidth: .infinity, alignment: .topLeading)

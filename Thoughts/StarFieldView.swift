@@ -40,9 +40,20 @@ struct StarFieldOverlayView: View {
             }
         }
         .contentShape(Rectangle())
-        .pointerStyle(.default)
+        .modifier(DefaultPointerStyleModifier())
         .onTapGesture {
             onTap()
+        }
+    }
+}
+
+/// .pointerStyle доступен только с macOS 15 (минимум приложения — 14).
+private struct DefaultPointerStyleModifier: ViewModifier {
+    func body(content: Content) -> some View {
+        if #available(macOS 15.0, *) {
+            content.pointerStyle(.default)
+        } else {
+            content
         }
     }
 }
