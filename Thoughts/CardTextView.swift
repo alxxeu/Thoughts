@@ -94,6 +94,43 @@ private final class CardNSTextView: NSTextView {
         super.setSelectedRange(Self.clampSelectionRange(charRange, in: self), affinity: affinity, stillSelecting: stillSelectingFlag)
     }
 
+    /// NSTextView по умолчанию регистрирует I-beam на весь свой bounds
+    /// БЕЗ учёта фокуса — это перекрывает точечные NSCursor.set() вызовы у
+    /// крестика/тега/resize-хендла карточки (у них нет собственных cursor
+    /// rect, только у поля текста), из-за чего I-beam виден вообще везде,
+    /// даже когда карточка не в фокусе. Пока карточка не активна — вся
+    /// область показывает обычную стрелку; I-beam появляется только когда
+    /// текстовое поле реально стало first responder.
+    override func resetCursorRects() {
+        let cursor: NSCursor = (window?.firstResponder === self) ? .iBeam : .arrow
+        addCursorRect(bounds, cursor: cursor)
+    }
+
+    override func becomeFirstResponder() -> Bool {
+        let result = super.becomeFirstResponder()
+        window?.invalidateCursorRects(for: self)
+        return result
+    }
+
+    /// resetCursorRects одного не хватает: в современном AppKit NSTextView
+    /// также навязывает I-beam императивно через mouseMoved (не только через
+    /// классическую cursor-rect таблицу), поэтому пока карточка не в фокусе,
+    /// не даём super вообще увидеть это событие — принудительно ставим
+    /// стрелку сами. В фокусе — обычное поведение NSTextView (I-beam).
+    override func mouseMoved(with event: NSEvent) {
+        guard window?.firstResponder === self else {
+            NSCursor.arrow.set()
+            return
+        }
+        super.mouseMoved(with: event)
+    }
+
+    override func resignFirstResponder() -> Bool {
+        let result = super.resignFirstResponder()
+        window?.invalidateCursorRects(for: self)
+        return result
+    }
+
     private static func clampSelectionRange(_ range: NSRange, in textView: NSTextView) -> NSRange {
         guard let textStorage = textView.textStorage, textStorage.length > 0 else { return range }
         let ns = textStorage.string as NSString

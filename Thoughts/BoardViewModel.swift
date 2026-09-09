@@ -46,8 +46,17 @@ final class BoardViewModel {
     private let store = BoardStore.shared
     private var saveTask: Task<Void, Never>?
 
-    static let minCardSize: CGFloat = 120
     static let cardSizeStep: CGFloat = 60
+    /// Зазор между стыкующимися карточками — тот же, что использует
+    /// placementPreview при стековке. Обе величины обязаны идти из одной
+    /// константы: card-size формула size(k) = k*cardSizeStep - cardGap
+    /// устроена так, что любые две стыкующиеся карточки (k1 и k2 тайлов)
+    /// с этим зазором между ними в сумме дают ровно size(k1+k2) — то есть
+    /// колонка из нескольких карточек всегда идеально совпадает по краю
+    /// с одной карточкой такой же суммарной "тайловости", как у нативных
+    /// виджетов macOS (medium = 2 tile + 1 gap, а не просто 2 tile).
+    static let cardGap: CGFloat = 16
+    static let minCardSize: CGFloat = 2 * cardSizeStep - cardGap
     static let canvasSidePadding: CGFloat = 24
     static let topCreationLimit: CGFloat = 40
 
@@ -59,7 +68,8 @@ final class BoardViewModel {
     }
 
     static func snap(_ value: CGFloat) -> CGFloat {
-        max(minCardSize, (value / cardSizeStep).rounded() * cardSizeStep)
+        let tiles = max(2, ((value + cardGap) / cardSizeStep).rounded())
+        return tiles * cardSizeStep - cardGap
     }
 
     func switchWorkspace(to slot: Int) {
@@ -259,7 +269,7 @@ extension BoardViewModel {
         others: [Card],
         canvasSize: CGSize
     ) -> CGPoint? {
-        let gap: CGFloat = 16
+        let gap = cardGap
         let activationDistance: CGFloat = 45
         let pad = canvasSidePadding
         let top = topCreationLimit
@@ -281,7 +291,7 @@ extension BoardViewModel {
             let oSize = other.size
 
             let rightX = oPos.x + oSize.width + gap
-            for y in [oPos.y, oPos.y + oSize.height / 2 - cardH / 2, oPos.y + oSize.height - cardH] {
+            for y in [oPos.y, oPos.y + oSize.height - cardH] {
                 if rightX + cardW <= canvasSize.width - pad,
                    y >= top,
                    y + cardH <= canvasSize.height - pad {
@@ -290,7 +300,7 @@ extension BoardViewModel {
             }
 
             let leftX = oPos.x - cardW - gap
-            for y in [oPos.y, oPos.y + oSize.height / 2 - cardH / 2, oPos.y + oSize.height - cardH] {
+            for y in [oPos.y, oPos.y + oSize.height - cardH] {
                 if leftX >= pad,
                    y >= top,
                    y + cardH <= canvasSize.height - pad {
@@ -299,7 +309,7 @@ extension BoardViewModel {
             }
 
             let bottomY = oPos.y + oSize.height + gap
-            for x in [oPos.x, oPos.x + oSize.width / 2 - cardW / 2, oPos.x + oSize.width - cardW] {
+            for x in [oPos.x, oPos.x + oSize.width - cardW] {
                 if x >= pad,
                    x + cardW <= canvasSize.width - pad,
                    bottomY + cardH <= canvasSize.height - pad {
@@ -308,7 +318,7 @@ extension BoardViewModel {
             }
 
             let topY = oPos.y - cardH - gap
-            for x in [oPos.x, oPos.x + oSize.width / 2 - cardW / 2, oPos.x + oSize.width - cardW] {
+            for x in [oPos.x, oPos.x + oSize.width - cardW] {
                 if x >= pad,
                    x + cardW <= canvasSize.width - pad,
                    topY >= top {
