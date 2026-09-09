@@ -169,8 +169,8 @@ struct ContentView: View {
                     }
 
                 ForEach(viewModel.cards) { card in
-                    let adaptedPosition = adaptivePosition(for: card, in: proxy.size)
-                    
+                    let adaptedPosition = BoardViewModel.clampedPosition(card.position, size: card.size, canvasSize: proxy.size)
+
                     CardView(
                         card: card,
                         viewModel: viewModel,
@@ -351,36 +351,28 @@ struct ContentView: View {
         }
     }
 
-    private func adaptivePosition(for card: Card, in canvasSize: CGSize) -> CGPoint {
-        let pad = BoardViewModel.canvasSidePadding
-        let topLimit = BoardViewModel.topCreationLimit
-        
-        let maxX = max(pad, canvasSize.width - pad - card.size.width)
-        let maxY = max(topLimit, canvasSize.height - pad - card.size.height)
-        
-        let displayX = min(card.position.x, maxX)
-        let displayY = min(card.position.y, maxY)
-        
-        return CGPoint(x: displayX, y: displayY)
-    }
-
     private func canvasDragGesture(in canvasSize: CGSize) -> some Gesture {
         DragGesture(minimumDistance: 4, coordinateSpace: .named("canvas"))
             .onChanged { value in
                 NotificationCenter.default.post(name: .clearTextSelection, object: nil)
                 NSApp.keyWindow?.makeFirstResponder(nil)
                 if creationStart == nil {
-                    creationStart = clamped(value.startLocation, in: canvasSize)
+                    creationStart = BoardViewModel.clampedPosition(value.startLocation, size: .zero, canvasSize: canvasSize)
                 }
                 guard let start = creationStart else { return }
-                let current = clamped(value.location, in: canvasSize)
+                let current = BoardViewModel.clampedPosition(value.location, size: .zero, canvasSize: canvasSize)
 
                 let origin = CGPoint(x: min(start.x, current.x), y: min(start.y, current.y))
                 let size = CGSize(
                     width: max(BoardViewModel.minCardSize, abs(current.x - start.x)),
                     height: max(BoardViewModel.minCardSize, abs(current.y - start.y))
                 )
-                draftFrame = CGRect(origin: origin, size: size)
+                // origin выше зажат по точкам start/current (size: .zero), но
+                // после раздутия до minCardSize дальний край может вылезти за
+                // канву — та же проблема, что clampedPosition уже решает для
+                // отображения обычных карточек, но с учётом их реального size.
+                let clampedOrigin = BoardViewModel.clampedPosition(origin, size: size, canvasSize: canvasSize)
+                draftFrame = CGRect(origin: clampedOrigin, size: size)
             }
             .onEnded { _ in
                 defer { creationStart = nil; draftFrame = nil }
@@ -394,13 +386,6 @@ struct ContentView: View {
             }
     }
 
-    private func clamped(_ point: CGPoint, in canvasSize: CGSize) -> CGPoint {
-        CGPoint(
-            x: min(max(BoardViewModel.canvasSidePadding, point.x), canvasSize.width - BoardViewModel.canvasSidePadding),
-            y: min(max(BoardViewModel.topCreationLimit, point.y), canvasSize.height - BoardViewModel.canvasSidePadding)
-        )
-    }
-    
     private func startWorkspaceRename() {
         workspaceNameDraft = viewModel.activeWorkspace?.name ?? Workspace.defaultName(forSlot: viewModel.activeSlot)
         isEditingWorkspaceName = true

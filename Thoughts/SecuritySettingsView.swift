@@ -100,11 +100,9 @@ struct SecuritySettingsTab: View {
                 title: "Enter Passcode to Turn Off Passcode Lock",
                 allowsTouchID: settings.isTouchIDEnabled,
                 onTouchID: {
-                    viewModel.authenticateWithTouchID { success in
-                        if success {
-                            isShowingDisableConfirmation = false
-                            disablePasscode()
-                        }
+                    authenticateWithTouchIDThen {
+                        isShowingDisableConfirmation = false
+                        disablePasscode()
                     }
                 }
             ) { success in
@@ -125,11 +123,9 @@ struct SecuritySettingsTab: View {
                     title: "Enter Passcode to Unlock \u{201C}\(workspaceName)\u{201D}",
                     allowsTouchID: settings.isTouchIDEnabled,
                     onTouchID: {
-                        viewModel.authenticateWithTouchID { success in
-                            if success {
-                                viewModel.setSpaceProtected(false, slot: slot)
-                                pendingUnprotectSlot = nil
-                            }
+                        authenticateWithTouchIDThen {
+                            viewModel.setSpaceProtected(false, slot: slot)
+                            pendingUnprotectSlot = nil
                         }
                     }
                 ) { success in
@@ -176,6 +172,15 @@ struct SecuritySettingsTab: View {
                 }
             }
         )
+    }
+
+    /// Общий вызов Touch ID для двух confirm-диалогов ниже (turn off
+    /// Passcode / unprotect a Space) — раньше каждый сам оборачивал
+    /// authenticateWithTouchID в одинаковый "if success { ... }".
+    private func authenticateWithTouchIDThen(_ action: @escaping () -> Void) {
+        viewModel.authenticateWithTouchID { success in
+            if success { action() }
+        }
     }
 
     private func disablePasscode() {

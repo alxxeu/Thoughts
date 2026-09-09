@@ -9,9 +9,6 @@ import SwiftUI
 struct SpaceLockOverlayView: View {
     var viewModel: BoardViewModel
 
-    @State private var enteredCodes: [UInt16] = []
-    @State private var shakeOffsetX: CGFloat = 0
-
     var body: some View {
         ZStack {
             Group {
@@ -44,64 +41,21 @@ struct SpaceLockOverlayView: View {
             }
         }
         .contentShape(Rectangle())
-        .onChange(of: viewModel.activeSlot) { _, _ in
-            // Переход на другой (тоже заблокированный) Space — сбрасываем
-            // локальное состояние попытки разблокировки предыдущего.
-            enteredCodes = []
-        }
     }
 
     // MARK: - Passcode
 
+    /// .id(activeSlot) — переключение на другой (тоже заблокированный)
+    /// Space должно сбросить попытку разблокировки предыдущего; смена id
+    /// пересоздаёт PasscodeDotsEntry с нуля вместо явного .onChange-сброса.
     private var passcodeEntry: some View {
-        ZStack {
-            HStack(spacing: 14) {
-                ForEach(0..<PasscodeEncoding.length, id: \.self) { index in
-                    Circle()
-                        .fill(index < enteredCodes.count ? Color.primary.opacity(0.85) : Color.primary.opacity(0.15))
-                        .frame(width: 10, height: 10)
-                }
-            }
-            .padding(.horizontal, 4)
-            .offset(x: shakeOffsetX)
-
-            KeyCodeCaptureView(
-                onKeyCode: { code in appendCode(code) },
-                onDelete: { removeLastCode() }
-            )
-            .frame(width: 1, height: 1)
-        }
-    }
-
-    private func appendCode(_ code: UInt16) {
-        guard enteredCodes.count < PasscodeEncoding.length else { return }
-        enteredCodes.append(code)
-        guard enteredCodes.count == PasscodeEncoding.length else { return }
-
-        if PasscodeStore.verify(PasscodeEncoding.string(from: enteredCodes)) {
+        PasscodeDotsEntry { codes in
+            guard PasscodeStore.verify(PasscodeEncoding.string(from: codes)) else { return false }
             viewModel.unlockActiveSpace()
-        } else {
-            triggerShake()
-            enteredCodes = []
+            return true
         }
-    }
-
-    private func removeLastCode() {
-        guard !enteredCodes.isEmpty else { return }
-        enteredCodes.removeLast()
-    }
-
-    /// Быстрая многократная тряска вместо одиночного плавного сдвига —
-    /// большая амплитуда, короткие шаги.
-    private func triggerShake() {
-        let bounces: [CGFloat] = [-14, 14, -10, 10, -6, 6, 0]
-        for (index, value) in bounces.enumerated() {
-            DispatchQueue.main.asyncAfter(deadline: .now() + Double(index) * 0.045) {
-                withAnimation(.easeInOut(duration: 0.045)) {
-                    shakeOffsetX = value
-                }
-            }
-        }
+        .padding(.horizontal, 4)
+        .id(viewModel.activeSlot)
     }
 
     // MARK: - Touch ID

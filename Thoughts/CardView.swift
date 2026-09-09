@@ -23,7 +23,6 @@ struct CardView: View {
     @State private var isTextFocused: Bool = false
 
     private var pad: CGFloat { BoardViewModel.canvasSidePadding }
-    private var topLimit: CGFloat { BoardViewModel.topCreationLimit }
     private var isPrivacyLocked: Bool {
         card.privacyMode != .none && !isRevealed
     }
@@ -318,13 +317,11 @@ struct CardView: View {
                     NSCursor.closedHand.set()
                 }
                 guard let origin = dragOrigin else { return }
-                
-                let maxX = max(pad, canvasSize.width - pad - card.size.width)
-                let maxY = max(topLimit, canvasSize.height - pad - card.size.height)
-                
-                card.position = CGPoint(
-                    x: min(maxX, max(pad, origin.x + value.translation.width)),
-                    y: min(maxY, max(topLimit, origin.y + value.translation.height))
+
+                card.position = BoardViewModel.clampedPosition(
+                    CGPoint(x: origin.x + value.translation.width, y: origin.y + value.translation.height),
+                    size: card.size,
+                    canvasSize: canvasSize
                 )
                 
                 if let preview = BoardViewModel.placementPreview(

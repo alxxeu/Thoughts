@@ -11,7 +11,6 @@ struct PasscodeConfirmView: View {
     var onTouchID: (() -> Void)?
     var onResult: (Bool) -> Void
 
-    @State private var enteredCodes: [UInt16] = []
     @State private var errorMessage: String?
 
     var body: some View {
@@ -20,20 +19,14 @@ struct PasscodeConfirmView: View {
                 .font(.system(size: 15, weight: .semibold))
                 .multilineTextAlignment(.center)
 
-            ZStack {
-                HStack(spacing: 14) {
-                    ForEach(0..<PasscodeEncoding.length, id: \.self) { index in
-                        Circle()
-                            .fill(index < enteredCodes.count ? Color.primary.opacity(0.85) : Color.primary.opacity(0.15))
-                            .frame(width: 10, height: 10)
-                    }
+            PasscodeDotsEntry { codes in
+                guard PasscodeStore.verify(PasscodeEncoding.string(from: codes)) else {
+                    errorMessage = "Incorrect passcode."
+                    return false
                 }
-
-                KeyCodeCaptureView(
-                    onKeyCode: { code in appendCode(code) },
-                    onDelete: { removeLastCode() }
-                )
-                .frame(width: 1, height: 1)
+                isPresented = false
+                onResult(true)
+                return true
             }
 
             if let errorMessage {
@@ -59,24 +52,5 @@ struct PasscodeConfirmView: View {
         }
         .padding(28)
         .frame(width: 280)
-    }
-
-    private func appendCode(_ code: UInt16) {
-        guard enteredCodes.count < PasscodeEncoding.length else { return }
-        enteredCodes.append(code)
-        guard enteredCodes.count == PasscodeEncoding.length else { return }
-
-        if PasscodeStore.verify(PasscodeEncoding.string(from: enteredCodes)) {
-            isPresented = false
-            onResult(true)
-        } else {
-            errorMessage = "Incorrect passcode."
-            enteredCodes = []
-        }
-    }
-
-    private func removeLastCode() {
-        guard !enteredCodes.isEmpty else { return }
-        enteredCodes.removeLast()
     }
 }

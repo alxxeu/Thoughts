@@ -85,3 +85,71 @@ enum PasscodeEncoding {
         codes.map(String.init).joined(separator: ",")
     }
 }
+
+/// Общий ввод passcode из PasscodeEncoding.length физических клавиш —
+/// точки-индикаторы + KeyCodeCaptureView + shake при отклонённой попытке.
+/// Раньше эта связка была продублирована по-разному в PasscodeSetupView,
+/// PasscodeConfirmView и SpaceLockOverlayView (shake был только в одном
+/// из трёх). Сама View ничего не знает про Keychain/стадии сетапа — она
+/// просто собирает четвёрку кодов и отдаёт её вызывающей стороне на
+/// интерпретацию.
+struct PasscodeDotsEntry: View {
+    /// true — попытка принята: коды тихо очищаются, дальше решает
+    /// вызывающая сторона (закрыть шит, перейти на следующую стадию и
+    /// т.п.). false — отклонена: коды очищаются с shake-анимацией, поле
+    /// готово к повтору.
+    var onComplete: (_ codes: [UInt16]) -> Bool
+
+    @State private var enteredCodes: [UInt16] = []
+    @State private var shakeOffsetX: CGFloat = 0
+
+    var body: some View {
+        ZStack {
+            HStack(spacing: 14) {
+                ForEach(0..<PasscodeEncoding.length, id: \.self) { index in
+                    Circle()
+                        .fill(index < enteredCodes.count ? Color.primary.opacity(0.85) : Color.primary.opacity(0.15))
+                        .frame(width: 10, height: 10)
+                }
+            }
+            .offset(x: shakeOffsetX)
+
+            KeyCodeCaptureView(
+                onKeyCode: { code in appendCode(code) },
+                onDelete: { removeLastCode() }
+            )
+            .frame(width: 1, height: 1)
+        }
+    }
+
+    private func appendCode(_ code: UInt16) {
+        guard enteredCodes.count < PasscodeEncoding.length else { return }
+        enteredCodes.append(code)
+        guard enteredCodes.count == PasscodeEncoding.length else { return }
+
+        if onComplete(enteredCodes) {
+            enteredCodes = []
+        } else {
+            triggerShake()
+            enteredCodes = []
+        }
+    }
+
+    private func removeLastCode() {
+        guard !enteredCodes.isEmpty else { return }
+        enteredCodes.removeLast()
+    }
+
+    /// Быстрая многократная тряска вместо одиночного плавного сдвига —
+    /// большая амплитуда, короткие шаги.
+    private func triggerShake() {
+        let bounces: [CGFloat] = [-14, 14, -10, 10, -6, 6, 0]
+        for (index, value) in bounces.enumerated() {
+            DispatchQueue.main.asyncAfter(deadline: .now() + Double(index) * 0.045) {
+                withAnimation(.easeInOut(duration: 0.045)) {
+                    shakeOffsetX = value
+                }
+            }
+        }
+    }
+}

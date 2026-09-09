@@ -18,7 +18,6 @@ struct PasscodeSetupView: View {
 
     @State private var stage: Stage
     @State private var firstEntry: [UInt16] = []
-    @State private var enteredCodes: [UInt16] = []
     @State private var errorMessage: String?
 
     init(isPresented: Binding<Bool>, onComplete: @escaping (Bool) -> Void) {
@@ -32,21 +31,7 @@ struct PasscodeSetupView: View {
             Text(title)
                 .font(.system(size: 15, weight: .semibold))
 
-            ZStack {
-                HStack(spacing: 14) {
-                    ForEach(0..<PasscodeEncoding.length, id: \.self) { index in
-                        Circle()
-                            .fill(index < enteredCodes.count ? Color.primary.opacity(0.85) : Color.primary.opacity(0.15))
-                            .frame(width: 10, height: 10)
-                    }
-                }
-
-                KeyCodeCaptureView(
-                    onKeyCode: { code in appendCode(code) },
-                    onDelete: { removeLastCode() }
-                )
-                .frame(width: 1, height: 1)
-            }
+            PasscodeDotsEntry { codes in handleSubmission(codes) }
 
             if let errorMessage {
                 Text(errorMessage)
@@ -74,52 +59,44 @@ struct PasscodeSetupView: View {
         }
     }
 
-    private func appendCode(_ code: UInt16) {
-        guard enteredCodes.count < PasscodeEncoding.length else { return }
-        enteredCodes.append(code)
-        guard enteredCodes.count == PasscodeEncoding.length else { return }
-
+    /// true — переход принят молча (следующая стадия или итоговый
+    /// успех), false — отклонён с shake (неверный текущий код / коды не
+    /// совпали / Keychain отказал), поле готово к повтору.
+    private func handleSubmission(_ codes: [UInt16]) -> Bool {
         switch stage {
         case .verifyCurrent:
-            if PasscodeStore.verify(PasscodeEncoding.string(from: enteredCodes)) {
-                errorMessage = nil
-                enteredCodes = []
-                stage = .create
-            } else {
+            guard PasscodeStore.verify(PasscodeEncoding.string(from: codes)) else {
                 errorMessage = "Incorrect passcode."
-                enteredCodes = []
+                return false
             }
-        case .create:
-            firstEntry = enteredCodes
             errorMessage = nil
-            enteredCodes = []
+            stage = .create
+            return true
+        case .create:
+            firstEntry = codes
+            errorMessage = nil
             stage = .confirm
+            return true
         case .confirm:
-            if enteredCodes == firstEntry {
-                if PasscodeStore.set(PasscodeEncoding.string(from: enteredCodes)) {
-                    isPresented = false
-                    onComplete(true)
-                } else {
-                    // Keychain отказал в записи — НЕ сообщаем об успехе:
-                    // иначе isPasscodeEnabled стал бы true без реально
-                    // сохранённого кода, и пользователь остался бы
-                    // заблокирован без возможности разблокировать что-либо.
-                    errorMessage = "Couldn't save passcode. Try again."
-                    firstEntry = []
-                    enteredCodes = []
-                    stage = .create
-                }
-            } else {
+            guard codes == firstEntry else {
                 errorMessage = "Passcodes didn't match. Try again."
                 firstEntry = []
-                enteredCodes = []
                 stage = .create
+                return false
             }
+            guard PasscodeStore.set(PasscodeEncoding.string(from: codes)) else {
+                // Keychain отказал в записи — НЕ сообщаем об успехе: иначе
+                // isPasscodeEnabled стал бы true без реально сохранённого
+                // кода, и пользователь остался бы заблокирован без
+                // возможности разблокировать что-либо.
+                errorMessage = "Couldn't save passcode. Try again."
+                firstEntry = []
+                stage = .create
+                return false
+            }
+            isPresented = false
+            onComplete(true)
+            return true
         }
-    }
-
-    private func removeLastCode() {
-        guard !enteredCodes.isEmpty else { return }
-        enteredCodes.removeLast()
     }
 }

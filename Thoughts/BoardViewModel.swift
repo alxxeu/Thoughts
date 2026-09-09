@@ -444,4 +444,25 @@ extension BoardViewModel {
 
         return CGPoint(x: x, y: y)
     }
+
+    /// Не даёт точке/карточке (с size — .zero для точки без размера, как в
+    /// жесте создания новой карточки) выйти за пределы канвы. Раньше было
+    /// реализовано трижды по-разному: ContentView.adaptivePosition (только
+    /// верхняя граница — для уже сохранённой позиции при показе),
+    /// CardView.moveGesture (обе границы — во время драга) и
+    /// ContentView.clamped (обе границы, без учёта размера — для точки
+    /// драга создания). Здесь — одна функция с обеими границами и size,
+    /// которая покрывает все три случая (size: .zero эквивалентен старому
+    /// clamped).
+    static func clampedPosition(_ point: CGPoint, size: CGSize, canvasSize: CGSize) -> CGPoint {
+        let pad = canvasSidePadding
+        let top = topCreationLimit
+        let maxX = max(pad, canvasSize.width - pad - size.width)
+        let maxY = max(top, canvasSize.height - pad - size.height)
+
+        return CGPoint(
+            x: min(maxX, max(pad, point.x)),
+            y: min(maxY, max(top, point.y))
+        )
+    }
 }
