@@ -10,7 +10,6 @@ struct SpaceLockOverlayView: View {
     var viewModel: BoardViewModel
 
     @State private var enteredCodes: [UInt16] = []
-    @State private var isShowingError = false
     @State private var shakeOffsetX: CGFloat = 0
 
     var body: some View {
@@ -49,7 +48,6 @@ struct SpaceLockOverlayView: View {
             // Переход на другой (тоже заблокированный) Space — сбрасываем
             // локальное состояние попытки разблокировки предыдущего.
             enteredCodes = []
-            isShowingError = false
         }
     }
 
@@ -58,7 +56,7 @@ struct SpaceLockOverlayView: View {
     private var passcodeEntry: some View {
         ZStack {
             HStack(spacing: 14) {
-                ForEach(0..<4, id: \.self) { index in
+                ForEach(0..<PasscodeEncoding.length, id: \.self) { index in
                     Circle()
                         .fill(index < enteredCodes.count ? Color.primary.opacity(0.85) : Color.primary.opacity(0.15))
                         .frame(width: 10, height: 10)
@@ -76,20 +74,15 @@ struct SpaceLockOverlayView: View {
     }
 
     private func appendCode(_ code: UInt16) {
-        guard enteredCodes.count < 4 else { return }
+        guard enteredCodes.count < PasscodeEncoding.length else { return }
         enteredCodes.append(code)
-        guard enteredCodes.count == 4 else { return }
+        guard enteredCodes.count == PasscodeEncoding.length else { return }
 
         if PasscodeStore.verify(PasscodeEncoding.string(from: enteredCodes)) {
             viewModel.unlockActiveSpace()
         } else {
-            isShowingError = true
             triggerShake()
             enteredCodes = []
-            Task {
-                try? await Task.sleep(for: .seconds(0.4))
-                isShowingError = false
-            }
         }
     }
 

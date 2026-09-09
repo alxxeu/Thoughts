@@ -12,6 +12,13 @@ struct SecuritySettingsTab: View {
     private var settings: SecuritySettings { viewModel.securitySettings }
 
     @State private var isShowingPasscodeSetup = false
+    // Различает, ЗАЧЕМ открыт один и тот же PasscodeSetupView-sheet: первое
+    // включение Passcode Lock (тогда результат sheet'а — это и есть новое
+    // значение isPasscodeEnabled) или смена уже существующего пароля через
+    // "Change Passcode…" (тогда Passcode Lock уже включён и должен
+    // оставаться включённым независимо от успеха/отмены — сам факт смены
+    // пароля не должен трогать этот тумблер).
+    @State private var isFirstTimePasscodeSetup = false
     @State private var isShowingDisableConfirmation = false
     @State private var pendingUnprotectSlot: Int?
 
@@ -26,10 +33,11 @@ struct SecuritySettingsTab: View {
                 }
             } else {
                 Section {
-                    settingsRow("Turn Passcode Off") {
+                    SettingsRowButton(title: "Turn Passcode Off") {
                         isShowingDisableConfirmation = true
                     }
-                    settingsRow("Change Passcode…") {
+                    SettingsRowButton(title: "Change Passcode…") {
+                        isFirstTimePasscodeSetup = false
                         isShowingPasscodeSetup = true
                     }
                 } footer: {
@@ -78,6 +86,11 @@ struct SecuritySettingsTab: View {
         .formStyle(.grouped)
         .sheet(isPresented: $isShowingPasscodeSetup) {
             PasscodeSetupView(isPresented: $isShowingPasscodeSetup) { didSetPasscode in
+                // "Change Passcode…" (не первое включение) не должен
+                // трогать isPasscodeEnabled вообще — ни при успехе (уже
+                // true), ни при Cancel (должен остаться true, раньше здесь
+                // был баг: Cancel тут ошибочно выключал Passcode Lock целиком).
+                guard isFirstTimePasscodeSetup else { return }
                 settings.isPasscodeEnabled = didSetPasscode
             }
         }
@@ -103,7 +116,7 @@ struct SecuritySettingsTab: View {
             set: { if !$0 { pendingUnprotectSlot = nil } }
         )) {
             if let slot = pendingUnprotectSlot {
-                let workspaceName = viewModel.workspaces.first(where: { $0.slot == slot })?.name ?? "Space \(slot)"
+                let workspaceName = viewModel.workspaces.first(where: { $0.slot == slot })?.name ?? Workspace.defaultName(forSlot: slot)
                 PasscodeConfirmView(
                     isPresented: Binding(
                         get: { pendingUnprotectSlot != nil },
@@ -130,13 +143,16 @@ struct SecuritySettingsTab: View {
     }
 
     private var passcodeEnabledBinding: Binding<Bool> {
+        // Этот Toggle рендерится только пока isPasscodeEnabled == false (см.
+        // тело view выше), так что единственное реальное взаимодействие с
+        // ним — включение; setter не нуждается в ветке на "выключить".
         Binding(
             get: { settings.isPasscodeEnabled },
-            set: { newValue in
-                guard newValue else { return }
+            set: { _ in
                 // Включение — не мгновенное: сначала обязательно создаём
                 // код, тумблер визуально останется выключенным, пока сетап
                 // не будет пройден до конца (или откатится при отмене).
+                isFirstTimePasscodeSetup = true
                 isShowingPasscodeSetup = true
             }
         )
@@ -163,23 +179,11 @@ struct SecuritySettingsTab: View {
     }
 
     private func disablePasscode() {
-        PasscodeStore.remove()
+        // Если Keychain отказал в удалении — не сообщаем UI, что Passcode
+        // выключен: старый код остался бы в Keychain, а isPasscodeEnabled
+        // ошибочно показывал бы "выключено".
+        guard PasscodeStore.remove() else { return }
         settings.isPasscodeEnabled = false
         settings.isTouchIDEnabled = false
-    }
-
-    /// Обычная кнопка внутри Form/Section на macOS получает собственную
-    /// светло-серую капсулу вокруг текста — .buttonStyle(.plain) убирает
-    /// её, а Spacer + contentShape делают кликабельной всю строку целиком,
-    /// а не только текст.
-    private func settingsRow(_ title: String, action: @escaping () -> Void) -> some View {
-        Button(action: action) {
-            HStack {
-                Text(title)
-                Spacer()
-            }
-            .contentShape(Rectangle())
-        }
-        .buttonStyle(.plain)
     }
 }

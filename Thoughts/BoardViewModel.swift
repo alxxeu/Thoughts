@@ -163,7 +163,7 @@ final class BoardViewModel {
         guard let index = workspaces.firstIndex(where: { $0.slot == activeSlot }) else { return }
         let trimmed = name.trimmingCharacters(in: .whitespacesAndNewlines)
         let limited = String(trimmed.prefix(Self.maxWorkspaceNameLength))
-        workspaces[index].name = limited.isEmpty ? "Space \(activeSlot)" : limited
+        workspaces[index].name = limited.isEmpty ? Workspace.defaultName(forSlot: activeSlot) : limited
         saveImmediately()
     }
 
@@ -214,7 +214,12 @@ final class BoardViewModel {
     }
 
     private func reindexSpotlight() {
-        let snapshots = workspaces.flatMap { workspace in
+        // Space Lock — как и per-card Spoiler/Lock — не должен утекать через
+        // системный поиск: карточки любого Space с isProtected == true
+        // целиком исключаются из индекса, независимо от того, разблокирован
+        // ли этот Space прямо сейчас в текущей сессии (unlockedProtectedSlots
+        // — это только runtime-состояние UI, не сигнал "больше не приватно").
+        let snapshots = workspaces.filter { !$0.isProtected }.flatMap { workspace in
             (cardsByWorkspace[workspace.slot] ?? []).map {
                 SpotlightCardSnapshot(
                     id: $0.id,
@@ -263,9 +268,11 @@ final class BoardViewModel {
                 }
             }
         } else {
-            // Если Touch ID недоступен в системе — разрешаем разблокировку
+            // Touch ID/device-password недоступны — НЕ считаем это успехом.
+            // Passcode остаётся основным и всегда рабочим путём разблокировки;
+            // здесь fail-closed, а не fail-open.
             DispatchQueue.main.async {
-                completion(true)
+                completion(false)
             }
         }
     }

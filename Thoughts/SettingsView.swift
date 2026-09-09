@@ -1,6 +1,27 @@
 import SwiftUI
 import ServiceManagement
 
+/// Обычная кнопка внутри Form/Section на macOS получает собственную
+/// светло-серую капсулу вокруг текста — .buttonStyle(.plain) убирает её, а
+/// Spacer + contentShape делают кликабельной всю строку целиком, а не
+/// только текст. Общий компонент для General (здесь) и Security
+/// (SecuritySettingsView) табов — раньше было продублировано в обоих.
+struct SettingsRowButton: View {
+    let title: String
+    let action: () -> Void
+
+    var body: some View {
+        Button(action: action) {
+            HStack {
+                Text(title)
+                Spacer()
+            }
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+    }
+}
+
 struct SettingsView: View {
     var viewModel: BoardViewModel
 
@@ -30,16 +51,9 @@ struct SettingsView: View {
                         }
 
                         Section {
-                            Button {
+                            SettingsRowButton(title: "Replay Onboarding") {
                                 NotificationCenter.default.post(name: .replayOnboarding, object: nil)
-                            } label: {
-                                HStack {
-                                    Text("Replay Onboarding")
-                                    Spacer()
-                                }
-                                .contentShape(Rectangle())
                             }
-                            .buttonStyle(.plain)
                         } footer: {
                             Text("Show the first-launch tour of Thoughts again.")
                         }

@@ -34,7 +34,7 @@ struct PasscodeSetupView: View {
 
             ZStack {
                 HStack(spacing: 14) {
-                    ForEach(0..<4, id: \.self) { index in
+                    ForEach(0..<PasscodeEncoding.length, id: \.self) { index in
                         Circle()
                             .fill(index < enteredCodes.count ? Color.primary.opacity(0.85) : Color.primary.opacity(0.15))
                             .frame(width: 10, height: 10)
@@ -75,9 +75,9 @@ struct PasscodeSetupView: View {
     }
 
     private func appendCode(_ code: UInt16) {
-        guard enteredCodes.count < 4 else { return }
+        guard enteredCodes.count < PasscodeEncoding.length else { return }
         enteredCodes.append(code)
-        guard enteredCodes.count == 4 else { return }
+        guard enteredCodes.count == PasscodeEncoding.length else { return }
 
         switch stage {
         case .verifyCurrent:
@@ -96,9 +96,19 @@ struct PasscodeSetupView: View {
             stage = .confirm
         case .confirm:
             if enteredCodes == firstEntry {
-                PasscodeStore.set(PasscodeEncoding.string(from: enteredCodes))
-                isPresented = false
-                onComplete(true)
+                if PasscodeStore.set(PasscodeEncoding.string(from: enteredCodes)) {
+                    isPresented = false
+                    onComplete(true)
+                } else {
+                    // Keychain отказал в записи — НЕ сообщаем об успехе:
+                    // иначе isPasscodeEnabled стал бы true без реально
+                    // сохранённого кода, и пользователь остался бы
+                    // заблокирован без возможности разблокировать что-либо.
+                    errorMessage = "Couldn't save passcode. Try again."
+                    firstEntry = []
+                    enteredCodes = []
+                    stage = .create
+                }
             } else {
                 errorMessage = "Passcodes didn't match. Try again."
                 firstEntry = []

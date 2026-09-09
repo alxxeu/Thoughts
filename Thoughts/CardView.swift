@@ -13,7 +13,6 @@ struct CardView: View {
     @State private var isHoveringDeleteButton = false
     @State private var deleteProgress: CGFloat = 0.0
     @State private var isPressingDelete = false
-    @State private var deleteTimer: Timer? = nil
     @State private var isShowingTagPopover = false
     @State private var isHoveringTagButton = false
     @State private var isRevealed = false
@@ -30,7 +29,7 @@ struct CardView: View {
     }
     
     var body: some View {
-        ZStack(alignment: SwiftUI.Alignment.topLeading) {
+        ZStack(alignment: .topLeading) {
             // РОДНОЙ GLASS EFFECT (доступен только с macOS 26) — на более
             // старых системах (минимум приложения — macOS 15) используем
             // обычный системный Material как визуально близкий аналог.
@@ -71,7 +70,7 @@ struct CardView: View {
                         .frame(height: 15)
                 }
             }
-            .onReceive(NotificationCenter.default.publisher(for: NSNotification.Name("FocusNewCard"))) { notification in
+            .onReceive(NotificationCenter.default.publisher(for: .focusNewCard)) { notification in
                 if let targetID = notification.object as? UUID, targetID == card.id {
                     isTextFocused = true
                 }
@@ -271,7 +270,7 @@ struct CardView: View {
                 // (cardWasClicked с чужим id). Сама блокировка при этом не
                 // мгновенная, а с 5-секундной отсрочкой — успеешь кликнуть
                 // обратно на эту же карточку и блокировка отменится.
-                .onReceive(NotificationCenter.default.publisher(for: NSNotification.Name("ClearTextSelection"))) { _ in
+                .onReceive(NotificationCenter.default.publisher(for: .clearTextSelection)) { _ in
                     if isRevealed {
                         scheduleRelock()
                     }
@@ -305,11 +304,8 @@ struct CardView: View {
     
     private func resetDeleteState() {
         isPressingDelete = false
-        withAnimation(.none) {
-            deleteProgress = 0.0
-        }
         withAnimation(.easeOut(duration: 0.12)) {
-            isPressingDelete = false
+            deleteProgress = 0.0
         }
     }
     

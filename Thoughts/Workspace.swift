@@ -17,6 +17,12 @@ struct Workspace: Identifiable, Codable, Equatable {
         self.isProtected = isProtected
     }
 
+    /// Единственный источник фоллбек-имени "Space N" — до этого было
+    /// продублировано как raw string interpolation в 7 местах в 4 файлах.
+    static func defaultName(forSlot slot: Int) -> String {
+        "Space \(slot)"
+    }
+
     enum CodingKeys: String, CodingKey {
         case id, slot, name, isProtected
     }

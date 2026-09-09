@@ -6,13 +6,12 @@ struct TagPopoverView: View {
     var onSelect: () -> Void
     
     private let columns = Array(repeating: GridItem(.fixed(14), spacing: 8), count: 4)
-    private let allColors: [CardTagColor] = [.red, .orange, .yellow, .green, .blue, .indigo, .purple]
     
     var body: some View {
         VStack(spacing: 6) {
             // 1. Сетка цветов
             LazyVGrid(columns: columns, spacing: 8) {
-                ForEach(allColors.prefix(3)) { tagColor in
+                ForEach(CardTagColor.allCases.prefix(3)) { tagColor in
                     TagCircleButton(tagColor: tagColor, isSelected: selectedColor == tagColor) {
                         selectedColor = tagColor
                         onSelect()
@@ -24,7 +23,7 @@ struct TagPopoverView: View {
                     onSelect()
                 }
                 
-                ForEach(allColors.suffix(4)) { tagColor in
+                ForEach(CardTagColor.allCases.suffix(4)) { tagColor in
                     TagCircleButton(tagColor: tagColor, isSelected: selectedColor == tagColor) {
                         selectedColor = tagColor
                         onSelect()

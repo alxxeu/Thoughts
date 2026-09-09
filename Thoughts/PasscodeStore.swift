@@ -13,14 +13,20 @@ enum PasscodeStore {
         read() != nil
     }
 
-    static func set(_ passcode: String) {
+    /// Возвращает false при неудаче записи в Keychain — вызывающая сторона
+    /// не должна считать passcode сохранённым, если это не так (иначе
+    /// isPasscodeEnabled=true при фактически несохранённом коде намертво
+    /// заблокирует пользователя от собственных карточек).
+    @discardableResult
+    static func set(_ passcode: String) -> Bool {
         let query = baseQuery()
         SecItemDelete(query as CFDictionary)
 
         var newItem = query
         newItem[kSecValueData as String] = Data(passcode.utf8)
         newItem[kSecAttrAccessible as String] = kSecAttrAccessibleAfterFirstUnlockThisDeviceOnly
-        SecItemAdd(newItem as CFDictionary, nil)
+        let status = SecItemAdd(newItem as CFDictionary, nil)
+        return status == errSecSuccess
     }
 
     static func verify(_ passcode: String) -> Bool {
@@ -28,8 +34,13 @@ enum PasscodeStore {
         return stored == passcode
     }
 
-    static func remove() {
-        SecItemDelete(baseQuery() as CFDictionary)
+    /// errSecItemNotFound тоже считается успехом — конечное состояние
+    /// ("код отсутствует в Keychain"), к которому стремится этот вызов,
+    /// уже достигнуто.
+    @discardableResult
+    static func remove() -> Bool {
+        let status = SecItemDelete(baseQuery() as CFDictionary)
+        return status == errSecSuccess || status == errSecItemNotFound
     }
 
     private static func baseQuery() -> [String: Any] {

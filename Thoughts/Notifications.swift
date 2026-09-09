@@ -17,4 +17,10 @@ extension Notification.Name {
     /// удаление происходит только после явного подтверждения в алерте,
     /// не по этому уведомлению напрямую.
     static let requestClearSpace = Notification.Name("RequestClearSpace")
+    /// Клик по пустому холсту или начало драга по нему — карточки снимают
+    /// текстовое выделение/фокус, если он был у одной из них.
+    static let clearTextSelection = Notification.Name("ClearTextSelection")
+    /// Только что созданная карточка домаунтилась — просит её собственный
+    /// CardTextView взять фокус (см. задержку в ContentView.addCard-flow).
+    static let focusNewCard = Notification.Name("FocusNewCard")
 }

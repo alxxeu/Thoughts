@@ -145,7 +145,7 @@ struct ContentView: View {
             isShowingClearSpaceConfirmation = true
         }
         .alert(
-            "Clear \u{201C}\(viewModel.activeWorkspace?.name ?? "Space \(viewModel.activeSlot)")\u{201D}?",
+            "Clear \u{201C}\(viewModel.activeWorkspace?.name ?? Workspace.defaultName(forSlot: viewModel.activeSlot))\u{201D}?",
             isPresented: $isShowingClearSpaceConfirmation
         ) {
             Button("Cancel", role: .cancel) {}
@@ -159,12 +159,12 @@ struct ContentView: View {
 
     private var unlockedSpaceContent: some View {
         GeometryReader { proxy in
-            ZStack(alignment: SwiftUI.Alignment.topLeading) {
+            ZStack(alignment: .topLeading) {
                 Color.clear
                     .contentShape(Rectangle())
                     .gesture(canvasDragGesture(in: proxy.size))
                     .onTapGesture {
-                        NotificationCenter.default.post(name: NSNotification.Name("ClearTextSelection"), object: nil)
+                        NotificationCenter.default.post(name: .clearTextSelection, object: nil)
                         NSApp.keyWindow?.makeFirstResponder(nil)
                     }
 
@@ -199,12 +199,12 @@ struct ContentView: View {
                         },
                         onEdgeHintsChange: { edgeHints = $0 }
                     )
-                    .frame(width: card.size.width, height: card.size.height, alignment: SwiftUI.Alignment.topLeading)
+                    .frame(width: card.size.width, height: card.size.height, alignment: .topLeading)
                     .offset(x: adaptedPosition.x, y: adaptedPosition.y)
                     .onAppear {
                         if newlyCreatedCardID == card.id {
                             DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) {
-                                NotificationCenter.default.post(name: NSNotification.Name("FocusNewCard"), object: card.id)
+                                NotificationCenter.default.post(name: .focusNewCard, object: card.id)
                                 newlyCreatedCardID = nil
                             }
                         }
@@ -214,7 +214,7 @@ struct ContentView: View {
                 if let placementPreview {
                     RoundedRectangle(cornerRadius: 12)
                         .fill(Color.primary.opacity(0.05))
-                        .frame(width: placementPreview.width, height: placementPreview.height, alignment: SwiftUI.Alignment.topLeading)
+                        .frame(width: placementPreview.width, height: placementPreview.height, alignment: .topLeading)
                         .offset(x: placementPreview.minX, y: placementPreview.minY)
                         .allowsHitTesting(false)
                         .opacity(isPlacementPreviewVisible ? 1.0 : 0.0)
@@ -226,10 +226,10 @@ struct ContentView: View {
                         Capsule()
                             .fill(Color.primary.opacity(0.3))
                             .blur(radius: 1)
-                            .frame(width: frame.width, height: frame.height, alignment: SwiftUI.Alignment.topLeading)
+                            .frame(width: frame.width, height: frame.height, alignment: .topLeading)
                             .offset(x: frame.minX, y: frame.minY)
                             .allowsHitTesting(false)
-                            .transition(AnyTransition.opacity)
+                            .transition(.opacity)
                         
                     case .corner(let corner, let frame):
                         CornerBracket(corner: corner)
@@ -238,17 +238,17 @@ struct ContentView: View {
                                 style: StrokeStyle(lineWidth: 3, lineCap: .round, lineJoin: .round)
                             )
                             .blur(radius: 1)
-                            .frame(width: frame.width, height: frame.height, alignment: SwiftUI.Alignment.topLeading)
+                            .frame(width: frame.width, height: frame.height, alignment: .topLeading)
                             .offset(x: frame.minX, y: frame.minY)
                             .allowsHitTesting(false)
-                            .transition(AnyTransition.opacity)
+                            .transition(.opacity)
                     }
                 }
                 
                 if let draftFrame {
                     RoundedRectangle(cornerRadius: 16)
                         .fill(Color.primary.opacity(0.06))
-                        .frame(width: draftFrame.width, height: draftFrame.height, alignment: SwiftUI.Alignment.topLeading)
+                        .frame(width: draftFrame.width, height: draftFrame.height, alignment: .topLeading)
                         .offset(x: draftFrame.minX, y: draftFrame.minY)
                         .allowsHitTesting(false)
                 }
@@ -300,7 +300,7 @@ struct ContentView: View {
                                 }
                             }
                     } else {
-                        Text(viewModel.activeWorkspace?.name ?? "Space \(viewModel.activeSlot)")
+                        Text(viewModel.activeWorkspace?.name ?? Workspace.defaultName(forSlot: viewModel.activeSlot))
                             .font(.system(size: 11, weight: .semibold))
                             .foregroundStyle(.primary.opacity(0.5))
                     }
@@ -367,7 +367,7 @@ struct ContentView: View {
     private func canvasDragGesture(in canvasSize: CGSize) -> some Gesture {
         DragGesture(minimumDistance: 4, coordinateSpace: .named("canvas"))
             .onChanged { value in
-                NotificationCenter.default.post(name: NSNotification.Name("ClearTextSelection"), object: nil)
+                NotificationCenter.default.post(name: .clearTextSelection, object: nil)
                 NSApp.keyWindow?.makeFirstResponder(nil)
                 if creationStart == nil {
                     creationStart = clamped(value.startLocation, in: canvasSize)
@@ -402,7 +402,7 @@ struct ContentView: View {
     }
     
     private func startWorkspaceRename() {
-        workspaceNameDraft = viewModel.activeWorkspace?.name ?? "Space \(viewModel.activeSlot)"
+        workspaceNameDraft = viewModel.activeWorkspace?.name ?? Workspace.defaultName(forSlot: viewModel.activeSlot)
         isEditingWorkspaceName = true
         DispatchQueue.main.async {
             isWorkspaceNameFieldFocused = true

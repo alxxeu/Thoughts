@@ -75,6 +75,12 @@ struct KeyCodeCaptureView: NSViewRepresentable {
 /// Канонический вид "passcode" для хранения/сверки в PasscodeStore —
 /// последовательность физических кодов клавиш, а не символов.
 enum PasscodeEncoding {
+    /// Единственный источник длины пароля — раньше "4" было продублировано
+    /// как magic number в PasscodeSetupView, PasscodeConfirmView и
+    /// SpaceLockOverlayView (и в ForEach точек-индикаторов, и в guard'ах
+    /// count < / == в каждом из трёх мест).
+    static let length = 4
+
     static func string(from codes: [UInt16]) -> String {
         codes.map(String.init).joined(separator: ",")
     }

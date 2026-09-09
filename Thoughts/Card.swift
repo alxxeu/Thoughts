@@ -41,10 +41,6 @@ final class Card: Identifiable, Codable {
         self.tagColor = tagColor
     }
 
-    var frame: CGRect {
-        CGRect(origin: position, size: size)
-    }
-
     enum CodingKeys: String, CodingKey {
         case id, position, size, text, tagColor, privacyMode
     }

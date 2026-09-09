@@ -22,7 +22,7 @@ struct PasscodeConfirmView: View {
 
             ZStack {
                 HStack(spacing: 14) {
-                    ForEach(0..<4, id: \.self) { index in
+                    ForEach(0..<PasscodeEncoding.length, id: \.self) { index in
                         Circle()
                             .fill(index < enteredCodes.count ? Color.primary.opacity(0.85) : Color.primary.opacity(0.15))
                             .frame(width: 10, height: 10)
@@ -62,9 +62,9 @@ struct PasscodeConfirmView: View {
     }
 
     private func appendCode(_ code: UInt16) {
-        guard enteredCodes.count < 4 else { return }
+        guard enteredCodes.count < PasscodeEncoding.length else { return }
         enteredCodes.append(code)
-        guard enteredCodes.count == 4 else { return }
+        guard enteredCodes.count == PasscodeEncoding.length else { return }
 
         if PasscodeStore.verify(PasscodeEncoding.string(from: enteredCodes)) {
             isPresented = false

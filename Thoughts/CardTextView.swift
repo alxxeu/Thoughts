@@ -214,6 +214,11 @@ struct CardTextView: NSViewRepresentable {
     var onFocusChange: (Bool) -> Void
 
     private static let dividerPlaceholder: Character = "\u{FFFC}"
+    /// Единственный источник горизонтального инсета текста — раньше
+    /// updateNSView независимо считал ширину как "cardSize.width - 40",
+    /// не привязывая это число к textContainerInset ниже; расхождение
+    /// пришлось бы чинить в двух местах при изменении отступа.
+    private static let horizontalTextInset: CGFloat = 20
 
     func makeNSView(context: Context) -> NSScrollView {
         let scrollView = NSScrollView()
@@ -240,7 +245,7 @@ struct CardTextView: NSViewRepresentable {
         if #available(macOS 14.0, *) {
                    textView.inlinePredictionType = .no
                }
-        textView.textContainerInset = NSSize(width: 20, height: 20)
+        textView.textContainerInset = NSSize(width: Self.horizontalTextInset, height: 20)
         textView.textContainer?.widthTracksTextView = true
         textView.isVerticallyResizable = true
         textView.isHorizontallyResizable = false
@@ -259,7 +264,7 @@ struct CardTextView: NSViewRepresentable {
     func updateNSView(_ nsView: NSScrollView, context: Context) {
         guard let textView = nsView.documentView as? CardNSTextView else { return }
 
-        let innerWidth = max(cardSize.width - 40, 10)
+        let innerWidth = max(cardSize.width - Self.horizontalTextInset * 2, 10)
         if let container = textView.textContainer,
            abs(container.size.width - innerWidth) > 0.5 {
             container.size = NSSize(width: innerWidth, height: .greatestFiniteMagnitude)

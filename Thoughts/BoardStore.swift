@@ -27,7 +27,7 @@ final class BoardStore {
            let decoded = try? JSONDecoder().decode(BoardData.self, from: data) {
             var workspaces = decoded.workspaces
             for slot in 1...9 where !workspaces.contains(where: { $0.slot == slot }) {
-                workspaces.append(Workspace(slot: slot, name: "Space \(slot)"))
+                workspaces.append(Workspace(slot: slot, name: Workspace.defaultName(forSlot: slot)))
             }
             workspaces.sort { $0.slot < $1.slot }
             return (workspaces, decoded.cardsByWorkspace)
@@ -54,6 +54,6 @@ final class BoardStore {
     }
 
     private func defaultWorkspaces() -> [Workspace] {
-        (1...9).map { Workspace(slot: $0, name: "Space \($0)") }
+        (1...9).map { Workspace(slot: $0, name: Workspace.defaultName(forSlot: $0)) }
     }
 }
