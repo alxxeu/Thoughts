@@ -9,4 +9,7 @@ extension Notification.Name {
     static let cardWasClicked = Notification.Name("CardWasClicked")
     /// Cmd+L — блокирует текущий активный Space (см. ThoughtsApp/ContentView).
     static let lockCurrentSpace = Notification.Name("LockCurrentSpace")
+    /// "Replay Onboarding" в Settings → General — показывает тур заново
+    /// поверх канвы, не дожидаясь следующего первого запуска.
+    static let replayOnboarding = Notification.Name("ReplayOnboarding")
 }

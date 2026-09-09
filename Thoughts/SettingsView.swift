@@ -28,6 +28,21 @@ struct SettingsView: View {
                                     updateLaunchAtLogin(enabled: newValue)
                                 }
                         }
+
+                        Section {
+                            Button {
+                                NotificationCenter.default.post(name: .replayOnboarding, object: nil)
+                            } label: {
+                                HStack {
+                                    Text("Replay Onboarding")
+                                    Spacer()
+                                }
+                                .contentShape(Rectangle())
+                            }
+                            .buttonStyle(.plain)
+                        } footer: {
+                            Text("Show the first-launch tour of Thoughts again.")
+                        }
                     }
                     .formStyle(.grouped)
                     .tabItem {

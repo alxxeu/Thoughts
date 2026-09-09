@@ -1,13 +1,16 @@
 {
   "fill" : {
-    "automatic-gradient" : "display-p3:0.18640,0.18640,0.18640,1.00000"
+    "automatic-gradient" : "display-p3:0.67871,0.70703,0.96924,1.00000"
   },
   "groups" : [
     {
       "layers" : [
         {
-          "image-name" : "Thoughts Clear Icon 2.png",
-          "name" : "Thoughts Clear Icon 2"
+          "blend-mode" : "normal",
+          "fill" : "none",
+          "glass" : true,
+          "image-name" : "image 39.png",
+          "name" : "image 39"
         }
       ],
       "shadow" : {
@@ -24,8 +27,6 @@
     "circles" : [
       "watchOS"
     ],
-    "squares" : [
-      "macOS"
-    ]
+    "squares" : "shared"
   }
 }

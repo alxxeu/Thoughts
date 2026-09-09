@@ -100,6 +100,10 @@ struct ContentView: View {
     @State private var showEmptyHint = false
     @State private var emptyHintTask: Task<Void, Never>?
 
+    // Тур по фичам при первом запуске — поверх остального интерфейса, но
+    // не мешает locking-логике (на первом запуске Passcode ещё не включён).
+    @State private var isShowingOnboarding = !OnboardingState.hasCompletedTour
+
     var body: some View {
         Group {
             if viewModel.isActiveSpaceLocked {
@@ -114,6 +118,13 @@ struct ContentView: View {
                 unlockedSpaceContent
             }
         }
+        .overlay {
+            if isShowingOnboarding {
+                OnboardingView(onFinish: { isShowingOnboarding = false })
+                    .transition(.opacity)
+            }
+        }
+        .animation(.easeOut(duration: 0.25), value: isShowingOnboarding)
         .onReceive(NotificationCenter.default.publisher(for: .switchWorkspace)) { notification in
             if let slot = notification.object as? Int {
                 viewModel.switchWorkspace(to: slot)
@@ -121,6 +132,9 @@ struct ContentView: View {
         }
         .onReceive(NotificationCenter.default.publisher(for: .lockCurrentSpace)) { _ in
             viewModel.lockActiveSpaceManually()
+        }
+        .onReceive(NotificationCenter.default.publisher(for: .replayOnboarding)) { _ in
+            isShowingOnboarding = true
         }
     }
 
