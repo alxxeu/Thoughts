@@ -92,6 +92,14 @@ private final class CardNSTextView: NSTextView {
     /// не даём выделению/курсору заходить ДО конца маркера списка.
     override func setSelectedRange(_ charRange: NSRange, affinity: NSSelectionAffinity, stillSelecting stillSelectingFlag: Bool) {
         super.setSelectedRange(Self.clampSelectionRange(charRange, in: self), affinity: affinity, stillSelecting: stillSelectingFlag)
+        // super сам инвалидирует только разницу между старым и новым
+        // диапазоном выделения — но раз мы подменяем диапазон клэмпом,
+        // реально нарисованная на экране область не всегда совпадает с тем,
+        // что AppKit считает "предыдущим" для этого расчёта. Из-за этого при
+        // живом drag-выделении на экране мог оставаться неочищенный кусок
+        // старой подсветки (серая полоса). Полный redraw избавляет от
+        // рассинхрона независимо от того, как AppKit посчитал дельту.
+        needsDisplay = true
     }
 
     /// NSTextView по умолчанию регистрирует I-beam на весь свой bounds

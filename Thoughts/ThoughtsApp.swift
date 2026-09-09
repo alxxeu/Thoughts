@@ -222,6 +222,16 @@ struct VisualEffectBlur: NSViewRepresentable {
             view.blendingMode = .withinWindow
             view.blendingMode = .behindWindow
 
+            // Split View технически реализован через full-screen tiling —
+            // размером такого окна жёстко управляет WindowServer. Вызов
+            // setFrame здесь либо отклоняется/корректируется системой, либо
+            // сам провоцирует новую occlusion-нотификацию, которая заново
+            // ставит nudge в очередь — у границы максимального размера
+            // Split View это уходило в цикл конкуренции с системным
+            // тайлингом (мигание карточек, залипающий курсор). Толгл
+            // blendingMode геометрию не трогает и безопасен всегда.
+            guard !window.styleMask.contains(.fullScreen) else { return }
+
             let original = window.frame
             var shifted = original
             shifted.size.width += 1

@@ -21,6 +21,14 @@ struct CardView: View {
     @State private var unhighlightTask: Task<Void, Never>? = nil
     
     @State private var isTextFocused: Bool = false
+    // @GestureState, а не @State: должен сбрасываться самой системой жестов
+    // при завершении/прерывании попытки, а не только через .onEnded — иначе
+    // при перестановке карточки в bringToFront (меняет z-порядок в ZStack,
+    // что может физически переносить NSView в иерархии AppKit) распознаватель
+    // текущего жеста мог прерваться ДО onEnded, и обычный @State застревал
+    // в true навсегда, из-за чего повторные клики по этой карточке больше
+    // не поднимали её.
+    @GestureState private var hasSignaledGestureStart = false
 
     private var pad: CGFloat { BoardViewModel.canvasSidePadding }
     private var isPrivacyLocked: Bool {
@@ -248,7 +256,9 @@ struct CardView: View {
         .onHover { isHovering = $0 }
         .simultaneousGesture(
             DragGesture(minimumDistance: 0, coordinateSpace: .local)
-                .onChanged { _ in
+                .updating($hasSignaledGestureStart) { _, state, _ in
+                    guard !state else { return }
+                    state = true
                     viewModel.bringToFront(card)
                     NotificationCenter.default.post(name: .cardWasClicked, object: card.id)
                 }
@@ -372,10 +382,10 @@ struct CardView: View {
                 onPlacementPreviewChange(nil)
                 onEdgeHintsChange([])
                 dragOrigin = nil
-                viewModel.saveImmediately()
+                viewModel.saveGeometry()
             }
     }
-    
+
     private var resizeGesture: some Gesture {
         DragGesture(coordinateSpace: .named("canvas"))
             .onChanged { value in
@@ -402,19 +412,29 @@ struct CardView: View {
                     )
                 }
                 dragResizeSize = nil
-                viewModel.saveImmediately()
+                viewModel.saveGeometry()
             }
     }
 
     private func scheduleRelock() {
-        relockTask?.cancel()
+        // Не перезапускаем уже идущий отсчёт — иначе клик по любой ДРУГОЙ
+        // карточке (не только по этой) продлевал бы 5 секунд заново на
+        // каждый такой клик, и таймер практически никогда не срабатывал бы.
+        // Отсчёт должен идти независимо с момента первого "клика в сторону"
+        // и сбрасываться только явным cancelRelock() при возврате фокуса
+        // именно на эту карточку.
+        guard relockTask == nil else { return }
         relockTask = Task {
             try? await Task.sleep(nanoseconds: 5_000_000_000) // 5 секунд
-            if !Task.isCancelled {
-                await MainActor.run {
-                    withAnimation(.easeInOut(duration: 0.3)) {
-                        isRevealed = false
-                    }
+            guard !Task.isCancelled else { return }
+            await MainActor.run {
+                // Естественное срабатывание (не отмена через cancelRelock)
+                // тоже должно обнулить relockTask — иначе guard выше
+                // навсегда блокировал бы повторный запуск таймера при
+                // следующем раскрытии этой же карточки.
+                relockTask = nil
+                withAnimation(.easeInOut(duration: 0.3)) {
+                    isRevealed = false
                 }
             }
         }

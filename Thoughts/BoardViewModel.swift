@@ -190,7 +190,10 @@ final class BoardViewModel {
     }
 
     func bringToFront(_ card: Card) {
-        guard let index = cards.firstIndex(where: { $0.id == card.id }) else { return }
+        // No-op, если карточка уже последняя (то есть уже наверху) — вызовы
+        // на каждый тик клика/драга не должны гонять лишнюю мутацию массива
+        // с broadcast на весь ForEach, если z-порядок и так не меняется.
+        guard let index = cards.firstIndex(where: { $0.id == card.id }), index != cards.count - 1 else { return }
         var current = cards
         current.append(current.remove(at: index))
         cards = current
@@ -201,6 +204,16 @@ final class BoardViewModel {
         saveTask = nil
         store.save(workspaces: workspaces, cardsByWorkspace: cardsByWorkspace)
         reindexSpotlight()
+    }
+
+    /// Для чистого перемещения/ресайза карточки (drag-end/resize-end) —
+    /// текст, приватность и имя Space не менялись, так что Spotlight-индекс
+    /// не может стать неактуальным и полную переиндексацию всех Spaces
+    /// запускать не нужно.
+    func saveGeometry() {
+        saveTask?.cancel()
+        saveTask = nil
+        store.save(workspaces: workspaces, cardsByWorkspace: cardsByWorkspace)
     }
 
     func scheduleDebouncedSave() {

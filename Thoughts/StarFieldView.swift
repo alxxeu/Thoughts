@@ -66,9 +66,13 @@ struct StarFieldCanvas: View {
             Canvas { context, size in
                 let now = timeline.date.timeIntervalSinceReferenceDate
                 
-                // Фиксированная плотность: 1 звезда примерно на каждые 1600 px²
+                // Фиксированная плотность: 1 звезда примерно на каждые 1600 px²,
+                // с верхним пределом — на очень крупных заблокированных
+                // карточках (можно растянуть почти на весь холст) иначе
+                // получались бы тысячи звёзд, перерисовываемых каждый кадр
+                // TimelineView(.animation), без заметной визуальной разницы.
                 let area = size.width * size.height
-                let starCount = max(6, Int(area / 1600))
+                let starCount = min(300, max(6, Int(area / 1600)))
                 
                 for i in 0..<starCount {
                     // Независимые детерминированные значения для каждого параметра
