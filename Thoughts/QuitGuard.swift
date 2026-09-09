@@ -129,10 +129,10 @@ private struct QuitBannerView: View {
         VStack(spacing: 4) {
             Text("Quit Thoughts?")
                 .font(.system(size: 13, weight: .semibold))
-                .foregroundStyle(.white)
+                .foregroundStyle(.primary)
             Text("Press ⌘Q again to quit")
                 .font(.system(size: 11))
-                .foregroundStyle(.white.opacity(0.7))
+                .foregroundStyle(.primary.opacity(0.7))
         }
         .padding(.horizontal, 20)
         .padding(.vertical, 14)

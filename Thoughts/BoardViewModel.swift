@@ -17,6 +17,7 @@ final class BoardViewModel {
     private var cardsByWorkspace: [Int: [Card]] = [:]
 
     let securitySettings = SecuritySettings.shared
+    let appearanceSettings = AppearanceSettings.shared
 
     /// Слоты защищённых (Workspace.isProtected == true) Space, прошедшие
     /// аутентификацию в ЭТОЙ сессии. Runtime-only, никогда не персистится:

@@ -49,6 +49,26 @@ struct SettingsView: View {
                         Label("General", systemImage: "gearshape")
                     }
 
+                    Form {
+                        Section {
+                            Picker("Theme", selection: Binding(
+                                get: { viewModel.appearanceSettings.colorScheme },
+                                set: { viewModel.appearanceSettings.colorScheme = $0 }
+                            )) {
+                                ForEach(AppColorScheme.allCases) { scheme in
+                                    Text(scheme.title).tag(scheme)
+                                }
+                            }
+                            .pickerStyle(.segmented)
+                        } footer: {
+                            Text("Auto follows your Mac's system appearance.")
+                        }
+                    }
+                    .formStyle(.grouped)
+                    .tabItem {
+                        Label("Appearance", systemImage: "paintbrush")
+                    }
+
                     SecuritySettingsTab(viewModel: viewModel)
                         .tabItem {
                             Label("Security", systemImage: "lock.shield")

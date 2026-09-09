@@ -140,16 +140,16 @@ struct OnboardingView: View {
         return VStack(spacing: 16) {
             Image(systemName: page.symbol)
                 .font(.system(size: 38, weight: .medium))
-                .foregroundStyle(.white.opacity(0.9))
+                .foregroundStyle(.primary.opacity(0.9))
                 .shadow(color: .black.opacity(0.4), radius: 6)
 
             Text(page.title)
                 .font(.system(size: 19, weight: .semibold))
-                .foregroundStyle(.white)
+                .foregroundStyle(.primary)
 
             Text(page.description)
                 .font(.system(size: 13))
-                .foregroundStyle(.white.opacity(0.7))
+                .foregroundStyle(.primary.opacity(0.7))
                 .multilineTextAlignment(.center)
                 .fixedSize(horizontal: false, vertical: true)
                 .frame(maxWidth: 320)
@@ -157,10 +157,10 @@ struct OnboardingView: View {
             if let hint = page.hint {
                 Text(hint)
                     .font(.system(size: 11, weight: .semibold, design: .monospaced))
-                    .foregroundStyle(.white.opacity(0.6))
+                    .foregroundStyle(.primary.opacity(0.6))
                     .padding(.horizontal, 10)
                     .padding(.vertical, 4)
-                    .background(Capsule().fill(Color.white.opacity(0.1)))
+                    .background(Capsule().fill(Color.primary.opacity(0.1)))
             }
         }
     }
@@ -182,10 +182,10 @@ struct OnboardingView: View {
             } label: {
                 Text(isLastPage ? "Get Started" : "Next")
                     .font(.system(size: 13, weight: .semibold))
-                    .foregroundStyle(.white.opacity(0.9))
+                    .foregroundStyle(.primary.opacity(0.9))
                     .padding(.horizontal, 18)
                     .padding(.vertical, 9)
-                    .background(Capsule().fill(Color.white.opacity(0.12)))
+                    .background(Capsule().fill(Color.primary.opacity(0.12)))
                     .contentShape(Capsule())
             }
             .buttonStyle(.plain)
@@ -196,21 +196,21 @@ struct OnboardingView: View {
         Button("Back") { pageIndex = max(0, pageIndex - 1) }
             .buttonStyle(.plain)
             .font(.system(size: 12))
-            .foregroundStyle(.white.opacity(0.5))
+            .foregroundStyle(.primary.opacity(0.5))
     }
 
     private var skipButton: some View {
         Button("Skip") { finish() }
             .buttonStyle(.plain)
             .font(.system(size: 12))
-            .foregroundStyle(.white.opacity(0.5))
+            .foregroundStyle(.primary.opacity(0.5))
     }
 
     private var pageDots: some View {
         HStack(spacing: 7) {
             ForEach(onboardingPages.indices, id: \.self) { index in
                 Circle()
-                    .fill(index == pageIndex ? Color.white.opacity(0.85) : Color.white.opacity(0.25))
+                    .fill(index == pageIndex ? Color.primary.opacity(0.85) : Color.primary.opacity(0.25))
                     .frame(width: 6, height: 6)
             }
         }

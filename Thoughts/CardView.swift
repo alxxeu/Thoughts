@@ -109,7 +109,7 @@ struct CardView: View {
                         .frame(width: 16, height: 16)
                     
                     Circle()
-                        .fill(card.tagColor != nil ? card.tagColor!.color : Color.white.opacity(0.15))
+                        .fill(card.tagColor != nil ? card.tagColor!.color : Color.primary.opacity(0.15))
                         .frame(width: 10, height: 10)
                         .scaleEffect(isHoveringTagButton ? 1.6 : 1.0)
                 }
@@ -149,7 +149,7 @@ struct CardView: View {
                 )
                 path.addLine(to: CGPoint(x: 14, y: 22))
             }
-            .stroke(Color.white.opacity(0.3), style: StrokeStyle(lineWidth: 2, lineCap: .round, lineJoin: .round))
+            .stroke(Color.primary.opacity(0.3), style: StrokeStyle(lineWidth: 2, lineCap: .round, lineJoin: .round))
             .frame(width: 32, height: 32)
             .contentShape(Rectangle())
             .onHover { inside in
@@ -191,7 +191,7 @@ struct CardView: View {
             if !isPrivacyLocked {
                 ZStack {
                     Circle()
-                        .fill(Color.white.opacity(isPressingDelete ? 0.15 : (isHoveringDeleteButton ? 0.08 : 0.0)))
+                        .fill(Color.primary.opacity(isPressingDelete ? 0.15 : (isHoveringDeleteButton ? 0.08 : 0.0)))
                         .frame(width: 20, height: 20)
                         .animation(.easeIn(duration: 0.1), value: isHoveringDeleteButton)
                     
@@ -203,7 +203,7 @@ struct CardView: View {
                     
                     Image(systemName: "xmark")
                         .font(.system(size: 9, weight: .black))
-                        .foregroundStyle(isPressingDelete ? .red : .white.opacity(0.3))
+                        .foregroundStyle(isPressingDelete ? Color.red : Color.primary.opacity(0.3))
                 }
                 .contentShape(Circle())
                 .padding(5)
@@ -238,8 +238,8 @@ struct CardView: View {
 
             // ПОДСВЕТКА ПРИ ПЕРЕХОДЕ ИЗ SPOTLIGHT
             RoundedRectangle(cornerRadius: 16)
-                .stroke(Color.white.opacity(isHighlighted ? 0.9 : 0), lineWidth: 2)
-                .shadow(color: .white.opacity(isHighlighted ? 0.7 : 0), radius: isHighlighted ? 16 : 0)
+                .stroke(Color.primary.opacity(isHighlighted ? 0.9 : 0), lineWidth: 2)
+                .shadow(color: .primary.opacity(isHighlighted ? 0.7 : 0), radius: isHighlighted ? 16 : 0)
                 .allowsHitTesting(false)
                 .zIndex(106)
         }

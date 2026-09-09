@@ -31,6 +31,7 @@ struct ThoughtsApp: App {
             ContentView(viewModel: viewModel)
                 .background(VisualEffectBlur(material: .hudWindow, blendingMode: .behindWindow))
                 .ignoresSafeArea()
+                .preferredColorScheme(preferredColorScheme)
         }
         .windowStyle(.hiddenTitleBar)
         .windowResizability(.contentSize)
@@ -77,6 +78,15 @@ struct ThoughtsApp: App {
         }
         Settings {
             SettingsView(viewModel: viewModel)
+                .preferredColorScheme(preferredColorScheme)
+        }
+    }
+
+    private var preferredColorScheme: ColorScheme? {
+        switch viewModel.appearanceSettings.colorScheme {
+        case .system: return nil
+        case .light: return .light
+        case .dark: return .dark
         }
     }
 

@@ -194,7 +194,7 @@ struct ContentView: View {
                 
                 if let placementPreview {
                     RoundedRectangle(cornerRadius: 12)
-                        .fill(Color.white.opacity(0.05))
+                        .fill(Color.primary.opacity(0.05))
                         .frame(width: placementPreview.width, height: placementPreview.height, alignment: SwiftUI.Alignment.topLeading)
                         .offset(x: placementPreview.minX, y: placementPreview.minY)
                         .allowsHitTesting(false)
@@ -205,7 +205,7 @@ struct ContentView: View {
                     switch hint {
                     case .edge(_, let frame):
                         Capsule()
-                            .fill(Color.white.opacity(0.3))
+                            .fill(Color.primary.opacity(0.3))
                             .blur(radius: 1)
                             .frame(width: frame.width, height: frame.height, alignment: SwiftUI.Alignment.topLeading)
                             .offset(x: frame.minX, y: frame.minY)
@@ -215,7 +215,7 @@ struct ContentView: View {
                     case .corner(let corner, let frame):
                         CornerBracket(corner: corner)
                             .stroke(
-                                Color.white.opacity(0.3),
+                                Color.primary.opacity(0.3),
                                 style: StrokeStyle(lineWidth: 3, lineCap: .round, lineJoin: .round)
                             )
                             .blur(radius: 1)
@@ -228,7 +228,7 @@ struct ContentView: View {
                 
                 if let draftFrame {
                     RoundedRectangle(cornerRadius: 16)
-                        .fill(Color.white.opacity(0.06))
+                        .fill(Color.primary.opacity(0.06))
                         .frame(width: draftFrame.width, height: draftFrame.height, alignment: SwiftUI.Alignment.topLeading)
                         .offset(x: draftFrame.minX, y: draftFrame.minY)
                         .allowsHitTesting(false)
@@ -266,7 +266,7 @@ struct ContentView: View {
                         TextField("Space name", text: $workspaceNameDraft)
                             .textFieldStyle(.plain)
                             .font(.system(size: 11, weight: .semibold))
-                            .foregroundStyle(.white.opacity(0.85))
+                            .foregroundStyle(.primary.opacity(0.85))
                             .multilineTextAlignment(.center)
                             .frame(width: 100)
                             .focused($isWorkspaceNameFieldFocused)
@@ -278,12 +278,12 @@ struct ContentView: View {
                     } else {
                         Text(viewModel.activeWorkspace?.name ?? "Space \(viewModel.activeSlot)")
                             .font(.system(size: 11, weight: .semibold))
-                            .foregroundStyle(.white.opacity(0.5))
+                            .foregroundStyle(.primary.opacity(0.5))
                     }
                 }
                 .padding(.horizontal, 10)
                 .padding(.vertical, 5)
-                .background(Capsule().fill(Color.white.opacity(0.06)))
+                .background(Capsule().fill(Color.primary.opacity(0.06)))
                 .contentShape(Capsule())
                 .onTapGesture {
                     if !isEditingWorkspaceName {
@@ -295,7 +295,7 @@ struct ContentView: View {
                 if showEmptyHint && viewModel.cards.isEmpty {
                     Text("Drag anywhere to create your first card")
                         .font(.system(size: 11, weight: .regular))
-                        .foregroundStyle(.white.opacity(0.3))
+                        .foregroundStyle(.primary.opacity(0.3))
                         .transition(.opacity.combined(with: .move(edge: .top)))
                 }
             }

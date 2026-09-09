@@ -35,7 +35,7 @@ struct StarFieldOverlayView: View {
             if mode == .lock {
                 Image(systemName: "lock.fill")
                     .font(.system(size: 22, weight: .medium))
-                    .foregroundStyle(.white.opacity(0.85))
+                    .foregroundStyle(.primary.opacity(0.85))
                     .shadow(color: .black.opacity(0.5), radius: 4)
             }
         }
@@ -109,7 +109,7 @@ struct StarFieldCanvas: View {
                     
                     let path = Path(ellipseIn: rect)
                     context.opacity = finalOpacity
-                    context.fill(path, with: .color(.white))
+                    context.fill(path, with: .color(.primary))
                 }
             }
         }

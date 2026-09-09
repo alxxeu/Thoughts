@@ -95,7 +95,7 @@ private struct TagCircleButton: View {
                     
                     Image(systemName: "nosign")
                         .font(.system(size: 13, weight: .black))
-                        .foregroundStyle(isSelected ? .white.opacity(0.8) : .white.opacity(0.35))
+                        .foregroundStyle(isSelected ? Color.primary.opacity(0.8) : Color.primary.opacity(0.35))
                 }
             }
             .frame(width: 14, height: 14)
@@ -126,17 +126,17 @@ private struct PrivacyActionButton: View {
                 Image(systemName: iconName)
                     .font(.system(size: iconSize))
                     .frame(height: 20)
-                    .foregroundStyle(isSelected ? .white : (isHovered ? .white.opacity(0.85) : .white.opacity(0.45)))
+                    .foregroundStyle(isSelected ? Color.primary : (isHovered ? Color.primary.opacity(0.85) : Color.primary.opacity(0.45)))
                 
                 Text(title)
                     .font(.system(size: 9, weight: isSelected ? .semibold : .regular))
-                    .foregroundStyle(isSelected ? .white : (isHovered ? .white.opacity(0.85) : .white.opacity(0.55)))
+                    .foregroundStyle(isSelected ? Color.primary : (isHovered ? Color.primary.opacity(0.85) : Color.primary.opacity(0.55)))
             }
             .padding(.vertical, 5) // Внутренние отступы, чтобы иконка не упиралась в края
             .frame(width: 46, height: 50) // Увеличена высота кнопки (было 42)
             .background(
                 RoundedRectangle(cornerRadius: 8)
-                    .fill(isSelected ? Color.white.opacity(0.15) : (isHovered ? Color.white.opacity(0.08) : Color.clear))
+                    .fill(isSelected ? Color.primary.opacity(0.15) : (isHovered ? Color.primary.opacity(0.08) : Color.clear))
             )
             .contentShape(Rectangle())
         }

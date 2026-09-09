@@ -34,7 +34,7 @@ struct SpaceLockOverlayView: View {
             VStack(spacing: 18) {
                 Image(systemName: "lock.fill")
                     .font(.system(size: 30, weight: .medium))
-                    .foregroundStyle(.white.opacity(0.85))
+                    .foregroundStyle(.primary.opacity(0.85))
                     .shadow(color: .black.opacity(0.5), radius: 4)
 
                 passcodeEntry
@@ -60,7 +60,7 @@ struct SpaceLockOverlayView: View {
             HStack(spacing: 14) {
                 ForEach(0..<4, id: \.self) { index in
                     Circle()
-                        .fill(index < enteredCodes.count ? Color.white.opacity(0.85) : Color.white.opacity(0.15))
+                        .fill(index < enteredCodes.count ? Color.primary.opacity(0.85) : Color.primary.opacity(0.15))
                         .frame(width: 10, height: 10)
                 }
             }
@@ -119,10 +119,10 @@ struct SpaceLockOverlayView: View {
         } label: {
             Text("Unlock with Touch ID")
                 .font(.system(size: 13, weight: .semibold))
-                .foregroundStyle(.white.opacity(0.85))
+                .foregroundStyle(.primary.opacity(0.85))
                 .padding(.horizontal, 16)
                 .padding(.vertical, 8)
-                .background(Capsule().fill(Color.white.opacity(0.1)))
+                .background(Capsule().fill(Color.primary.opacity(0.1)))
         }
         .buttonStyle(.plain)
     }
