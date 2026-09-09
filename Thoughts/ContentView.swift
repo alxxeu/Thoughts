@@ -104,6 +104,11 @@ struct ContentView: View {
     // не мешает locking-логике (на первом запуске Passcode ещё не включён).
     @State private var isShowingOnboarding = !OnboardingState.hasCompletedTour
 
+    // File → Clear Space — сам alert живёт здесь, а не в ThoughtsApp, так
+    // как ему нужно реальное удаление карточек через viewModel только
+    // после явного подтверждения, а не по одному нажатию пункта меню.
+    @State private var isShowingClearSpaceConfirmation = false
+
     var body: some View {
         Group {
             if viewModel.isActiveSpaceLocked {
@@ -135,6 +140,20 @@ struct ContentView: View {
         }
         .onReceive(NotificationCenter.default.publisher(for: .replayOnboarding)) { _ in
             isShowingOnboarding = true
+        }
+        .onReceive(NotificationCenter.default.publisher(for: .requestClearSpace)) { _ in
+            isShowingClearSpaceConfirmation = true
+        }
+        .alert(
+            "Clear \u{201C}\(viewModel.activeWorkspace?.name ?? "Space \(viewModel.activeSlot)")\u{201D}?",
+            isPresented: $isShowingClearSpaceConfirmation
+        ) {
+            Button("Cancel", role: .cancel) {}
+            Button("Clear All Cards", role: .destructive) {
+                viewModel.clearActiveSpace()
+            }
+        } message: {
+            Text("This will permanently delete all \(viewModel.cards.count) card\(viewModel.cards.count == 1 ? "" : "s") in this Space. This can\u{2019}t be undone.")
         }
     }
 
@@ -274,6 +293,11 @@ struct ContentView: View {
                             .onExitCommand { cancelWorkspaceRename() }
                             .onChange(of: isWorkspaceNameFieldFocused) { _, focused in
                                 if !focused { commitWorkspaceRename() }
+                            }
+                            .onChange(of: workspaceNameDraft) { _, newValue in
+                                if newValue.count > BoardViewModel.maxWorkspaceNameLength {
+                                    workspaceNameDraft = String(newValue.prefix(BoardViewModel.maxWorkspaceNameLength))
+                                }
                             }
                     } else {
                         Text(viewModel.activeWorkspace?.name ?? "Space \(viewModel.activeSlot)")

@@ -12,4 +12,9 @@ extension Notification.Name {
     /// "Replay Onboarding" в Settings → General — показывает тур заново
     /// поверх канвы, не дожидаясь следующего первого запуска.
     static let replayOnboarding = Notification.Name("ReplayOnboarding")
+    /// File → Clear Space — просит ContentView показать подтверждение
+    /// перед необратимым удалением всех карточек активного Space. Само
+    /// удаление происходит только после явного подтверждения в алерте,
+    /// не по этому уведомлению напрямую.
+    static let requestClearSpace = Notification.Name("RequestClearSpace")
 }

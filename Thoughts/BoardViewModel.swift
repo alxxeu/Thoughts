@@ -59,6 +59,7 @@ final class BoardViewModel {
     static let minCardSize: CGFloat = 2 * cardSizeStep - cardGap
     static let canvasSidePadding: CGFloat = 24
     static let topCreationLimit: CGFloat = 40
+    static let maxWorkspaceNameLength = 30
 
     init() {
         let loaded = store.load()
@@ -161,7 +162,8 @@ final class BoardViewModel {
     func renameActiveWorkspace(to name: String) {
         guard let index = workspaces.firstIndex(where: { $0.slot == activeSlot }) else { return }
         let trimmed = name.trimmingCharacters(in: .whitespacesAndNewlines)
-        workspaces[index].name = trimmed.isEmpty ? "Space \(activeSlot)" : trimmed
+        let limited = String(trimmed.prefix(Self.maxWorkspaceNameLength))
+        workspaces[index].name = limited.isEmpty ? "Space \(activeSlot)" : limited
         saveImmediately()
     }
 
@@ -176,6 +178,14 @@ final class BoardViewModel {
 
     func deleteCard(_ card: Card) {
         cards.removeAll { $0.id == card.id }
+        saveImmediately()
+    }
+
+    /// File → Clear Space, после подтверждения в алерте (см. ContentView).
+    /// Необратимо — сама эта функция ничего не спрашивает, вызывающая
+    /// сторона обязана получить согласие пользователя заранее.
+    func clearActiveSpace() {
+        cards = []
         saveImmediately()
     }
 

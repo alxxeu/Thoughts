@@ -14,7 +14,6 @@ struct ThoughtsApp: App {
     @NSApplicationDelegateAdaptor(AppDelegate.self) private var appDelegate
     @State private var viewModel = BoardViewModel()
     @State private var quitGuard = QuitGuard()
-    @Environment(\.openSettings) private var openSettings
 
     init() {
         // По умолчанию AppKit при зажатии буквенной клавиши в NSTextView
@@ -45,6 +44,17 @@ struct ThoughtsApp: App {
                 .keyboardShortcut("q", modifiers: .command)
             }
             TextFormattingCommands()
+            // Само удаление не отсюда — только запрос на подтверждение;
+            // см. requestClearSpace/isShowingClearSpaceConfirmation в
+            // ContentView, где и происходит реальный вызов
+            // clearActiveSpace() после явного "Clear All Cards".
+            CommandGroup(after: .newItem) {
+                Divider()
+                Button("Clear Space…") {
+                    NotificationCenter.default.post(name: .requestClearSpace, object: nil)
+                }
+                .disabled(viewModel.isActiveSpaceLocked || viewModel.cards.isEmpty)
+            }
             CommandGroup(after: .toolbar) {
                 Button("Lock Space") {
                     NotificationCenter.default.post(name: .lockCurrentSpace, object: nil)
@@ -52,18 +62,13 @@ struct ThoughtsApp: App {
                 .keyboardShortcut("l", modifiers: .command)
                 .disabled(!viewModel.securitySettings.isPasscodeEnabled)
             }
-            // Настройки могут ослабить/сменить способ разблокировки — из
-            // заблокированного Space нельзя сбежать в Settings и таким
-            // образом обойти lock screen. .disabled() на командах меню
-            // ненадёжен как единственная защита (может не обновиться
-            // мгновенно), поэтому основной барьер — в самом SettingsView.
-            CommandGroup(replacing: .appSettings) {
-                Button("Settings…") {
-                    openSettings()
-                }
-                .keyboardShortcut(",", modifiers: .command)
-                .disabled(viewModel.isActiveSpaceLocked)
-            }
+            // Системный пункт "Settings…" (со своей иконкой в App-меню)
+            // оставлен как есть — не переопределяем .appSettings отдельной
+            // кнопкой без иконки, получался дубль. Барьер против побега из
+            // заблокированного Space в Settings всё равно живёт в самом
+            // SettingsView (isActiveSpaceLocked → lockedPlaceholder), а не
+            // в disabled-состоянии пункта меню — так что убрать дубль можно
+            // без потери защиты.
             CommandMenu("Spaces") {
                 ForEach(viewModel.workspaces) { workspace in
                     Button(workspace.name) {
