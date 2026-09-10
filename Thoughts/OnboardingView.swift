@@ -65,6 +65,12 @@ private let onboardingPages: [OnboardingPage] = [
         hint: "\u{2318}L"
     ),
     OnboardingPage(
+        symbol: "macwindow.on.rectangle",
+        title: "Desktop Overlay",
+        description: "Turn on Desktop Overlay in Settings to have Thoughts live right on your Desktop, above the icons. Press \u{2325}D to reveal the Desktop; switch to any Space to come back.",
+        hint: "\u{2325}D"
+    ),
+    OnboardingPage(
         symbol: "magnifyingglass",
         title: "Find Anything Instantly",
         description: "Your cards are indexed in system Spotlight — search their text from anywhere on your Mac.",
