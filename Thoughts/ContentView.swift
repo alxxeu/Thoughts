@@ -138,6 +138,7 @@ struct ContentView: View {
     @State private var savedWindowFrame: NSRect?
     @State private var thoughtsWindow: NSWindow?
     @State private var chromeReapplyObservers: [NSObjectProtocol] = []
+    @State private var isDesktopOverlayActivationPendingFullScreenExit = false
 
     var body: some View {
         Group {
@@ -196,6 +197,25 @@ struct ContentView: View {
                         }
                     )
                 }
+                // Довершает включение Desktop Overlay, если оно было
+                // отложено из-за того, что окно было в нативном fullscreen
+                // (см. guard в applyDesktopOverlayWindowState) — level/frame
+                // нельзя было применить, пока переход не завершился.
+                chromeReapplyObservers.append(
+                    NotificationCenter.default.addObserver(
+                        forName: NSWindow.didExitFullScreenNotification,
+                        object: window,
+                        queue: .main
+                    ) { _ in
+                        guard isDesktopOverlayActivationPendingFullScreenExit else { return }
+                        isDesktopOverlayActivationPendingFullScreenExit = false
+                        guard viewModel.desktopOverlay.isEnabled else { return }
+                        applyDesktopOverlayWindowState(
+                            isEnabled: true,
+                            isDesktopModeActive: viewModel.desktopOverlay.isDesktopModeActive
+                        )
+                    }
+                )
             }
         )
         // Привязано напрямую к состоянию, которое реально коррелирует с
@@ -463,6 +483,18 @@ struct ContentView: View {
     private func applyDesktopOverlayWindowState(isEnabled: Bool, isDesktopModeActive: Bool) {
         guard let window = thoughtsWindow else { return }
 
+        // Нативный fullscreen — отдельная macOS Space, level/frame внутри
+        // неё игнорируются композитором (а styleMask-правки — нет, отсюда
+        // рассинхрон: кнопки/pill уже перестроились, а окно так и не легло
+        // на уровень иконок стола). Сначала выходим из fullscreen и ждём
+        // завершения перехода (didExitFullScreenNotification, см. ниже),
+        // и только потом применяем остальную конфигурацию.
+        if isEnabled, window.styleMask.contains(.fullScreen) {
+            isDesktopOverlayActivationPendingFullScreenExit = true
+            window.toggleFullScreen(nil)
+            return
+        }
+
         if isEnabled {
             if savedWindowFrame == nil {
                 savedWindowFrame = window.frame
@@ -512,6 +544,7 @@ struct ContentView: View {
             }
             registerDesktopOverlayHotKeys()
         } else {
+            isDesktopOverlayActivationPendingFullScreenExit = false
             GlobalHotKeyManager.shared.unregisterAll()
             window.level = .normal
             window.collectionBehavior = []

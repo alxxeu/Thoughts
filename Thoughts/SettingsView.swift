@@ -57,7 +57,12 @@ struct SettingsView: View {
                             ))
                             .toggleStyle(.switch)
                         } footer: {
-                            Text("Keeps Thoughts sitting just above your Desktop icons instead of a normal window. Press \u{2325}D to show the Desktop; switch to any Space (\u{2325}1\u{2013}9) to come back.")
+                            VStack(alignment: .leading, spacing: 6) {
+                                Label("Experimental — behavior may change or be unstable.", systemImage: "exclamationmark.triangle.fill")
+                                    .font(.caption)
+                                    .foregroundStyle(.orange)
+                                Text("Keeps Thoughts sitting just above your Desktop icons instead of a normal window. Press \u{2325}D to show the Desktop; switch to any Space (\u{2325}1\u{2013}9) to come back.")
+                            }
                         }
 
                         Section {
