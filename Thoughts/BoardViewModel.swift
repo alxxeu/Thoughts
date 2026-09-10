@@ -18,6 +18,7 @@ final class BoardViewModel {
 
     let securitySettings = SecuritySettings.shared
     let appearanceSettings = AppearanceSettings.shared
+    let desktopOverlay = DesktopOverlaySettings.shared
 
     /// Слоты защищённых (Workspace.isProtected == true) Space, прошедшие
     /// аутентификацию в ЭТОЙ сессии. Runtime-only, никогда не персистится:
@@ -60,6 +61,16 @@ final class BoardViewModel {
     static let canvasSidePadding: CGFloat = 24
     static let topCreationLimit: CGFloat = 40
     static let maxWorkspaceNameLength = 30
+
+    /// Верхняя граница специально для Desktop Overlay — окно там растянуто
+    /// на весь экран вплоть до самого верха (см. ContentView), и без
+    /// отдельной, большей границы карточки могли бы создаваться/лежать
+    /// вплотную к верхнему краю экрана (и под вырезом камеры). Ориентир —
+    /// уровень, на котором обычно сидят системные виджеты рабочего стола:
+    /// высота выреза (0 на моделях без него) плюс отступ.
+    static var desktopOverlayTopInset: CGFloat {
+        (NSScreen.main?.safeAreaInsets.top ?? 0) + 50
+    }
 
     init() {
         let loaded = store.load()
@@ -297,12 +308,13 @@ extension BoardViewModel {
         movingPosition: CGPoint,
         movingSize: CGSize,
         others: [Card],
-        canvasSize: CGSize
+        canvasSize: CGSize,
+        topInset: CGFloat = topCreationLimit
     ) -> CGPoint? {
         let gap = cardGap
         let activationDistance: CGFloat = 45
         let pad = canvasSidePadding
-        let top = topCreationLimit
+        let top = topInset
         let cardW = movingSize.width
         let cardH = movingSize.height
 
@@ -363,10 +375,11 @@ extension BoardViewModel {
     static func edgeHints(
         movingPosition: CGPoint,
         movingSize: CGSize,
-        canvasSize: CGSize
+        canvasSize: CGSize,
+        topInset: CGFloat = topCreationLimit
     ) -> [EdgeHint] {
         let pad = canvasSidePadding
-        let top = topCreationLimit
+        let top = topInset
         let lineThreshold: CGFloat = 35
         let cornerZone: CGFloat = 120
         let armLength: CGFloat = 60
@@ -429,10 +442,11 @@ extension BoardViewModel {
     static func snappedToEdges(
         position: CGPoint,
         size: CGSize,
-        canvasSize: CGSize
+        canvasSize: CGSize,
+        topInset: CGFloat = topCreationLimit
     ) -> CGPoint {
         let pad = canvasSidePadding
-        let top = topCreationLimit
+        let top = topInset
         let snapThreshold: CGFloat = 30
 
         var x = position.x
@@ -467,9 +481,9 @@ extension BoardViewModel {
     /// драга создания). Здесь — одна функция с обеими границами и size,
     /// которая покрывает все три случая (size: .zero эквивалентен старому
     /// clamped).
-    static func clampedPosition(_ point: CGPoint, size: CGSize, canvasSize: CGSize) -> CGPoint {
+    static func clampedPosition(_ point: CGPoint, size: CGSize, canvasSize: CGSize, topInset: CGFloat = topCreationLimit) -> CGPoint {
         let pad = canvasSidePadding
-        let top = topCreationLimit
+        let top = topInset
         let maxX = max(pad, canvasSize.width - pad - size.width)
         let maxY = max(top, canvasSize.height - pad - size.height)
 

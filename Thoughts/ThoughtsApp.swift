@@ -28,7 +28,14 @@ struct ThoughtsApp: App {
     var body: some Scene {
         WindowGroup {
             ContentView(viewModel: viewModel)
-                .background(VisualEffectBlur(material: .hudWindow, blendingMode: .behindWindow))
+                .background {
+                    // В Desktop mode фон тоже должен быть полностью
+                    // прозрачным — реальный рабочий стол виден без единого
+                    // визуального следа Thoughts поверх него.
+                    if !viewModel.desktopOverlay.isDesktopModeActive {
+                        VisualEffectBlur(material: .hudWindow, blendingMode: .behindWindow)
+                    }
+                }
                 .ignoresSafeArea()
                 .preferredColorScheme(preferredColorScheme)
         }
@@ -61,6 +68,15 @@ struct ThoughtsApp: App {
                 }
                 .keyboardShortcut("l", modifiers: .command)
                 .disabled(!viewModel.securitySettings.isPasscodeEnabled)
+
+                // Однонаправленный вход в Desktop mode — не toggle: повторное
+                // ⌥D, уже находясь в этом режиме, не делает ничего. Выход —
+                // только через выбор любого Space в CommandMenu ниже.
+                Button("Show Desktop") {
+                    viewModel.desktopOverlay.isDesktopModeActive = true
+                }
+                .keyboardShortcut("d", modifiers: .option)
+                .disabled(!viewModel.desktopOverlay.isEnabled)
             }
             // Системный пункт "Settings…" (со своей иконкой в App-меню)
             // оставлен как есть — не переопределяем .appSettings отдельной
@@ -72,6 +88,10 @@ struct ThoughtsApp: App {
             CommandMenu("Spaces") {
                 ForEach(viewModel.workspaces) { workspace in
                     Button(workspace.name) {
+                        // Выбор любого Space — единственный способ выйти из
+                        // Desktop mode (если он был активен); само
+                        // переключение Space не меняется.
+                        viewModel.desktopOverlay.isDesktopModeActive = false
                         NotificationCenter.default.post(name: .switchWorkspace, object: workspace.slot)
                     }
                     .keyboardShortcut(

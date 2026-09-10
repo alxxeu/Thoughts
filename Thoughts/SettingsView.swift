@@ -51,6 +51,16 @@ struct SettingsView: View {
                         }
 
                         Section {
+                            Toggle("Desktop Overlay", isOn: Binding(
+                                get: { viewModel.desktopOverlay.isEnabled },
+                                set: { viewModel.desktopOverlay.isEnabled = $0 }
+                            ))
+                            .toggleStyle(.switch)
+                        } footer: {
+                            Text("Keeps Thoughts sitting just above your Desktop icons instead of a normal window. Press \u{2325}D to show the Desktop; switch to any Space (\u{2325}1\u{2013}9) to come back.")
+                        }
+
+                        Section {
                             SettingsRowButton(title: "Replay Onboarding") {
                                 NotificationCenter.default.post(name: .replayOnboarding, object: nil)
                             }

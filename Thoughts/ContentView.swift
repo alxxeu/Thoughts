@@ -1,4 +1,5 @@
 import SwiftUI
+import Carbon.HIToolbox
 
 struct CornerBracket: Shape {
     var corner: EdgeHint.Corner
@@ -82,6 +83,26 @@ private final class DraggableNSView: NSView {
     }
 }
 
+/// Отдаёт наружу NSWindow, хостящий этот view — тот же приём, что уже
+/// использует VisualEffectBlur.Coordinator для nudge-хака, но здесь нужен
+/// именно снаружи ContentView: NSApp.keyWindow/NSApp.windows.first
+/// ненадёжны, когда одновременно может быть открыто окно Settings.
+private struct WindowAccessor: NSViewRepresentable {
+    var onResolve: (NSWindow) -> Void
+
+    func makeNSView(context: Context) -> NSView {
+        let view = NSView()
+        DispatchQueue.main.async {
+            if let window = view.window {
+                onResolve(window)
+            }
+        }
+        return view
+    }
+
+    func updateNSView(_ nsView: NSView, context: Context) {}
+}
+
 struct ContentView: View {
     var viewModel: BoardViewModel
     @State private var creationStart: CGPoint?
@@ -109,9 +130,24 @@ struct ContentView: View {
     // после явного подтверждения, а не по одному нажатию пункта меню.
     @State private var isShowingClearSpaceConfirmation = false
 
+    // Desktop Overlay — фрейм окна до включения режима, чтобы вернуть его
+    // ровно как было при выключении в Settings. thoughtsWindow — конкретно
+    // окно, хостящее этот canvas (не Settings/QuitGuard), см. WindowAccessor
+    // ниже; NSApp.keyWindow ненадёжен здесь, так как Settings-окно вполне
+    // может быть открыто и фокусно ровно в момент переключения тумблера.
+    @State private var savedWindowFrame: NSRect?
+    @State private var thoughtsWindow: NSWindow?
+    @State private var chromeReapplyObservers: [NSObjectProtocol] = []
+
     var body: some View {
         Group {
-            if viewModel.isActiveSpaceLocked {
+            if viewModel.desktopOverlay.isDesktopModeActive {
+                // Desktop mode: карточки полностью скрыты, окно прозрачно и
+                // ignoresMouseEvents (см. onChange ниже) — реальный рабочий
+                // стол должен быть виден без единого визуального следа
+                // Thoughts поверх него.
+                Color.clear
+            } else if viewModel.isActiveSpaceLocked {
                 // Полностью отдельная ветка дерева: карточки и canvas этого
                 // Space physически не существуют, пока он заблокирован —
                 // то же самое "выгружение", что происходит при обычном
@@ -130,6 +166,58 @@ struct ContentView: View {
             }
         }
         .animation(.easeOut(duration: 0.25), value: isShowingOnboarding)
+        .background(
+            WindowAccessor { window in
+                guard thoughtsWindow == nil else { return }
+                thoughtsWindow = window
+                allowWindowToBecomeKey(window)
+                applyDesktopOverlayWindowState(
+                    isEnabled: viewModel.desktopOverlay.isEnabled,
+                    isDesktopModeActive: viewModel.desktopOverlay.isDesktopModeActive
+                )
+                // AppKit иногда сам переигрывает styleMask/title окна на
+                // переходах фокуса (например, relock() Space Lock делает
+                // makeFirstResponder(nil)) — тот же класс проблемы, что уже
+                // решён для VisualEffectBlur ниже в этом файле через
+                // переприменение после нотификаций, а не один раз. Здесь —
+                // то же самое для chrome-настроек Desktop Overlay.
+                for name: Notification.Name in [
+                    NSWindow.didBecomeKeyNotification,
+                    NSWindow.didResignKeyNotification,
+                    NSWindow.didChangeOcclusionStateNotification
+                ] {
+                    chromeReapplyObservers.append(
+                        NotificationCenter.default.addObserver(forName: name, object: window, queue: .main) { _ in
+                            guard viewModel.desktopOverlay.isEnabled else { return }
+                            applyDesktopOverlayWindowState(
+                                isEnabled: true,
+                                isDesktopModeActive: viewModel.desktopOverlay.isDesktopModeActive
+                            )
+                        }
+                    )
+                }
+            }
+        )
+        // Привязано напрямую к состоянию, которое реально коррелирует с
+        // проблемой (подтверждено вручную): переход в/из заблокированного
+        // Space почему-то может сбрасывать chrome-настройки окна, а переход
+        // между Spaces через смену activeSlot (без вызовов AppKit вроде
+        // makeFirstResponder) не всегда порождает didBecomeKey/didResignKey,
+        // на которые реагирует блок выше. SwiftUI-observation здесь надёжнее
+        // гадания, какая именно AppKit-нотификация выстрелит.
+        .onChange(of: viewModel.isActiveSpaceLocked) { _, _ in
+            guard viewModel.desktopOverlay.isEnabled else { return }
+            applyDesktopOverlayWindowState(
+                isEnabled: true,
+                isDesktopModeActive: viewModel.desktopOverlay.isDesktopModeActive
+            )
+        }
+        .onChange(of: viewModel.desktopOverlay.isEnabled) { _, isEnabled in
+            applyDesktopOverlayWindowState(isEnabled: isEnabled, isDesktopModeActive: viewModel.desktopOverlay.isDesktopModeActive)
+        }
+        .onChange(of: viewModel.desktopOverlay.isDesktopModeActive) { _, isActive in
+            applyDesktopOverlayWindowState(isEnabled: viewModel.desktopOverlay.isEnabled, isDesktopModeActive: isActive)
+        }
         .onReceive(NotificationCenter.default.publisher(for: .switchWorkspace)) { notification in
             if let slot = notification.object as? Int {
                 viewModel.switchWorkspace(to: slot)
@@ -169,7 +257,7 @@ struct ContentView: View {
                     }
 
                 ForEach(viewModel.cards) { card in
-                    let adaptedPosition = BoardViewModel.clampedPosition(card.position, size: card.size, canvasSize: proxy.size)
+                    let adaptedPosition = BoardViewModel.clampedPosition(card.position, size: card.size, canvasSize: proxy.size, topInset: effectiveTopInset)
 
                     CardView(
                         card: card,
@@ -258,7 +346,7 @@ struct ContentView: View {
                         .frame(width: 76)
                     WindowDragArea()
                 }
-                .frame(height: BoardViewModel.topCreationLimit)
+                .frame(height: effectiveTopInset)
                 .frame(maxWidth: .infinity, alignment: .topLeading)
             }
             
@@ -323,7 +411,7 @@ struct ContentView: View {
                         .transition(.opacity.combined(with: .move(edge: .top)))
                 }
             }
-            .padding(.top, 10)
+            .padding(.top, workspacePillTopPadding)
         }
         .onAppear {
             updateEmptyHintState()
@@ -351,16 +439,130 @@ struct ContentView: View {
         }
     }
 
+    /// Применяет/откатывает уровень, collectionBehavior, ignoresMouseEvents
+    /// и фрейм окна для Desktop Overlay — см. план в
+    /// buzzing-squishing-wombat.md. Значение уровня подобрано эмпирически
+    /// (публичной константы "чуть выше иконок, чуть ниже виджетов" у Apple
+    /// нет) и может понадобиться донастроить.
+    /// В обычном окне — прежняя маленькая граница. В Desktop Overlay окно
+    /// растянуто на весь экран, и карточки не должны упираться в самый
+    /// верх/вырез камеры — там, где обычно сидят системные виджеты.
+    private var effectiveTopInset: CGFloat {
+        viewModel.desktopOverlay.isEnabled ? BoardViewModel.desktopOverlayTopInset : BoardViewModel.topCreationLimit
+    }
+
+    /// Плашка с именем Space — обычный SwiftUI-оверлей этой же канвы (не
+    /// chrome окна), так что отступ под неё можно менять независимо от
+    /// самого окна/frame — без компромисса с покрытием экрана, в отличие
+    /// от системных элементов. В обычном окне — как раньше, 10pt.
+    private var workspacePillTopPadding: CGFloat {
+        guard viewModel.desktopOverlay.isEnabled else { return 10 }
+        return (NSScreen.main?.safeAreaInsets.top ?? 0) + 12
+    }
+
+    private func applyDesktopOverlayWindowState(isEnabled: Bool, isDesktopModeActive: Bool) {
+        guard let window = thoughtsWindow else { return }
+
+        if isEnabled {
+            if savedWindowFrame == nil {
+                savedWindowFrame = window.frame
+            }
+            // Уровень асимметричный между режимами — подтверждено реальным
+            // кодом Floatspace (native_desktop.rs): Desktop mode ниже
+            // иконок стола (окно совсем не мешает, даже не "прозрачно
+            // мешает"), Workspace mode выше иконок, но по-прежнему ниже
+            // обычных окон приложений. Раньше здесь был один и тот же
+            // фиксированный уровень в обоих режимах — работало, но не
+            // совпадало с проверенным эталоном без явной причины.
+            let desktopIconLevel = Int(CGWindowLevelForKey(.desktopIconWindow))
+            window.level = NSWindow.Level(
+                rawValue: isDesktopModeActive ? desktopIconLevel - 1 : desktopIconLevel + 1
+            )
+            window.collectionBehavior = [.ignoresCycle]
+            // В обычном режиме "прозрачность" фона держится целиком на
+            // VisualEffectBlur (живой блюр того, что позади окна) — само
+            // NSWindow остаётся непрозрачным по умолчанию. В Desktop mode
+            // блюр скрыт вместе с карточками (см. body/ThoughtsApp.swift), и
+            // без явного isOpaque/backgroundColor = .clear вместо настоящего
+            // стола был виден сплошной непрозрачный фон окна.
+            window.isOpaque = false
+            window.backgroundColor = .clear
+            window.hasShadow = false
+            // Floatspace на Tauri создаёт окно изначально безрамочным, ему
+            // это не нужно. WindowGroup в SwiftUI всегда рождает titled-окно
+            // (hiddenTitleBar прячет только полосу, не сами traits) — без
+            // явного снятия traits из styleMask курсор у верхнего края
+            // показывает настоящие traffic-light кнопки на весь экран.
+            // .titled — не только сами кнопки, но и причина зазора под
+            // menu bar: у titled-окон AppKit сам поджимает frame ниже
+            // строки меню, даже если явно попросить Y=0 через setFrame.
+            // Полностью безрамочное окно (как у Floatspace, создаваемого
+            // borderless с самого начала) это ограничение не имеет.
+            window.styleMask.remove([.closable, .miniaturizable, .resizable, .titled])
+            window.titleVisibility = .hidden
+            window.title = ""
+            // Плавающий title pill позиционируется относительно верхнего
+            // края фрейма окна (подтверждено эмпирически), поэтому подвинуть
+            // его ниже без потери полного покрытия экрана сверху невозможно
+            // — эти две вещи завязаны на один и тот же frame. Полное
+            // покрытие приоритетнее (явно попросили не обрезать снова),
+            // так что фрейм всегда во весь экран, начиная с Y=0.
+            if let screen = window.screen ?? NSScreen.main {
+                window.setFrame(screen.frame, display: true, animate: false)
+            }
+            registerDesktopOverlayHotKeys()
+        } else {
+            GlobalHotKeyManager.shared.unregisterAll()
+            window.level = .normal
+            window.collectionBehavior = []
+            window.hasShadow = true
+            window.styleMask.insert([.closable, .miniaturizable, .resizable, .titled])
+            window.titleVisibility = .visible
+            window.title = "Thoughts"
+            if let savedWindowFrame {
+                window.setFrame(savedWindowFrame, display: true, animate: false)
+            }
+            savedWindowFrame = nil
+        }
+
+        window.ignoresMouseEvents = isEnabled && isDesktopModeActive
+    }
+
+    /// ⌥D и ⌥1–9 как глобальные хоткеты (см. GlobalHotKeyManager) — должны
+    /// срабатывать, даже когда активное приложение не Thoughts, а Finder
+    /// (ровно так и есть в Desktop mode после клика по иконке на столе).
+    /// Виртуальные keyCode — физические позиции клавиш на ANSI-клавиатуре,
+    /// не зависят от активной раскладки (в отличие от charactersIgnoring-
+    /// Modifiers, который для той же клавиши на русской раскладке вернул бы
+    /// не "1"–"9"/"d").
+    private func registerDesktopOverlayHotKeys() {
+        GlobalHotKeyManager.shared.unregisterAll()
+        let optionMask = UInt32(optionKey)
+
+        GlobalHotKeyManager.shared.register(keyCode: 2 /* kVK_ANSI_D */, modifiers: optionMask) {
+            viewModel.desktopOverlay.isDesktopModeActive = true
+        }
+
+        let digitKeyCodes: [UInt32] = [18, 19, 20, 21, 23, 22, 26, 28, 25] // kVK_ANSI_1...9
+        for (index, keyCode) in digitKeyCodes.enumerated() {
+            let slot = index + 1
+            GlobalHotKeyManager.shared.register(keyCode: keyCode, modifiers: optionMask) {
+                viewModel.desktopOverlay.isDesktopModeActive = false
+                NotificationCenter.default.post(name: .switchWorkspace, object: slot)
+            }
+        }
+    }
+
     private func canvasDragGesture(in canvasSize: CGSize) -> some Gesture {
         DragGesture(minimumDistance: 4, coordinateSpace: .named("canvas"))
             .onChanged { value in
                 NotificationCenter.default.post(name: .clearTextSelection, object: nil)
                 NSApp.keyWindow?.makeFirstResponder(nil)
                 if creationStart == nil {
-                    creationStart = BoardViewModel.clampedPosition(value.startLocation, size: .zero, canvasSize: canvasSize)
+                    creationStart = BoardViewModel.clampedPosition(value.startLocation, size: .zero, canvasSize: canvasSize, topInset: effectiveTopInset)
                 }
                 guard let start = creationStart else { return }
-                let current = BoardViewModel.clampedPosition(value.location, size: .zero, canvasSize: canvasSize)
+                let current = BoardViewModel.clampedPosition(value.location, size: .zero, canvasSize: canvasSize, topInset: effectiveTopInset)
 
                 let origin = CGPoint(x: min(start.x, current.x), y: min(start.y, current.y))
                 let size = CGSize(
@@ -371,7 +573,7 @@ struct ContentView: View {
                 // после раздутия до minCardSize дальний край может вылезти за
                 // канву — та же проблема, что clampedPosition уже решает для
                 // отображения обычных карточек, но с учётом их реального size.
-                let clampedOrigin = BoardViewModel.clampedPosition(origin, size: size, canvasSize: canvasSize)
+                let clampedOrigin = BoardViewModel.clampedPosition(origin, size: size, canvasSize: canvasSize, topInset: effectiveTopInset)
                 draftFrame = CGRect(origin: clampedOrigin, size: size)
             }
             .onEnded { _ in

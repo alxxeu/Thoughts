@@ -31,6 +31,9 @@ struct CardView: View {
     @GestureState private var hasSignaledGestureStart = false
 
     private var pad: CGFloat { BoardViewModel.canvasSidePadding }
+    private var effectiveTopInset: CGFloat {
+        viewModel.desktopOverlay.isEnabled ? BoardViewModel.desktopOverlayTopInset : BoardViewModel.topCreationLimit
+    }
     private var isPrivacyLocked: Bool {
         card.privacyMode != .none && !isRevealed
     }
@@ -331,7 +334,8 @@ struct CardView: View {
                 card.position = BoardViewModel.clampedPosition(
                     CGPoint(x: origin.x + value.translation.width, y: origin.y + value.translation.height),
                     size: card.size,
-                    canvasSize: canvasSize
+                    canvasSize: canvasSize,
+                    topInset: effectiveTopInset
                 )
                 
                 if let preview = BoardViewModel.placementPreview(
@@ -339,18 +343,20 @@ struct CardView: View {
                     movingPosition: card.position,
                     movingSize: card.size,
                     others: viewModel.cards,
-                    canvasSize: canvasSize
+                    canvasSize: canvasSize,
+                    topInset: effectiveTopInset
                 ) {
                     onPlacementPreviewChange(CGRect(origin: preview, size: card.size))
                 } else {
                     onPlacementPreviewChange(nil)
                 }
-                
+
                 onEdgeHintsChange(
                     BoardViewModel.edgeHints(
                         movingPosition: card.position,
                         movingSize: card.size,
-                        canvasSize: canvasSize
+                        canvasSize: canvasSize,
+                        topInset: effectiveTopInset
                     )
                 )
             }
@@ -361,7 +367,8 @@ struct CardView: View {
                     movingPosition: card.position,
                     movingSize: card.size,
                     others: viewModel.cards,
-                    canvasSize: canvasSize
+                    canvasSize: canvasSize,
+                    topInset: effectiveTopInset
                 ) {
                     withAnimation(.easeOut(duration: 0.12)) {
                         card.position = preview
@@ -370,7 +377,8 @@ struct CardView: View {
                     let snapped = BoardViewModel.snappedToEdges(
                         position: card.position,
                         size: card.size,
-                        canvasSize: canvasSize
+                        canvasSize: canvasSize,
+                        topInset: effectiveTopInset
                     )
                     if snapped != card.position {
                         withAnimation(.easeOut(duration: 0.12)) {
