@@ -87,10 +87,46 @@ struct SettingsView: View {
                         .tabItem {
                             Label("Security", systemImage: "lock.shield")
                         }
+
+                    Form {
+                        Section {
+                            LabeledContent("Version", value: appVersion)
+                            LabeledContent("Author", value: "Aleksei Trofimov")
+                        }
+
+                        Section {
+                            Link(destination: URL(string: "https://github.com/alxxeu/Thoughts")!) {
+                                HStack {
+                                    Text("GitHub")
+                                    Spacer()
+                                    Image(systemName: "arrow.up.right")
+                                        .foregroundStyle(.secondary)
+                                }
+                            }
+                            Link(destination: URL(string: "https://t.me/thoughtsapp")!) {
+                                HStack {
+                                    Text("Telegram Channel")
+                                    Spacer()
+                                    Image(systemName: "arrow.up.right")
+                                        .foregroundStyle(.secondary)
+                                }
+                            }
+                        } footer: {
+                            Text("Follow for updates and release notes.")
+                        }
+                    }
+                    .formStyle(.grouped)
+                    .tabItem {
+                        Label("About", systemImage: "info.circle")
+                    }
                 }
                 .frame(width: 460, height: 420)
             }
         }
+    }
+
+    private var appVersion: String {
+        Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "1.0"
     }
 
     private var lockedPlaceholder: some View {
