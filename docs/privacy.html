@@ -1,0 +1,97 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Privacy Policy — Thoughts</title>
+<style>
+  :root {
+    color-scheme: light dark;
+    --bg: #ffffff;
+    --fg: #1c1c1e;
+    --muted: #6e6e73;
+    --accent: #3b3bff;
+    --border: #e5e5ea;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #1c1c1e;
+      --fg: #f2f2f7;
+      --muted: #9a9aa0;
+      --accent: #7d7dff;
+      --border: #3a3a3c;
+    }
+  }
+  body {
+    background: var(--bg);
+    color: var(--fg);
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif;
+    line-height: 1.55;
+    max-width: 680px;
+    margin: 0 auto;
+    padding: 48px 24px 80px;
+  }
+  h1 {
+    font-size: 1.6rem;
+    margin-bottom: 4px;
+  }
+  .meta {
+    color: var(--muted);
+    font-size: 0.9rem;
+    margin-bottom: 40px;
+  }
+  h2 {
+    font-size: 1.05rem;
+    margin-top: 32px;
+    margin-bottom: 8px;
+  }
+  p {
+    margin: 0 0 8px;
+  }
+  a {
+    color: var(--accent);
+    text-decoration: none;
+  }
+  a:hover {
+    text-decoration: underline;
+  }
+  hr {
+    border: none;
+    border-top: 1px solid var(--border);
+    margin: 40px 0;
+  }
+  footer {
+    color: var(--muted);
+    font-size: 0.85rem;
+  }
+</style>
+</head>
+<body>
+  <h1>Privacy Policy</h1>
+  <p class="meta">Thoughts for macOS · Effective September 10, 2026</p>
+
+  <h2>1. Overview</h2>
+  <p>Thoughts does not collect, transmit, sell, or share any personal data, from you or anyone else. There is no account, no analytics, and no third-party SDKs of any kind.</p>
+
+  <h2>2. Where your data lives</h2>
+  <p>Everything you create in Thoughts — cards, text, tags, Space names — is stored locally, inside the app's own sandboxed container on your Mac. Nothing is ever uploaded to a server, because Thoughts doesn't have one.</p>
+
+  <h2>3. Passcode &amp; Touch ID</h2>
+  <p>Your passcode is stored in the macOS Keychain, on your device only, using Apple's own security frameworks. Touch ID authentication is handled entirely by Apple's LocalAuthentication framework and never leaves your Mac.</p>
+
+  <h2>4. Spotlight search</h2>
+  <p>Thoughts indexes your card text locally so macOS Spotlight can search it. This index lives only on your device and is managed by macOS itself. Cards or Spaces you've locked or marked private are automatically excluded from this index.</p>
+
+  <h2>5. Children's privacy</h2>
+  <p>Thoughts is not directed at children and collects no data from any user, regardless of age.</p>
+
+  <h2>6. Changes</h2>
+  <p>If this policy ever changes, the update will be posted at this same address.</p>
+
+  <h2>7. Contact</h2>
+  <p>Questions about this policy: <a href="mailto:alxxeu.dev@proton.me">alxxeu.dev@proton.me</a></p>
+
+  <hr>
+  <footer>Thoughts — a free-form canvas for scattered ideas.</footer>
+</body>
+</html>
