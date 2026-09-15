@@ -37,6 +37,13 @@ struct CardView: View {
     private var isPrivacyLocked: Bool {
         card.privacyMode != .none && !isRevealed
     }
+    // Пока в карточке активен текстовый курсор, элементы управления не
+    // должны пропадать при уводе указателя мыши за пределы карточки —
+    // иначе непонятно, как удалить/изменить размер уже сфокусированной
+    // карточки, не кликнув по ней снова.
+    private var showsHoverControls: Bool {
+        isHovering || isTextFocused
+    }
     
     var body: some View {
         ZStack(alignment: .topLeading) {
@@ -151,9 +158,9 @@ struct CardView: View {
             }
             .padding(7)
             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topTrailing)
-            .opacity(card.tagColor != nil ? 1 : (isHovering && !isPrivacyLocked ? 1 : 0))
+            .opacity(card.tagColor != nil ? 1 : (showsHoverControls && !isPrivacyLocked ? 1 : 0))
             .animation(.spring(response: 0.2, dampingFraction: 0.7), value: isHoveringTagButton)
-            .animation(.easeInOut(duration: 0.15), value: isHovering)
+            .animation(.easeInOut(duration: 0.15), value: showsHoverControls)
             .animation(.easeInOut(duration: 0.15), value: card.tagColor)
             // Выше оверлея Spoiler/Lock (zIndex 99), чтобы точка тега была
             // видна поверх тонировки, а не под ней.
@@ -187,8 +194,8 @@ struct CardView: View {
             }
             .gesture(resizeGesture)
             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottomTrailing)
-            .opacity(isHovering ? 1 : 0)
-            .animation(.easeInOut(duration: 0.15), value: isHovering)
+            .opacity(showsHoverControls ? 1 : 0)
+            .animation(.easeInOut(duration: 0.15), value: showsHoverControls)
             .zIndex(101)
             
             // DRAG HANDLE
@@ -225,8 +232,8 @@ struct CardView: View {
                 }
                 .contentShape(Circle())
                 .padding(5)
-                .opacity(isHovering ? 1 : 0)
-                .animation(.easeInOut(duration: 0.15), value: isHovering)
+                .opacity(showsHoverControls ? 1 : 0)
+                .animation(.easeInOut(duration: 0.15), value: showsHoverControls)
                 .zIndex(103)
                 .onHover { inside in
                     isHoveringDeleteButton = inside

@@ -37,6 +37,15 @@ final class DividerAttachment: NSTextAttachment {
 // MARK: - Custom NSTextView (plain-text paste + divider drawing)
 
 private final class CardNSTextView: NSTextView {
+    // Источник истины для фокуса наружу, в SwiftUI. NSTextViewDelegate's
+    // textDidBeginEditing/textDidEndEditing здесь на практике не
+    // срабатывают на обычный клик (похоже, из-за override'ов ниже,
+    // управляющих курсором в обход стандартной editing-сессии) — а вот
+    // become/resignFirstResponder вызываются гарантированно, на них и
+    // держится I-beam-курсор чуть ниже, так что это единственный
+    // надёжный сигнал смены фокуса.
+    var onFirstResponderChange: ((Bool) -> Void)?
+
     // Фикс. белый, а не адаптивный labelColor — фон карточки (CardSurfaceStyle)
     // больше не переключается в светлый в Light Mode, так что текст/линии
     // поверх него тоже должны оставаться светлыми в обеих темах.
@@ -120,6 +129,9 @@ private final class CardNSTextView: NSTextView {
     override func becomeFirstResponder() -> Bool {
         let result = super.becomeFirstResponder()
         window?.invalidateCursorRects(for: self)
+        if result {
+            onFirstResponderChange?(true)
+        }
         return result
     }
 
@@ -139,6 +151,9 @@ private final class CardNSTextView: NSTextView {
     override func resignFirstResponder() -> Bool {
         let result = super.resignFirstResponder()
         window?.invalidateCursorRects(for: self)
+        if result {
+            onFirstResponderChange?(false)
+        }
         return result
     }
 
@@ -240,6 +255,9 @@ struct CardTextView: NSViewRepresentable {
 
         let textView = CardNSTextView(frame: .zero)
         textView.delegate = context.coordinator
+        textView.onFirstResponderChange = { [weak coordinator = context.coordinator] focused in
+            coordinator?.handleFirstResponderChange(focused)
+        }
         textView.drawsBackground = false
         textView.backgroundColor = .clear
         textView.isRichText = true
@@ -529,20 +547,14 @@ struct CardTextView: NSViewRepresentable {
             parent.onTextChange()
         }
 
-        func textDidBeginEditing(_ notification: Notification) {
+        /// Единственный реальный источник смены фокуса — см. комментарий у
+        /// CardNSTextView.onFirstResponderChange. textDidBeginEditing/
+        /// textDidEndEditing из NSTextViewDelegate на практике не
+        /// срабатывают на обычный клик в этом кастомном NSTextView.
+        func handleFirstResponderChange(_ focused: Bool) {
             DispatchQueue.main.async {
-                self.parent.isFocused = true
-                self.parent.onFocusChange(true)
-            }
-        }
-
-        func textDidEndEditing(_ notification: Notification) {
-            if let textView = notification.object as? NSTextView {
-                textView.setSelectedRange(NSRange(location: 0, length: 0))
-            }
-            DispatchQueue.main.async {
-                self.parent.isFocused = false
-                self.parent.onFocusChange(false)
+                self.parent.isFocused = focused
+                self.parent.onFocusChange(focused)
             }
         }
 
