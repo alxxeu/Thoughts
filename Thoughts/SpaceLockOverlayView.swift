@@ -11,9 +11,10 @@ struct SpaceLockOverlayView: View {
 
     var body: some View {
         ZStack {
-            // Liquid Glass + тонкий чёрный тон поверх — тот же, что у
-            // карточек. См. CardSurfaceStyle.swift.
-            CardSurfaceBackground(cornerRadius: 0)
+            // Тот же тёмный тон, что у карточек, но без настоящего
+            // Liquid Glass — на весь экран (cornerRadius 0) он даёт
+            // заметный блик-кромку по верхнему краю. См. CardSurfaceStyle.swift.
+            CardSurfaceBackground(cornerRadius: 0, usesGlassEffect: false)
                 .ignoresSafeArea()
 
             StarFieldCanvas()

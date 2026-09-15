@@ -6,9 +6,11 @@ struct StarFieldOverlayView: View {
 
     var body: some View {
         ZStack {
-            // Liquid Glass + тонкий чёрный тон поверх — тот же, что у
-            // обычных карточек. См. CardSurfaceStyle.swift.
-            CardSurfaceBackground()
+            // Настоящий Liquid Glass уже есть на самой карточке под этим
+            // оверлеем (см. CardView) — второй слой материала поверх
+            // первого делает карточку непрозрачной. Тут только доп.
+            // затемнение, без материала. См. CardSurfaceStyle.swift.
+            CardSurfaceBackground(usesGlassEffect: false, includesMaterial: false, tintOpacity: 0.2)
 
             // 3. Анимированное звездное поле с мягкой маской затухания по краям
             StarFieldCanvas()

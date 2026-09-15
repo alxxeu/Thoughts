@@ -119,13 +119,23 @@ struct CardView: View {
                     Circle()
                         .fill(card.tagColor != nil ? card.tagColor!.color : Color.white.opacity(0.25))
                         .frame(width: 10, height: 10)
-                        .scaleEffect(isHoveringTagButton ? 1.6 : 1.0)
+                        .scaleEffect(isHoveringTagButton && !isPrivacyLocked ? 1.6 : 1.0)
                 }
                 .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
-            .disabled(isPrivacyLocked)
+            // Не .disabled(isPrivacyLocked) — SwiftUI/AppKit сам приглушает
+            // внешний вид отключённой кнопки (не связано с zIndex/порядком
+            // отрисовки, из-за этого точка тега выглядела тусклой на
+            // заблокированной карточке). allowsHitTesting блокирует клик,
+            // но НЕ саму hover-детекцию (.onHover на macOS работает через
+            // отдельный tracking area) — поэтому её тоже нужно игнорировать
+            // отдельно ниже, иначе точка продолжает увеличиваться при
+            // наведении на заблокированной карточке, создавая ложное
+            // ощущение, что по ней можно нажать.
+            .allowsHitTesting(!isPrivacyLocked)
             .onHover { inside in
+                guard !isPrivacyLocked else { return }
                 isHoveringTagButton = inside
                 if inside {
                     NSCursor.pointingHand.set()
@@ -145,7 +155,9 @@ struct CardView: View {
             .animation(.spring(response: 0.2, dampingFraction: 0.7), value: isHoveringTagButton)
             .animation(.easeInOut(duration: 0.15), value: isHovering)
             .animation(.easeInOut(duration: 0.15), value: card.tagColor)
-            .zIndex(104)
+            // Выше оверлея Spoiler/Lock (zIndex 99), чтобы точка тега была
+            // видна поверх тонировки, а не под ней.
+            .zIndex(105)
             
             // RESIZE HANDLE
             Path { path in
@@ -189,9 +201,7 @@ struct CardView: View {
                 .zIndex(102)
                 .onHover { inside in
                     if inside {
-                        dragOrigin != nil ? NSCursor.closedHand.set() : NSCursor.openHand.set()
-                    } else {
-                        NSCursor.arrow.set()
+                        dragOrigin != nil ? NSCursor.closedHand.set() : NSCursor.arrow.set()
                     }
                 }
             

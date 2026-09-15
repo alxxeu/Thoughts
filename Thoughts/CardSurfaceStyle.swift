@@ -4,16 +4,35 @@ import SwiftUI
 /// полноэкранный Lock Space) — .clear Liquid Glass, тонированный чёрным.
 struct CardSurfaceBackground: View {
     var cornerRadius: CGFloat = 16
+    /// Полноэкранный Lock Space — это прямоугольник во весь экран
+    /// (cornerRadius 0), и на такой площади настоящий glassEffect рисует
+    /// заметную светлую кромку-блик по верхнему краю экрана. Там нужен
+    /// тот же тёмный тон, но без настоящего Liquid Glass — просто
+    /// материал + тонирование.
+    var usesGlassEffect: Bool = true
+    /// Действует только когда usesGlassEffect == false. true — рисует
+    /// .ultraThinMaterial под тоном (когда под этим слоем ещё нет
+    /// никакого материала/блюра — напр. полноэкранный Lock Space). false —
+    /// только сам тон без материала (напр. Spoiler/Lock оверлей карточки:
+    /// настоящее стекло уже есть слоем ниже, от самой карточки — второй
+    /// материал поверх первого делает поверхность непрозрачной и убивает
+    /// вид Liquid Glass).
+    var includesMaterial: Bool = true
+    /// Плотность чёрного тона в не-стеклянных вариантах (usesGlassEffect
+    /// == false) — у карточки со Spoiler/Lock и у полноэкранного Lock
+    /// Space разная площадь и разный фон под ней, так что значение не
+    /// общее.
+    var tintOpacity: Double = 0.4
 
     @Environment(\.colorScheme) private var colorScheme
 
     var body: some View {
         Group {
-            if #available(macOS 26.0, *) {
+            if #available(macOS 26.0, *), usesGlassEffect {
                 RoundedRectangle(cornerRadius: cornerRadius)
                     .fill(
                           AnyShapeStyle(.ultraThinMaterial.opacity(0.6)))
-                          
+
                     .blendMode(colorScheme == .dark ? .multiply : .multiply)
                     .glassEffect(
                         colorScheme == .dark
@@ -21,9 +40,19 @@ struct CardSurfaceBackground: View {
                         : .clear.tint(Color.black.opacity(0.2)),
                         in: .rect(cornerRadius: cornerRadius)
                     )
-            } else {
+            } else if includesMaterial {
+                // Без glassEffect нет его автоподстройки тона под фон —
+                // берём фиксированное затемнение (не зависящее от
+                // colorScheme), чтобы поверхность не бледнела в Light Mode.
                 RoundedRectangle(cornerRadius: cornerRadius)
                     .fill(.ultraThinMaterial)
+                    .overlay(
+                        RoundedRectangle(cornerRadius: cornerRadius)
+                            .fill(Color.black.opacity(tintOpacity))
+                    )
+            } else {
+                RoundedRectangle(cornerRadius: cornerRadius)
+                    .fill(Color.black.opacity(tintOpacity))
             }
         }
         .clipShape(RoundedRectangle(cornerRadius: cornerRadius))
