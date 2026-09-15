@@ -37,7 +37,10 @@ final class DividerAttachment: NSTextAttachment {
 // MARK: - Custom NSTextView (plain-text paste + divider drawing)
 
 private final class CardNSTextView: NSTextView {
-    static let dividerLineColor = NSColor.labelColor.withAlphaComponent(0.22)
+    // Фикс. белый, а не адаптивный labelColor — фон карточки (CardSurfaceStyle)
+    // больше не переключается в светлый в Light Mode, так что текст/линии
+    // поверх него тоже должны оставаться светлыми в обеих темах.
+    static let dividerLineColor = NSColor.white.withAlphaComponent(0.22)
 
     // Требование 4: вставка всегда plain text в стиле карточки.
     // Работает только с диапазоном вставки — существующие NSTextAttachment
@@ -260,7 +263,7 @@ struct CardTextView: NSViewRepresentable {
         textView.autoresizingMask = [.width]
         textView.minSize = NSSize(width: 0, height: 0)
         textView.maxSize = NSSize(width: CGFloat.greatestFiniteMagnitude, height: CGFloat.greatestFiniteMagnitude)
-        textView.textColor = NSColor.labelColor.withAlphaComponent(0.88)
+        textView.textColor = NSColor.white.withAlphaComponent(0.88)
         textView.typingAttributes = Self.baseAttributes()
 
         textView.textStorage?.setAttributedString(Self.buildAttributedString(from: text))
@@ -324,7 +327,7 @@ struct CardTextView: NSViewRepresentable {
         paragraph.lineSpacing = 4
         return [
             .font: NSFont.systemFont(ofSize: 15),
-            .foregroundColor: NSColor.labelColor.withAlphaComponent(0.88),
+            .foregroundColor: NSColor.white.withAlphaComponent(0.88),
             .paragraphStyle: paragraph
         ]
     }

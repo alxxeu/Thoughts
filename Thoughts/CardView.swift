@@ -40,49 +40,48 @@ struct CardView: View {
     
     var body: some View {
         ZStack(alignment: .topLeading) {
-            // РОДНОЙ GLASS EFFECT (доступен только с macOS 26) — на более
-            // старых системах (минимум приложения — macOS 15) используем
-            // обычный системный Material как визуально близкий аналог.
-            Group {
-                if #available(macOS 26.0, *) {
-                    RoundedRectangle(cornerRadius: 16)
-                        .fill(Color.clear)
-                        .glassEffect(in: .rect(cornerRadius: 16.0))
-                } else {
-                    RoundedRectangle(cornerRadius: 16)
-                        .fill(.ultraThinMaterial)
-                }
-            }
-            
-            CardTextView(
-                text: $card.text,
-                isFocused: $isTextFocused,
-                cardSize: CGSize(
-                    width: dragResizeSize?.width ?? card.size.width,
-                    height: dragResizeSize?.height ?? card.size.height
-                ),
-                onTextChange: {
-                    viewModel.scheduleDebouncedSave()
-                },
-                onFocusChange: { focused in
-                    if focused {
-                        viewModel.bringToFront(card)
+            // Liquid Glass + тонкий чёрный тон поверх — см. CardSurfaceStyle.swift.
+            CardSurfaceBackground()
+
+            // Реальный текст не создаётся вообще, пока карточка скрыта под
+            // Spoiler/Lock — иначе при малой степени Liquid Glass (слайдер
+            // в Settings → Appearance в macOS 27) содержимое может
+            // просвечивать сквозь полупрозрачный StarFieldOverlayView,
+            // который лишь визуально накрывает уже отрисованный текст.
+            // Тот же принцип, что уже применён к заблокированному Space
+            // целиком (см. ContentView.swift — ForEach с карточками не
+            // создаётся вовсе, пока Space заблокирован).
+            if !isPrivacyLocked {
+                CardTextView(
+                    text: $card.text,
+                    isFocused: $isTextFocused,
+                    cardSize: CGSize(
+                        width: dragResizeSize?.width ?? card.size.width,
+                        height: dragResizeSize?.height ?? card.size.height
+                    ),
+                    onTextChange: {
+                        viewModel.scheduleDebouncedSave()
+                    },
+                    onFocusChange: { focused in
+                        if focused {
+                            viewModel.bringToFront(card)
+                        }
+                    }
+                )
+                .zIndex(0)
+                .mask(alignment: .top) {
+                    VStack(spacing: 0) {
+                        LinearGradient(colors: [.clear, .black], startPoint: .top, endPoint: .bottom)
+                            .frame(height: 15)
+                        Color.black
+                        LinearGradient(colors: [.black, .clear], startPoint: .top, endPoint: .bottom)
+                            .frame(height: 15)
                     }
                 }
-            )
-            .zIndex(0)
-            .mask(alignment: .top) {
-                VStack(spacing: 0) {
-                    LinearGradient(colors: [.clear, .black], startPoint: .top, endPoint: .bottom)
-                        .frame(height: 15)
-                    Color.black
-                    LinearGradient(colors: [.black, .clear], startPoint: .top, endPoint: .bottom)
-                        .frame(height: 15)
-                }
-            }
-            .onReceive(NotificationCenter.default.publisher(for: .focusNewCard)) { notification in
-                if let targetID = notification.object as? UUID, targetID == card.id {
-                    isTextFocused = true
+                .onReceive(NotificationCenter.default.publisher(for: .focusNewCard)) { notification in
+                    if let targetID = notification.object as? UUID, targetID == card.id {
+                        isTextFocused = true
+                    }
                 }
             }
 
@@ -118,7 +117,7 @@ struct CardView: View {
                         .frame(width: 16, height: 16)
                     
                     Circle()
-                        .fill(card.tagColor != nil ? card.tagColor!.color : Color.primary.opacity(0.15))
+                        .fill(card.tagColor != nil ? card.tagColor!.color : Color.white.opacity(0.25))
                         .frame(width: 10, height: 10)
                         .scaleEffect(isHoveringTagButton ? 1.6 : 1.0)
                 }
@@ -158,7 +157,7 @@ struct CardView: View {
                 )
                 path.addLine(to: CGPoint(x: 14, y: 22))
             }
-            .stroke(Color.primary.opacity(0.3), style: StrokeStyle(lineWidth: 2, lineCap: .round, lineJoin: .round))
+            .stroke(Color.white.opacity(0.35), style: StrokeStyle(lineWidth: 2, lineCap: .round, lineJoin: .round))
             .frame(width: 32, height: 32)
             .contentShape(Rectangle())
             .onHover { inside in
@@ -200,7 +199,7 @@ struct CardView: View {
             if !isPrivacyLocked {
                 ZStack {
                     Circle()
-                        .fill(Color.primary.opacity(isPressingDelete ? 0.15 : (isHoveringDeleteButton ? 0.08 : 0.0)))
+                        .fill(Color.white.opacity(isPressingDelete ? 0.22 : (isHoveringDeleteButton ? 0.14 : 0.0)))
                         .frame(width: 20, height: 20)
                         .animation(.easeIn(duration: 0.1), value: isHoveringDeleteButton)
                     
@@ -212,7 +211,7 @@ struct CardView: View {
                     
                     Image(systemName: "xmark")
                         .font(.system(size: 9, weight: .black))
-                        .foregroundStyle(isPressingDelete ? Color.red : Color.primary.opacity(0.3))
+                        .foregroundStyle(isPressingDelete ? Color.red : Color.white.opacity(0.4))
                 }
                 .contentShape(Circle())
                 .padding(5)
@@ -247,8 +246,8 @@ struct CardView: View {
 
             // ПОДСВЕТКА ПРИ ПЕРЕХОДЕ ИЗ SPOTLIGHT
             RoundedRectangle(cornerRadius: 16)
-                .stroke(Color.primary.opacity(isHighlighted ? 0.9 : 0), lineWidth: 2)
-                .shadow(color: .primary.opacity(isHighlighted ? 0.7 : 0), radius: isHighlighted ? 16 : 0)
+                .stroke(Color.white.opacity(isHighlighted ? 0.9 : 0), lineWidth: 2)
+                .shadow(color: .white.opacity(isHighlighted ? 0.7 : 0), radius: isHighlighted ? 16 : 0)
                 .allowsHitTesting(false)
                 .zIndex(106)
         }

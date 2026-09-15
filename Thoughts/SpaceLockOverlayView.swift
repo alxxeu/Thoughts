@@ -11,18 +11,10 @@ struct SpaceLockOverlayView: View {
 
     var body: some View {
         ZStack {
-            Group {
-                if #available(macOS 26.0, *) {
-                    Rectangle()
-                        .fill(Color.black.opacity(0.1))
-                        .glassEffect(in: .rect)
-                } else {
-                    Rectangle()
-                        .fill(.ultraThinMaterial)
-                        .overlay(Rectangle().fill(Color.black.opacity(0.1)))
-                }
-            }
-            .ignoresSafeArea()
+            // Liquid Glass + тонкий чёрный тон поверх — тот же, что у
+            // карточек. См. CardSurfaceStyle.swift.
+            CardSurfaceBackground(cornerRadius: 0)
+                .ignoresSafeArea()
 
             StarFieldCanvas()
                 .ignoresSafeArea()
@@ -30,7 +22,7 @@ struct SpaceLockOverlayView: View {
             VStack(spacing: 18) {
                 Image(systemName: "lock.fill")
                     .font(.system(size: 30, weight: .medium))
-                    .foregroundStyle(.primary.opacity(0.85))
+                    .foregroundStyle(.white.opacity(0.85))
                     .shadow(color: .black.opacity(0.5), radius: 4)
 
                 passcodeEntry
@@ -66,10 +58,10 @@ struct SpaceLockOverlayView: View {
         } label: {
             Text("Unlock with Touch ID")
                 .font(.system(size: 13, weight: .semibold))
-                .foregroundStyle(.primary.opacity(0.85))
+                .foregroundStyle(.white.opacity(0.85))
                 .padding(.horizontal, 16)
                 .padding(.vertical, 8)
-                .background(Capsule().fill(Color.primary.opacity(0.1)))
+                .background(Capsule().fill(Color.white.opacity(0.12)))
         }
         .buttonStyle(.plain)
     }

@@ -3,24 +3,13 @@ import SwiftUI
 struct StarFieldOverlayView: View {
     let mode: CardPrivacyMode
     let onTap: () -> Void
-    
+
     var body: some View {
         ZStack {
-            // .glassEffect доступен только с macOS 26 — на более старых
-            // системах (минимум приложения — macOS 15) используем обычный
-            // системный Material как визуально близкий аналог.
-            Group {
-                if #available(macOS 26.0, *) {
-                    RoundedRectangle(cornerRadius: 16)
-                        .fill(Color.black.opacity(0.1))
-                        .glassEffect(in: .rect(cornerRadius: 16.0))
-                } else {
-                    RoundedRectangle(cornerRadius: 16)
-                        .fill(.ultraThinMaterial)
-                        .overlay(RoundedRectangle(cornerRadius: 16).fill(Color.black.opacity(0.1)))
-                }
-            }
-            
+            // Liquid Glass + тонкий чёрный тон поверх — тот же, что у
+            // обычных карточек. См. CardSurfaceStyle.swift.
+            CardSurfaceBackground()
+
             // 3. Анимированное звездное поле с мягкой маской затухания по краям
             StarFieldCanvas()
                 .mask {
@@ -35,7 +24,7 @@ struct StarFieldOverlayView: View {
             if mode == .lock {
                 Image(systemName: "lock.fill")
                     .font(.system(size: 22, weight: .medium))
-                    .foregroundStyle(.primary.opacity(0.85))
+                    .foregroundStyle(.white.opacity(0.85))
                     .shadow(color: .black.opacity(0.5), radius: 4)
             }
         }
@@ -149,9 +138,13 @@ struct StarFieldCanvas: View {
                     pathsByOpacityStep[opacityStep, default: Path()].addEllipse(in: rect)
                 }
 
+                // Фикс. белый — фон StarFieldOverlayView/SpaceLockOverlayView
+                // больше не переключается в светлый в Light Mode (см.
+                // CardSurfaceStyle), так что звёзды должны оставаться
+                // светлыми в обеих темах, а не следовать .primary.
                 for (opacityStep, path) in pathsByOpacityStep {
                     context.opacity = Double(opacityStep) / 10
-                    context.fill(path, with: .color(.primary))
+                    context.fill(path, with: .color(.white))
                 }
             }
         }
