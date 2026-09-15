@@ -12,8 +12,14 @@ struct ThoughtsApp: App {
     // напрямую через NSApplicationDelegate — единственный гарантированно
     // рабочий на macOS хук для этого случая.
     @NSApplicationDelegateAdaptor(AppDelegate.self) private var appDelegate
-    @State private var viewModel = BoardViewModel()
-    @State private var quitGuard = QuitGuard()
+    // Не @State: App-структура создаётся один раз за жизнь процесса (в
+    // отличие от View), а @State в init() читается ДО того, как SwiftUI
+    // его "установит" на реальном хранилище — appDelegate.viewModel ниже
+    // получал бы временный бокс вместо той же инстанции, с которой
+    // потом работает body. BoardViewModel — @Observable класс, обычного
+    // хранимого свойства достаточно для реактивности.
+    private let viewModel = BoardViewModel()
+    private let quitGuard = QuitGuard()
 
     init() {
         // По умолчанию AppKit при зажатии буквенной клавиши в NSTextView
