@@ -90,7 +90,11 @@ final class BoardViewModel {
         // защищённые сохраняют своё locked/unlocked ровно таким, каким его
         // оставили в прошлый раз (или каким его успел сделать idle-таймер
         // в фоне, пока Space не был активен).
-        activeSlot = min(9, max(1, slot))
+        let clamped = min(9, max(1, slot))
+        // Иначе зажатый хоткей (авто-повтор клавиши) на уже активном Space
+        // непрерывно перезапускает переход/анимацию на то же самое место.
+        guard clamped != activeSlot else { return }
+        activeSlot = clamped
     }
 
     // MARK: - Space Lock

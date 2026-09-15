@@ -73,6 +73,7 @@ struct ThoughtsApp: App {
                 // ⌥D, уже находясь в этом режиме, не делает ничего. Выход —
                 // только через выбор любого Space в CommandMenu ниже.
                 Button("Show Desktop") {
+                    guard !viewModel.desktopOverlay.isDesktopModeActive else { return }
                     viewModel.desktopOverlay.isDesktopModeActive = true
                 }
                 .keyboardShortcut("d", modifiers: .option)

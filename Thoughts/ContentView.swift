@@ -148,6 +148,7 @@ struct ContentView: View {
                 // стол должен быть виден без единого визуального следа
                 // Thoughts поверх него.
                 Color.clear
+                    .transition(.opacity)
             } else if viewModel.isActiveSpaceLocked {
                 // Полностью отдельная ветка дерева: карточки и canvas этого
                 // Space physически не существуют, пока он заблокирован —
@@ -156,6 +157,7 @@ struct ContentView: View {
                 // невыбранного слота тоже не рендерится). Никакого
                 // отдельного blur-слоя поверх живого контента не нужно.
                 SpaceLockOverlayView(viewModel: viewModel)
+                    .transition(.opacity)
             } else {
                 unlockedSpaceContent
             }
@@ -166,6 +168,21 @@ struct ContentView: View {
                     .transition(.opacity)
             }
         }
+        // Плавные переходы между Spaces (обычное переключение, Desktop
+        // Overlay туда-обратно, лок/анлок) — раньше карточки/оверлеи
+        // сразу переключались без анимации, топорно. Пружина вместо
+        // плоского easeOut — привычная по ощущению кривая для macOS,
+        // а не линейное затухание.
+        .animation(.easeOut(duration: 0.2), value: viewModel.desktopOverlay.isDesktopModeActive)
+        .animation(.easeOut(duration: 0.2), value: viewModel.isActiveSpaceLocked)
+        // Смена Space сама по себе — без общего id/transition на весь
+        // блок: не имитируем это одним общим кросс-фейдом. Вместо этого,
+        // как у Floatspace, анимируется только УХОД старых карточек
+        // (asymmetric-transition на каждой CardView ниже), новые
+        // появляются сразу без входной анимации, а pill с названием
+        // просто меняет текст — так выглядит собраннее, а не "будто всё
+        // тает одним пятном".
+        .animation(.easeOut(duration: 0.1), value: viewModel.activeSlot)
         .animation(.easeOut(duration: 0.25), value: isShowingOnboarding)
         .background(
             WindowAccessor { window in
@@ -240,7 +257,13 @@ struct ContentView: View {
         }
         .onReceive(NotificationCenter.default.publisher(for: .switchWorkspace)) { notification in
             if let slot = notification.object as? Int {
-                viewModel.switchWorkspace(to: slot)
+                // Явный withAnimation здесь, а не только .animation(value:)
+                // ниже — через GeometryReader → ZStack → ForEach декларативная
+                // привязка по value надёжно анимирует уход старых карточек,
+                // но не всегда подхватывает появление новых.
+                withAnimation(.easeOut(duration: 0.1)) {
+                    viewModel.switchWorkspace(to: slot)
+                }
             }
         }
         .onReceive(NotificationCenter.default.publisher(for: .lockCurrentSpace)) { _ in
@@ -260,7 +283,8 @@ struct ContentView: View {
             Button("Clear All Cards", role: .destructive) {
                 viewModel.clearActiveSpace()
             }
-        } message: {
+        }
+        message: {
             Text("This will permanently delete all \(viewModel.cards.count) card\(viewModel.cards.count == 1 ? "" : "s") in this Space. This can\u{2019}t be undone.")
         }
     }
@@ -309,6 +333,24 @@ struct ContentView: View {
                     )
                     .frame(width: card.size.width, height: card.size.height, alignment: .topLeading)
                     .offset(x: adaptedPosition.x, y: adaptedPosition.y)
+                    // .compositingGroup() — карточка (стекло + текст +
+                    // чат тега/кнопок) смешивается с тем, что позади, как
+                    // один плоский слой при fade, а не покомпонентно;
+                    // должно убрать серый след, который оставляло живое
+                    // стекло при анимированном opacity.
+                    .compositingGroup()
+                    // Исчезновение — быстрее появления: своя анимация на
+                    // каждой стороне через .animation(_:) на AnyTransition,
+                    // а не общая длительность из withAnimation в месте
+                    // мутации activeSlot.
+                    .transition(
+                        .asymmetric(
+                            insertion: .opacity.combined(with: .scale(scale: 0.85))
+                                .animation(.easeOut(duration: 0.08)),
+                            removal: .opacity.combined(with: .scale(scale: 0.85))
+                                .animation(.easeOut(duration: 0.05))
+                        )
+                    )
                     .onAppear {
                         if newlyCreatedCardID == card.id {
                             DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) {
@@ -393,7 +435,7 @@ struct ContentView: View {
                         TextField("Space name", text: $workspaceNameDraft)
                             .textFieldStyle(.plain)
                             .font(.system(size: 11, weight: .semibold))
-                            .foregroundStyle(.primary.opacity(0.85))
+                            .foregroundStyle(Color.white.opacity(0.85))
                             .multilineTextAlignment(.center)
                             .frame(width: 100)
                             .focused($isWorkspaceNameFieldFocused)
@@ -410,12 +452,12 @@ struct ContentView: View {
                     } else {
                         Text(viewModel.activeWorkspace?.name ?? Workspace.defaultName(forSlot: viewModel.activeSlot))
                             .font(.system(size: 11, weight: .semibold))
-                            .foregroundStyle(.primary.opacity(0.5))
+                            .foregroundStyle(Color.white.opacity(0.9))
                     }
                 }
                 .padding(.horizontal, 10)
                 .padding(.vertical, 5)
-                .background(Capsule().fill(Color.primary.opacity(0.06)))
+                .background(Capsule().fill(Color.black.opacity(0.1)))
                 .contentShape(Capsule())
                 .onTapGesture {
                     if !isEditingWorkspaceName {
@@ -573,6 +615,9 @@ struct ContentView: View {
         let optionMask = UInt32(optionKey)
 
         GlobalHotKeyManager.shared.register(keyCode: 2 /* kVK_ANSI_D */, modifiers: optionMask) {
+            // Иначе зажатое ⌥D (авто-повтор клавиши) непрерывно шлёт один
+            // и тот же вход в Desktop mode заново.
+            guard !viewModel.desktopOverlay.isDesktopModeActive else { return }
             viewModel.desktopOverlay.isDesktopModeActive = true
         }
 
