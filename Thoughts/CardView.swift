@@ -19,6 +19,13 @@ struct CardView: View {
     @State private var relockTask: Task<Void, Never>? = nil // Таймер автоблокировки после клика вне карточки
     @State private var isHighlighted = false
     @State private var unhighlightTask: Task<Void, Never>? = nil
+    @State private var isGeneratingAI = false
+    @State private var aiErrorMessage: String?
+    // Одноразовая анимация появления карточки из Ask AI/Summarize —
+    // "выскакивает" из-под нотча к своей итоговой позиции. См.
+    // triggerAIPopInAnimationIfNeeded().
+    @State private var aiPopInOffset: CGSize = .zero
+    @State private var aiPopInScale: CGFloat = 1.0
     
     @State private var isTextFocused: Bool = false
     // @GestureState, а не @State: должен сбрасываться самой системой жестов
@@ -43,6 +50,9 @@ struct CardView: View {
     // карточки, не кликнув по ней снова.
     private var showsHoverControls: Bool {
         isHovering || isTextFocused
+    }
+    private var isAIHighlighted: Bool {
+        viewModel.aiHighlightedCardIDs.contains(card.id)
     }
     
     var body: some View {
@@ -73,7 +83,8 @@ struct CardView: View {
                         if focused {
                             viewModel.bringToFront(card)
                         }
-                    }
+                    },
+                    onAIAction: handleAIAction
                 )
                 .zIndex(0)
                 .mask(alignment: .top) {
@@ -261,17 +272,38 @@ struct CardView: View {
                 })
             }
 
-            // ПОДСВЕТКА ПРИ ПЕРЕХОДЕ ИЗ SPOTLIGHT
+            // ПОДСВЕТКА ПРИ ПЕРЕХОДЕ ИЗ SPOTLIGHT / НОВОЙ AI-КАРТОЧКИ
+            // Spotlight — временная (гаснет через 1.6с, см. .highlightCard
+            // ниже); AI — постоянная, пока карточку явно не кликнут (см.
+            // aiHighlightedCardIDs, снимается в gesture ниже).
             RoundedRectangle(cornerRadius: 16)
-                .stroke(Color.white.opacity(isHighlighted ? 0.9 : 0), lineWidth: 2)
-                .shadow(color: .white.opacity(isHighlighted ? 0.7 : 0), radius: isHighlighted ? 16 : 0)
+                .stroke(Color.white.opacity((isHighlighted || isAIHighlighted) ? 0.9 : 0), lineWidth: 2)
+                .shadow(color: .white.opacity((isHighlighted || isAIHighlighted) ? 0.7 : 0), radius: (isHighlighted || isAIHighlighted) ? 16 : 0)
                 .allowsHitTesting(false)
+                .animation(.easeInOut(duration: 0.3), value: isAIHighlighted)
                 .zIndex(106)
+
+            // ИНДИКАТОР AI-ЗАПРОСА
+            if isGeneratingAI {
+                RoundedRectangle(cornerRadius: 16)
+                    .fill(.black.opacity(0.25))
+                    .overlay {
+                        ProgressView()
+                            .controlSize(.small)
+                            .tint(.white)
+                    }
+                    .allowsHitTesting(false)
+                    .transition(.opacity)
+                    .zIndex(107)
+            }
         }
         .frame(
             width: dragResizeSize?.width ?? card.size.width,
             height: dragResizeSize?.height ?? card.size.height
         )
+        .scaleEffect(aiPopInScale)
+        .offset(aiPopInOffset)
+        .onAppear { triggerAIPopInAnimationIfNeeded() }
         .onHover { isHovering = $0 }
         .simultaneousGesture(
             DragGesture(minimumDistance: 0, coordinateSpace: .local)
@@ -279,11 +311,21 @@ struct CardView: View {
                     guard !state else { return }
                     state = true
                     viewModel.bringToFront(card)
+                    viewModel.aiHighlightedCardIDs.remove(card.id)
                     NotificationCenter.default.post(name: .cardWasClicked, object: card.id)
                 }
         )
 
         .animation(.easeInOut(duration: 0.35), value: isPrivacyLocked)
+        .animation(.easeInOut(duration: 0.15), value: isGeneratingAI)
+        .alert("AI Error", isPresented: Binding(
+            get: { aiErrorMessage != nil },
+            set: { if !$0 { aiErrorMessage = nil } }
+        )) {
+            Button("OK") { aiErrorMessage = nil }
+        } message: {
+            Text(aiErrorMessage ?? "")
+        }
                 .onChange(of: card.privacyMode) { _, newMode in
                     cancelRelock()
                     if newMode != .none {
@@ -467,5 +509,55 @@ struct CardView: View {
     private func cancelRelock() {
         relockTask?.cancel()
         relockTask = nil
+    }
+
+    // MARK: - AI actions (Pro, BYOK — см. Thoughts/AI)
+
+    /// Играется один раз при появлении карточки, созданной Ask AI/Summarize
+    /// (см. aiHighlightedCardIDs) — стартует из точки под нотчем (там же,
+    /// где сама панель Ask AI) и с уменьшенным масштабом, затем пружинно
+    /// анимируется к настоящей позиции/масштабу карточки.
+    private func triggerAIPopInAnimationIfNeeded() {
+        guard viewModel.aiHighlightedCardIDs.contains(card.id) else { return }
+
+        let finalPosition = BoardViewModel.clampedPosition(
+            card.position, size: card.size, canvasSize: canvasSize, topInset: effectiveTopInset
+        )
+        let notchOrigin = CGPoint(x: canvasSize.width / 2 - card.size.width / 2, y: -card.size.height * 0.6)
+
+        aiPopInOffset = CGSize(width: notchOrigin.x - finalPosition.x, height: notchOrigin.y - finalPosition.y)
+        aiPopInScale = 0.35
+        withAnimation(.spring(response: 0.45, dampingFraction: 0.72)) {
+            aiPopInOffset = .zero
+            aiPopInScale = 1.0
+        }
+    }
+
+    private func handleAIAction(_ action: AITextAction, _ inputText: String) {
+        // Не даём запустить второй запрос поверх ещё не завершённого —
+        // результат первого мог бы перезаписать то, что успел напечатать
+        // пользователь, пока ждал второй.
+        guard !isGeneratingAI, !inputText.isEmpty else { return }
+        isGeneratingAI = true
+        Task {
+            do {
+                let service = try AITextServiceFactory.makeActiveService()
+                let result = try await service.generate(systemPrompt: action.systemPrompt, userText: inputText)
+                await MainActor.run {
+                    if action.appendsResult {
+                        card.text += (card.text.isEmpty ? "" : "\n\n") + result
+                    } else {
+                        card.text = result
+                    }
+                    viewModel.scheduleDebouncedSave()
+                    isGeneratingAI = false
+                }
+            } catch {
+                await MainActor.run {
+                    aiErrorMessage = error.localizedDescription
+                    isGeneratingAI = false
+                }
+            }
+        }
     }
 }

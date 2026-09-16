@@ -19,6 +19,7 @@ final class BoardViewModel {
     let securitySettings = SecuritySettings.shared
     let appearanceSettings = AppearanceSettings.shared
     let desktopOverlay = DesktopOverlaySettings.shared
+    let aiSettings = AISettings.shared
 
     /// Слоты защищённых (Workspace.isProtected == true) Space, прошедшие
     /// аутентификацию в ЭТОЙ сессии. Runtime-only, никогда не персистится:
@@ -28,6 +29,13 @@ final class BoardViewModel {
     /// имеющий блокировку", но при этом сейчас открыт.
     private var unlockedProtectedSlots: Set<Int> = []
     private var idleLockTasks: [Int: Task<Void, Never>] = [:]
+
+    /// Карточки, созданные Ask AI/Summarize (Pro), которые ещё не были
+    /// "активированы" явным кликом — см. CardView. Runtime-only, как
+    /// unlockedProtectedSlots выше: не персистится и не переживает
+    /// перезапуск приложения, но это ОК — постоянная подсветка нужна
+    /// только для ориентации в текущей сессии.
+    var aiHighlightedCardIDs: Set<UUID> = []
 
     var isActiveSpaceLocked: Bool {
         securitySettings.isPasscodeEnabled

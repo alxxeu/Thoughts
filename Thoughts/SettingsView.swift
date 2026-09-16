@@ -103,6 +103,11 @@ struct SettingsView: View {
                             Label("Security", systemImage: "lock.shield")
                         }
 
+                    AISettingsTab()
+                        .tabItem {
+                            Label("AI", systemImage: "sparkles")
+                        }
+
                     Form {
                         Section {
                             LabeledContent("Version", value: appVersion)

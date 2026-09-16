@@ -52,6 +52,19 @@ struct CornerBracket: Shape {
     }
 }
 
+/// Тот же капсульный стиль, что у pill с названием Space — общий, чтобы
+/// Summarize/Ask AI под ним не пришлось описывать заново.
+struct SpaceAIPillButtonStyle: ButtonStyle {
+    func makeBody(configuration: Configuration) -> some View {
+        configuration.label
+            .font(.system(size: 11, weight: .semibold))
+            .foregroundStyle(Color.white.opacity(configuration.isPressed ? 0.6 : 0.85))
+            .padding(.horizontal, 10)
+            .padding(.vertical, 5)
+            .background(Capsule().fill(Color.black.opacity(0.1)))
+    }
+}
+
 /// Невидимая зона для перетаскивания окна за верхнюю полосу (тайтлбар скрыт
 /// через .windowStyle(.hiddenTitleBar)). WindowDragGesture доступен только с
 /// macOS 15 — на macOS 14 используем NSWindow.performDrag(with:) напрямую.
@@ -116,6 +129,17 @@ struct ContentView: View {
     @State private var isEditingWorkspaceName = false
     @State private var workspaceNameDraft = ""
     @FocusState private var isWorkspaceNameFieldFocused: Bool
+
+    // AI для всего Space (Pro, BYOK) — Ask AI (+ Summarize внутри его
+    // панели) под pill с названием. См. Thoughts/AI. Результат — новая
+    // карточка на канве.
+    @State private var isAskingSpaceAI = false
+    @State private var spaceAIQuestion = ""
+    @State private var isSpaceAIBusy = false
+    @State private var spaceAIErrorMessage: String?
+    // Актуальный размер канвы — нужен вне GeometryReader, чтобы новая
+    // AI-карточка могла стартовать анимацию из-под нотча к центру экрана.
+    @State private var canvasSize: CGSize = .zero
     
     // Состояние и таймер для подсказки пустого спэйса
     @State private var showEmptyHint = false
@@ -416,15 +440,19 @@ struct ContentView: View {
             .frame(width: proxy.size.width, height: proxy.size.height)
             .animation(.easeOut(duration: 0.12), value: edgeHints.count)
             
-            .onChange(of: proxy.size) { _, _ in
+            .onChange(of: proxy.size) { _, newValue in
                 isWindowResizing = true
-                
+                canvasSize = newValue
+
                 resizeDebounceTask?.cancel()
                 resizeDebounceTask = Task {
                     try? await Task.sleep(for: .seconds(0.15))
                     guard !Task.isCancelled else { return }
                     isWindowResizing = false
                 }
+            }
+            .onAppear {
+                canvasSize = proxy.size
             }
         }
         .background(Color.clear)
@@ -464,7 +492,9 @@ struct ContentView: View {
                         startWorkspaceRename()
                     }
                 }
-                
+
+                spaceAIControls
+
                 // Текст подсказки
                 if showEmptyHint && viewModel.cards.isEmpty {
                     Text("Drag anywhere to create your first card")
@@ -484,6 +514,193 @@ struct ContentView: View {
         .onChange(of: viewModel.cards.isEmpty) { _, _ in
             updateEmptyHintState()
         }
+        .alert("AI Error", isPresented: Binding(
+            get: { spaceAIErrorMessage != nil },
+            set: { if !$0 { spaceAIErrorMessage = nil } }
+        )) {
+            Button("OK") { spaceAIErrorMessage = nil }
+        } message: {
+            Text(spaceAIErrorMessage ?? "")
+        }
+    }
+
+    private var spaceAISpring: Animation { .spring(response: 0.4, dampingFraction: 0.76) }
+
+    /// Один и тот же контейнер в обоих состояниях — сворачивание/
+    /// разворачивание анимируется как изменение размера/паддингов ЭТОГО
+    /// view (обычная implicit-анимация, без insertion/removal), поэтому
+    /// выглядит как жидкое расширение самой pill в панель, а не как
+    /// появление отдельного окна поверх неё.
+    private var spaceAIControls: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            if isAskingSpaceAI {
+                AIPromptTextView(text: $spaceAIQuestion, shouldFocus: isAskingSpaceAI) {
+                    askSpaceAI()
+                }
+                .frame(maxWidth: .infinity)
+                .frame(height: 72)
+                .onExitCommand {
+                    withAnimation(spaceAISpring) { isAskingSpaceAI = false }
+                    spaceAIQuestion = ""
+                }
+                // Задержка — контент проявляется уже после того, как
+                // контейнер в основном раскрылся пружиной, а не одновременно
+                // с самым первым кадром анимации (см. .animation(value:)
+                // ниже — insertion внутри неё сама по себе не тянется).
+                .transition(
+                    .asymmetric(
+                        insertion: .opacity.animation(.easeIn(duration: 0.2).delay(0.16)),
+                        removal: .opacity.animation(.easeOut(duration: 0.08))
+                    )
+                )
+
+                HStack {
+                    Button {
+                        summarizeSpace()
+                    } label: {
+                        HStack(spacing: 4) {
+                            Image(systemName: "sparkles")
+                            Text("Summarize")
+                        }
+                    }
+                    .buttonStyle(SpaceAIPillButtonStyle())
+                    .disabled(isSpaceAIBusy || spaceAIContextText().isEmpty)
+
+                    Spacer()
+
+                    if isSpaceAIBusy {
+                        ProgressView()
+                            .controlSize(.small)
+                            .tint(.white)
+                    }
+
+                    Button {
+                        askSpaceAI()
+                    } label: {
+                        Image(systemName: "arrow.up.circle.fill")
+                            .font(.system(size: 20))
+                    }
+                    .buttonStyle(.plain)
+                    .foregroundStyle(Color.white.opacity(0.85))
+                    .disabled(isSpaceAIBusy || spaceAIQuestion.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+                }
+                .fixedSize(horizontal: false, vertical: true)
+                .transition(
+                    .asymmetric(
+                        insertion: .opacity.animation(.easeIn(duration: 0.2).delay(0.2)),
+                        removal: .opacity.animation(.easeOut(duration: 0.08))
+                    )
+                )
+            } else {
+                HStack(spacing: 4) {
+                    Image(systemName: "bubble.left.and.text.bubble.right")
+                    Text("Ask AI")
+                }
+                .font(.system(size: 11, weight: .semibold))
+                .foregroundStyle(Color.white.opacity(0.85))
+                .fixedSize()
+                .transition(
+                    .asymmetric(
+                        insertion: .opacity.animation(.easeIn(duration: 0.15).delay(0.1)),
+                        removal: .opacity.animation(.easeOut(duration: 0.05))
+                    )
+                )
+            }
+        }
+        .padding(.horizontal, 10)
+        .padding(.vertical, isAskingSpaceAI ? 10 : 5)
+        .frame(width: isAskingSpaceAI ? 260 : nil)
+        .background(CardSurfaceBackground(cornerRadius: 16, usesGlassEffect: false, tintOpacity: 0.15))
+        .contentShape(RoundedRectangle(cornerRadius: 16))
+        .onTapGesture {
+            guard !isAskingSpaceAI else { return }
+            withAnimation(spaceAISpring) { isAskingSpaceAI = true }
+        }
+        .animation(spaceAISpring, value: isAskingSpaceAI)
+        // Не отслеживаем потерю фокуса текстовым полем напрямую — это
+        // срабатывает и при клике по Summarize/кнопке отправки внутри этой
+        // же панели, что закрывало бы её в момент нажатия. .clearTextSelection
+        // шлётся именно при клике по свободному холсту (см. canvasDragGesture).
+        .onReceive(NotificationCenter.default.publisher(for: .clearTextSelection)) { _ in
+            guard isAskingSpaceAI, spaceAIQuestion.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return }
+            withAnimation(spaceAISpring) { isAskingSpaceAI = false }
+        }
+    }
+
+    private func spaceAIContextText() -> String {
+        viewModel.cards
+            .filter { $0.privacyMode == .none && !$0.text.isEmpty }
+            .map(\.text)
+            .joined(separator: "\n---\n")
+    }
+
+    private func summarizeSpace() {
+        let context = spaceAIContextText()
+        guard !context.isEmpty, !isSpaceAIBusy else { return }
+        isSpaceAIBusy = true
+        Task {
+            do {
+                let service = try AITextServiceFactory.makeActiveService()
+                let result = try await service.generate(
+                    systemPrompt: AISpaceAction.summarizeSystemPrompt,
+                    userText: context
+                )
+                await MainActor.run {
+                    insertAIResultCard(result)
+                    withAnimation(spaceAISpring) { isAskingSpaceAI = false }
+                    isSpaceAIBusy = false
+                }
+            } catch {
+                await MainActor.run {
+                    spaceAIErrorMessage = error.localizedDescription
+                    isSpaceAIBusy = false
+                }
+            }
+        }
+    }
+
+    private func askSpaceAI() {
+        let question = spaceAIQuestion.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !question.isEmpty, !isSpaceAIBusy else { return }
+        let context = spaceAIContextText()
+        isSpaceAIBusy = true
+        Task {
+            do {
+                let service = try AITextServiceFactory.makeActiveService()
+                let userText = context.isEmpty ? question : "Notes:\n\(context)\n\nQuestion: \(question)"
+                let result = try await service.generate(
+                    systemPrompt: AISpaceAction.askSystemPrompt,
+                    userText: userText
+                )
+                await MainActor.run {
+                    insertAIResultCard(result)
+                    spaceAIQuestion = ""
+                    withAnimation(spaceAISpring) { isAskingSpaceAI = false }
+                    isSpaceAIBusy = false
+                }
+            } catch {
+                await MainActor.run {
+                    spaceAIErrorMessage = error.localizedDescription
+                    isSpaceAIBusy = false
+                }
+            }
+        }
+    }
+
+    /// Не выставляет newlyCreatedCardID — та карточка сразу получает фокус
+    /// текстового ввода (.focusNewCard), что фактически "активирует" её и
+    /// сразу же снимало бы постоянную AI-подсветку (см. aiHighlightedCardIDs
+    /// и CardView) прежде, чем пользователь вообще успеет её заметить.
+    private func insertAIResultCard(_ text: String) {
+        let size = CGSize(width: 280, height: 220)
+        let origin = CGPoint(
+            x: max(0, (canvasSize.width - size.width) / 2),
+            y: max(0, (canvasSize.height - size.height) / 2)
+        )
+        let card = viewModel.addCard(at: origin, size: size)
+        card.text = text
+        viewModel.saveImmediately()
+        viewModel.aiHighlightedCardIDs.insert(card.id)
     }
 
     private func updateEmptyHintState() {
