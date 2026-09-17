@@ -511,13 +511,20 @@ struct ContentView: View {
                         .onHover { setToolbarHover($0, "Ask AI") }
                         .overlay(alignment: .top) { toolbarTooltip("Ask AI") }
 
-                        // Tidy Cards — пока не реализовано, иконка стоит
-                        // местом-заполнителем на будущее.
-                        Image(systemName: "square.grid.2x2.fill")
-                            .font(.system(size: 15))
-                            .foregroundStyle(Color.white.opacity(hoveredToolbarLabel == "Tidy Cards" ? 0.5 : 0.35))
-                            .onHover { setToolbarHover($0, "Tidy Cards") }
-                            .overlay(alignment: .top) { toolbarTooltip("Tidy Cards") }
+                        Button {
+                            dismissToolbarTooltip()
+                            withAnimation(.spring(response: 0.4, dampingFraction: 0.8)) {
+                                viewModel.tidyCards(canvasSize: canvasSize, topInset: effectiveTopInset)
+                            }
+                        } label: {
+                            Image(systemName: "square.grid.2x2.fill")
+                        }
+                        .buttonStyle(.plain)
+                        .foregroundStyle(Color.white.opacity(hoveredToolbarLabel == "Tidy Cards" ? 1 : 0.85))
+                        .font(.system(size: 15))
+                        .disabled(viewModel.cards.isEmpty)
+                        .onHover { setToolbarHover($0, "Tidy Cards") }
+                        .overlay(alignment: .top) { toolbarTooltip("Tidy Cards") }
 
                         Button {
                             dismissToolbarTooltip()

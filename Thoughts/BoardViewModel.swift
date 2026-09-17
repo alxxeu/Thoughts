@@ -204,6 +204,112 @@ final class BoardViewModel {
         saveImmediately()
     }
 
+    /// Tidy Cards (Pro) — детерминированная построчная упаковка ("shelf
+    /// packing"), без какого-либо AI: геометрия с наложениями — плохая
+    /// задача для языковой модели, а сетка карточек и так уже квантована
+    /// шагом cardSizeStep/cardGap, так что тут просто раскладка по рядам.
+    /// Порядок — по текущей позиции (сверху-вниз, слева-направо), а не по
+    /// порядку создания, чтобы не перемешивать то, что уже осмысленно
+    /// разложено по строкам.
+    private enum TidyQuadrant { case topLeft, topRight, bottomLeft, bottomRight }
+
+    /// Раскладывает cardsToPack построчно ("shelf packing"), начиная от
+    /// anchor и разрастаясь вдоль строки в сторону growRight/строк вниз в
+    /// сторону growDown — так один и тот же алгоритм обслуживает все 4
+    /// угла: для "исходящих от центра" углов growRight/growDown = false
+    /// значит расти влево/вверх, а не вправо/вниз.
+    private func packShelf(
+        _ cardsToPack: [Card],
+        anchor: CGPoint,
+        growRight: Bool,
+        growDown: Bool,
+        maxRowExtent: CGFloat,
+        gap: CGFloat
+    ) {
+        var alongAxis: CGFloat = 0
+        var acrossAxis: CGFloat = 0
+        var rowExtent: CGFloat = 0
+
+        for card in cardsToPack {
+            if alongAxis > 0, alongAxis + card.size.width > maxRowExtent {
+                acrossAxis += rowExtent + gap
+                alongAxis = 0
+                rowExtent = 0
+            }
+
+            let x = growRight ? anchor.x + alongAxis : anchor.x - alongAxis - card.size.width
+            let y = growDown ? anchor.y + acrossAxis : anchor.y - acrossAxis - card.size.height
+            card.position = CGPoint(x: x, y: y)
+
+            alongAxis += card.size.width + gap
+            rowExtent = max(rowExtent, card.size.height)
+        }
+    }
+
+    /// Tidy Cards (Pro) — детерминированная раскладка, без какого-либо AI
+    /// (геометрия с наложениями — плохая задача для языковой модели, а
+    /// сетка карточек и так уже квантована шагом cardSizeStep/cardGap).
+    /// Карточки делятся на 4 группы по тому, в какой четверти канвы
+    /// сейчас находится их центр (относительно центра канвы), и каждая
+    /// группа стягивается к СВОЕМУ углу — а не все карточки в один общий
+    /// поток от верхнего левого угла, из-за чего при широком окне всё
+    /// раньше укладывалось в один длинный верхний ряд.
+    func tidyCards(canvasSize: CGSize, topInset: CGFloat = topCreationLimit) {
+        guard !cards.isEmpty else { return }
+
+        let pad = Self.canvasSidePadding
+        let gap = Self.cardGap
+        let centerX = canvasSize.width / 2
+        let centerY = (topInset + canvasSize.height) / 2
+        let halfWidth = max(Self.minCardSize, centerX - pad)
+
+        func quadrant(for card: Card) -> TidyQuadrant {
+            let cx = card.position.x + card.size.width / 2
+            let cy = card.position.y + card.size.height / 2
+            switch (cx < centerX, cy < centerY) {
+            case (true, true): return .topLeft
+            case (false, true): return .topRight
+            case (true, false): return .bottomLeft
+            case (false, false): return .bottomRight
+            }
+        }
+
+        func readingOrder(_ a: Card, _ b: Card) -> Bool {
+            if abs(a.position.y - b.position.y) > gap {
+                return a.position.y < b.position.y
+            }
+            return a.position.x < b.position.x
+        }
+
+        var groups: [TidyQuadrant: [Card]] = [:]
+        for card in cards {
+            groups[quadrant(for: card), default: []].append(card)
+        }
+
+        packShelf(
+            (groups[.topLeft] ?? []).sorted(by: readingOrder),
+            anchor: CGPoint(x: pad, y: topInset), growRight: true, growDown: true,
+            maxRowExtent: halfWidth, gap: gap
+        )
+        packShelf(
+            (groups[.topRight] ?? []).sorted(by: readingOrder),
+            anchor: CGPoint(x: canvasSize.width - pad, y: topInset), growRight: false, growDown: true,
+            maxRowExtent: halfWidth, gap: gap
+        )
+        packShelf(
+            (groups[.bottomLeft] ?? []).sorted(by: readingOrder),
+            anchor: CGPoint(x: pad, y: canvasSize.height - pad), growRight: true, growDown: false,
+            maxRowExtent: halfWidth, gap: gap
+        )
+        packShelf(
+            (groups[.bottomRight] ?? []).sorted(by: readingOrder),
+            anchor: CGPoint(x: canvasSize.width - pad, y: canvasSize.height - pad), growRight: false, growDown: false,
+            maxRowExtent: halfWidth, gap: gap
+        )
+
+        saveImmediately()
+    }
+
     /// File → Clear Space, после подтверждения в алерте (см. ContentView).
     /// Необратимо — сама эта функция ничего не спрашивает, вызывающая
     /// сторона обязана получить согласие пользователя заранее.
