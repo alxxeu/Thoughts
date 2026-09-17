@@ -23,6 +23,10 @@ struct CardSurfaceBackground: View {
     /// Space разная площадь и разный фон под ней, так что значение не
     /// общее.
     var tintOpacity: Double = 0.4
+    /// Действует только когда includesMaterial == true — какой именно
+    /// Material подложить под тон (напр. панели Ask AI нужен более
+    /// плотный .thickMaterial, а не общий .ultraThinMaterial).
+    var materialStyle: Material = .ultraThinMaterial
 
     @Environment(\.colorScheme) private var colorScheme
 
@@ -45,7 +49,7 @@ struct CardSurfaceBackground: View {
                 // берём фиксированное затемнение (не зависящее от
                 // colorScheme), чтобы поверхность не бледнела в Light Mode.
                 RoundedRectangle(cornerRadius: cornerRadius)
-                    .fill(.ultraThinMaterial)
+                    .fill(materialStyle)
                     .overlay(
                         RoundedRectangle(cornerRadius: cornerRadius)
                             .fill(Color.black.opacity(tintOpacity))

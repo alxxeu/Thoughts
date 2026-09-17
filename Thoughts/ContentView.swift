@@ -52,19 +52,6 @@ struct CornerBracket: Shape {
     }
 }
 
-/// Тот же капсульный стиль, что у pill с названием Space — общий, чтобы
-/// Summarize/Ask AI под ним не пришлось описывать заново.
-struct SpaceAIPillButtonStyle: ButtonStyle {
-    func makeBody(configuration: Configuration) -> some View {
-        configuration.label
-            .font(.system(size: 11, weight: .semibold))
-            .foregroundStyle(Color.white.opacity(configuration.isPressed ? 0.6 : 0.85))
-            .padding(.horizontal, 10)
-            .padding(.vertical, 5)
-            .background(Capsule().fill(Color.black.opacity(0.1)))
-    }
-}
-
 /// Невидимая зона для перетаскивания окна за верхнюю полосу (тайтлбар скрыт
 /// через .windowStyle(.hiddenTitleBar)). WindowDragGesture доступен только с
 /// macOS 15 — на macOS 14 используем NSWindow.performDrag(with:) напрямую.
@@ -137,6 +124,14 @@ struct ContentView: View {
     @State private var spaceAIQuestion = ""
     @State private var isSpaceAIBusy = false
     @State private var spaceAIErrorMessage: String?
+    /// Название функции, над иконкой которой сейчас курсор — управляет
+    /// мгновенной подсветкой самой иконки.
+    @State private var hoveredToolbarLabel: String?
+    /// В отличие от hoveredToolbarLabel выше — не мгновенно: всплывающая
+    /// подсказка под иконкой появляется только после небольшой задержки
+    /// наведения (см. setToolbarHover), как обычные системные tooltips.
+    @State private var tooltipVisibleLabel: String?
+    @State private var tooltipTask: Task<Void, Never>?
     // Актуальный размер канвы — нужен вне GeometryReader, чтобы новая
     // AI-карточка могла стартовать анимацию из-под нотча к центру экрана.
     @State private var canvasSize: CGSize = .zero
@@ -458,42 +453,93 @@ struct ContentView: View {
         .background(Color.clear)
         .overlay(alignment: .top) {
             VStack(spacing: 6) {
-                Group {
-                    if isEditingWorkspaceName {
-                        TextField("Space name", text: $workspaceNameDraft)
-                            .textFieldStyle(.plain)
-                            .font(.system(size: 11, weight: .semibold))
-                            .foregroundStyle(Color.white.opacity(0.85))
-                            .multilineTextAlignment(.center)
-                            .frame(width: 100)
-                            .focused($isWorkspaceNameFieldFocused)
-                            .onSubmit { commitWorkspaceRename() }
-                            .onExitCommand { cancelWorkspaceRename() }
-                            .onChange(of: isWorkspaceNameFieldFocused) { _, focused in
-                                if !focused { commitWorkspaceRename() }
-                            }
-                            .onChange(of: workspaceNameDraft) { _, newValue in
-                                if newValue.count > BoardViewModel.maxWorkspaceNameLength {
-                                    workspaceNameDraft = String(newValue.prefix(BoardViewModel.maxWorkspaceNameLength))
+                HStack(spacing: 10) {
+                    Group {
+                        if isEditingWorkspaceName {
+                            TextField("Space name", text: $workspaceNameDraft)
+                                .textFieldStyle(.plain)
+                                .font(.system(size: 11, weight: .semibold))
+                                .foregroundStyle(Color.white.opacity(0.85))
+                                .multilineTextAlignment(.center)
+                                .frame(width: 100)
+                                .focused($isWorkspaceNameFieldFocused)
+                                .onSubmit { commitWorkspaceRename() }
+                                .onExitCommand { cancelWorkspaceRename() }
+                                .onChange(of: isWorkspaceNameFieldFocused) { _, focused in
+                                    if !focused { commitWorkspaceRename() }
                                 }
-                            }
-                    } else {
-                        Text(viewModel.activeWorkspace?.name ?? Workspace.defaultName(forSlot: viewModel.activeSlot))
-                            .font(.system(size: 11, weight: .semibold))
-                            .foregroundStyle(Color.white.opacity(0.9))
+                                .onChange(of: workspaceNameDraft) { _, newValue in
+                                    if newValue.count > BoardViewModel.maxWorkspaceNameLength {
+                                        workspaceNameDraft = String(newValue.prefix(BoardViewModel.maxWorkspaceNameLength))
+                                    }
+                                }
+                        } else {
+                            Text(viewModel.activeWorkspace?.name ?? Workspace.defaultName(forSlot: viewModel.activeSlot))
+                                .font(.system(size: 11, weight: .semibold))
+                                .foregroundStyle(Color.white.opacity(0.9))
+                        }
+                    }
+                    .contentShape(Rectangle())
+                    .onTapGesture {
+                        if !isEditingWorkspaceName {
+                            startWorkspaceRename()
+                        }
+                    }
+
+                    // Иконки-действия пристёгнуты к тому же pill'у, что и
+                    // название — не отдельные капсулы под ним, чтобы новая
+                    // функция была ещё одной иконкой в этом же ряду, а не
+                    // ещё одной строкой вниз.
+                    if !isEditingWorkspaceName {
+                        Rectangle()
+                            .fill(Color.white.opacity(0.15))
+                            .frame(width: 1, height: 14)
+
+                        Button {
+                            dismissToolbarTooltip()
+                            withAnimation(spaceAISpring) { isAskingSpaceAI.toggle() }
+                        } label: {
+                            Image(systemName: "sparkle")
+                                // Развёрнутая на 45° звёздочка читается как
+                                // крестик — понятная подсказка "нажми ещё
+                                // раз, чтобы закрыть".
+                                .rotationEffect(.degrees(isAskingSpaceAI ? 45 : 0))
+                        }
+                        .buttonStyle(.plain)
+                        .foregroundStyle(Color.white.opacity(isAskingSpaceAI || hoveredToolbarLabel == "Ask AI" ? 1 : 0.85))
+                        .font(.system(size: 15))
+                        .onHover { setToolbarHover($0, "Ask AI") }
+                        .overlay(alignment: .top) { toolbarTooltip("Ask AI") }
+
+                        // Tidy Cards — пока не реализовано, иконка стоит
+                        // местом-заполнителем на будущее.
+                        Image(systemName: "square.grid.2x2.fill")
+                            .font(.system(size: 15))
+                            .foregroundStyle(Color.white.opacity(hoveredToolbarLabel == "Tidy Cards" ? 0.5 : 0.35))
+                            .onHover { setToolbarHover($0, "Tidy Cards") }
+                            .overlay(alignment: .top) { toolbarTooltip("Tidy Cards") }
+
+                        Button {
+                            dismissToolbarTooltip()
+                            NotificationCenter.default.post(name: .requestClearSpace, object: nil)
+                        } label: {
+                            Image(systemName: "trash.fill")
+                        }
+                        .buttonStyle(.plain)
+                        .foregroundStyle(Color.white.opacity(hoveredToolbarLabel == "Clear Space" ? 1 : 0.85))
+                        .font(.system(size: 15))
+                        .disabled(viewModel.cards.isEmpty)
+                        .onHover { setToolbarHover($0, "Clear Space") }
+                        .overlay(alignment: .top) { toolbarTooltip("Clear Space") }
                     }
                 }
-                .padding(.horizontal, 10)
+                .padding(.horizontal, 14)
                 .padding(.vertical, 5)
                 .background(Capsule().fill(Color.black.opacity(0.1)))
-                .contentShape(Capsule())
-                .onTapGesture {
-                    if !isEditingWorkspaceName {
-                        startWorkspaceRename()
-                    }
-                }
 
-                spaceAIControls
+                if isAskingSpaceAI {
+                    askAIPanel
+                }
 
                 // Текст подсказки
                 if showEmptyHint && viewModel.cards.isEmpty {
@@ -504,6 +550,13 @@ struct ContentView: View {
                 }
             }
             .padding(.top, workspacePillTopPadding)
+            .onReceive(NotificationCenter.default.publisher(for: .clearTextSelection)) { _ in
+                // Клик по свободному холсту закрывает панель Ask AI, но
+                // только если в поле ещё ничего не напечатано — не хотим
+                // терять черновик вопроса случайным кликом мимо.
+                guard isAskingSpaceAI, spaceAIQuestion.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return }
+                withAnimation(spaceAISpring) { isAskingSpaceAI = false }
+            }
         }
         .onAppear {
             updateEmptyHintState()
@@ -526,105 +579,81 @@ struct ContentView: View {
 
     private var spaceAISpring: Animation { .spring(response: 0.4, dampingFraction: 0.76) }
 
-    /// Один и тот же контейнер в обоих состояниях — сворачивание/
-    /// разворачивание анимируется как изменение размера/паддингов ЭТОГО
-    /// view (обычная implicit-анимация, без insertion/removal), поэтому
-    /// выглядит как жидкое расширение самой pill в панель, а не как
-    /// появление отдельного окна поверх неё.
-    private var spaceAIControls: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            if isAskingSpaceAI {
-                AIPromptTextView(text: $spaceAIQuestion, shouldFocus: isAskingSpaceAI) {
-                    askSpaceAI()
-                }
-                .frame(maxWidth: .infinity)
-                .frame(height: 72)
-                .onExitCommand {
-                    withAnimation(spaceAISpring) { isAskingSpaceAI = false }
-                    spaceAIQuestion = ""
-                }
-                // Задержка — контент проявляется уже после того, как
-                // контейнер в основном раскрылся пружиной, а не одновременно
-                // с самым первым кадром анимации (см. .animation(value:)
-                // ниже — insertion внутри неё сама по себе не тянется).
-                .transition(
-                    .asymmetric(
-                        insertion: .opacity.animation(.easeIn(duration: 0.2).delay(0.16)),
-                        removal: .opacity.animation(.easeOut(duration: 0.08))
-                    )
-                )
-
-                HStack {
-                    Button {
-                        summarizeSpace()
-                    } label: {
-                        HStack(spacing: 4) {
-                            Image(systemName: "sparkles")
-                            Text("Summarize")
-                        }
-                    }
-                    .buttonStyle(SpaceAIPillButtonStyle())
-                    .disabled(isSpaceAIBusy || spaceAIContextText().isEmpty)
-
-                    Spacer()
-
-                    if isSpaceAIBusy {
-                        ProgressView()
-                            .controlSize(.small)
-                            .tint(.white)
-                    }
-
-                    Button {
-                        askSpaceAI()
-                    } label: {
-                        Image(systemName: "arrow.up.circle.fill")
-                            .font(.system(size: 20))
-                    }
-                    .buttonStyle(.plain)
-                    .foregroundStyle(Color.white.opacity(0.85))
-                    .disabled(isSpaceAIBusy || spaceAIQuestion.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
-                }
-                .fixedSize(horizontal: false, vertical: true)
-                .transition(
-                    .asymmetric(
-                        insertion: .opacity.animation(.easeIn(duration: 0.2).delay(0.2)),
-                        removal: .opacity.animation(.easeOut(duration: 0.08))
-                    )
-                )
-            } else {
-                HStack(spacing: 4) {
-                    Image(systemName: "bubble.left.and.text.bubble.right")
-                    Text("Ask AI")
-                }
-                .font(.system(size: 11, weight: .semibold))
-                .foregroundStyle(Color.white.opacity(0.85))
-                .fixedSize()
-                .transition(
-                    .asymmetric(
-                        insertion: .opacity.animation(.easeIn(duration: 0.15).delay(0.1)),
-                        removal: .opacity.animation(.easeOut(duration: 0.05))
-                    )
-                )
-            }
+    /// Раскрывается/закрывается через insertion/removal (не морфинг pill'а
+    /// — sparkle теперь просто иконка в кластере рядом с названием, см.
+    /// .overlay(alignment: .top) в body), с масштабом от верхнего края и
+    /// пружиной на входе. Summarize/Extract — иконки в левом нижнем углу
+    /// того же поля, а не отдельная строка кнопок под ним; подсказки —
+    /// тот же toolbarTooltip/setToolbarHover, что у верхнего кластера.
+    private var askAIPanel: some View {
+        AIPromptTextView(text: $spaceAIQuestion, shouldFocus: isAskingSpaceAI) {
+            askSpaceAI()
         }
-        .padding(.horizontal, 10)
-        .padding(.vertical, isAskingSpaceAI ? 10 : 5)
-        .frame(width: isAskingSpaceAI ? 260 : nil)
-        .background(CardSurfaceBackground(cornerRadius: 16, usesGlassEffect: false, tintOpacity: 0.15))
-        .contentShape(RoundedRectangle(cornerRadius: 16))
-        .onTapGesture {
-            guard !isAskingSpaceAI else { return }
-            withAnimation(spaceAISpring) { isAskingSpaceAI = true }
-        }
-        .animation(spaceAISpring, value: isAskingSpaceAI)
-        // Не отслеживаем потерю фокуса текстовым полем напрямую — это
-        // срабатывает и при клике по Summarize/кнопке отправки внутри этой
-        // же панели, что закрывало бы её в момент нажатия. .clearTextSelection
-        // шлётся именно при клике по свободному холсту (см. canvasDragGesture).
-        .onReceive(NotificationCenter.default.publisher(for: .clearTextSelection)) { _ in
-            guard isAskingSpaceAI, spaceAIQuestion.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return }
+        .frame(maxWidth: .infinity)
+        .frame(height: 130)
+        .onExitCommand {
             withAnimation(spaceAISpring) { isAskingSpaceAI = false }
+            spaceAIQuestion = ""
         }
+        .overlay(alignment: .bottomLeading) {
+            HStack(spacing: 12) {
+                Button {
+                    dismissToolbarTooltip()
+                    summarizeSpace()
+                } label: {
+                    Image(systemName: "sparkles")
+                }
+                .buttonStyle(.plain)
+                .foregroundStyle(Color.white.opacity(hoveredToolbarLabel == "Summarize" ? 1 : 0.85))
+                .font(.system(size: 14))
+                .disabled(isSpaceAIBusy || spaceAIContextText().isEmpty)
+                .onHover { setToolbarHover($0, "Summarize") }
+                .overlay(alignment: .top) { toolbarTooltip("Summarize") }
+
+                Button {
+                    dismissToolbarTooltip()
+                    extractActionItems()
+                } label: {
+                    Image(systemName: "checklist")
+                }
+                .buttonStyle(.plain)
+                .foregroundStyle(Color.white.opacity(hoveredToolbarLabel == "Extract" ? 1 : 0.85))
+                .font(.system(size: 14))
+                .disabled(isSpaceAIBusy || spaceAIContextText().isEmpty)
+                .onHover { setToolbarHover($0, "Extract") }
+                .overlay(alignment: .top) { toolbarTooltip("Extract") }
+
+                if isSpaceAIBusy {
+                    ProgressView()
+                        .controlSize(.small)
+                        .tint(.white)
+                }
+            }
+            .padding(6)
+        }
+        .overlay(alignment: .bottomTrailing) {
+            Button {
+                askSpaceAI()
+            } label: {
+                Image(systemName: "arrow.up.circle.fill")
+                    .font(.system(size: 20))
+            }
+            .buttonStyle(.plain)
+            .foregroundStyle(Color.white.opacity(0.85))
+            .disabled(isSpaceAIBusy || spaceAIQuestion.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+            .padding(5)
+        }
+        .padding(6)
+        .frame(width: 300)
+        .background(CardSurfaceBackground(cornerRadius: 16, usesGlassEffect: false, tintOpacity: 0.15, materialStyle: .thickMaterial))
+        .transition(
+            .asymmetric(
+                insertion: .scale(scale: 0.5, anchor: .top).combined(with: .opacity)
+                    .animation(spaceAISpring),
+                removal: .scale(scale: 0.5, anchor: .top).combined(with: .opacity)
+                    .animation(.easeIn(duration: 0.15))
+            )
+        )
     }
 
     private func spaceAIContextText() -> String {
@@ -643,6 +672,31 @@ struct ContentView: View {
                 let service = try AITextServiceFactory.makeActiveService()
                 let result = try await service.generate(
                     systemPrompt: AISpaceAction.summarizeSystemPrompt,
+                    userText: context
+                )
+                await MainActor.run {
+                    insertAIResultCard(result)
+                    withAnimation(spaceAISpring) { isAskingSpaceAI = false }
+                    isSpaceAIBusy = false
+                }
+            } catch {
+                await MainActor.run {
+                    spaceAIErrorMessage = error.localizedDescription
+                    isSpaceAIBusy = false
+                }
+            }
+        }
+    }
+
+    private func extractActionItems() {
+        let context = spaceAIContextText()
+        guard !context.isEmpty, !isSpaceAIBusy else { return }
+        isSpaceAIBusy = true
+        Task {
+            do {
+                let service = try AITextServiceFactory.makeActiveService()
+                let result = try await service.generate(
+                    systemPrompt: AISpaceAction.extractActionItemsSystemPrompt,
                     userText: context
                 )
                 await MainActor.run {
@@ -881,6 +935,62 @@ struct ContentView: View {
                     newlyCreatedCardID = newCard.id
                 }
             }
+    }
+
+    /// Не просто `hoveredToolbarLabel = inside ? label : nil` — если курсор
+    /// уходит с одной иконки сразу на соседнюю, exit-событие первой может
+    /// прийти ПОСЛЕ enter-события второй, и голое присваивание стёрло бы
+    /// уже выставленный новый label. Очищаем только если он всё ещё
+    /// принадлежит этой же иконке.
+    private func setToolbarHover(_ inside: Bool, _ label: String) {
+        if inside {
+            hoveredToolbarLabel = label
+        } else if hoveredToolbarLabel == label {
+            hoveredToolbarLabel = nil
+        }
+
+        tooltipTask?.cancel()
+        if inside {
+            tooltipTask = Task {
+                try? await Task.sleep(for: .seconds(0.45))
+                guard !Task.isCancelled else { return }
+                withAnimation(.easeIn(duration: 0.1)) {
+                    tooltipVisibleLabel = label
+                }
+            }
+        } else if tooltipVisibleLabel == label {
+            withAnimation(.easeOut(duration: 0.08)) {
+                tooltipVisibleLabel = nil
+            }
+        }
+    }
+
+    /// Отдельно от setToolbarHover — щёлкая по кнопке, курсор физически
+    /// остаётся на месте (onHover не получает "мышь ушла"), так что без
+    /// явной отмены подсказка осталась бы висеть поверх уже открытой панели.
+    private func dismissToolbarTooltip() {
+        tooltipTask?.cancel()
+        tooltipVisibleLabel = nil
+    }
+
+    @ViewBuilder
+    private func toolbarTooltip(_ label: String) -> some View {
+        if tooltipVisibleLabel == label {
+            Text(label)
+                .font(.system(size: 10, weight: .medium))
+                .foregroundStyle(Color.white.opacity(0.9))
+                .padding(.horizontal, 8)
+                .padding(.vertical, 4)
+                // Обычный Color.black.opacity(...) на и без того тёмном
+                // фоне канвы визуально неотличим от полностью непрозрачного
+                // — настоящий материал реально размывает/пропускает то,
+                // что под ним, а не просто гасит альфой поверх тёмного.
+                .background(.ultraThinMaterial.opacity(0.9), in: Capsule())
+                .fixedSize()
+                .allowsHitTesting(false)
+                .offset(y: 24)
+                .transition(.opacity)
+        }
     }
 
     private func startWorkspaceRename() {
