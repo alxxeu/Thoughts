@@ -30,6 +30,13 @@ final class Card: Identifiable, Codable {
     var position: CGPoint
     var size: CGSize
     var text: String = ""
+    /// Форматирование (bold и т.п.) — сериализованный NSAttributedString
+    /// (см. CardTextView), параллельно с обычным text. text остаётся
+    /// источником истины для поиска/AI/Spotlight; formattingData только
+    /// восстанавливает визуальный стиль в редакторе и отбрасывается, если
+    /// не совпадает с text (см. CardTextView.makeNSView) — например, после
+    /// AI-действия, которое заменило text целиком plain-строкой.
+    var formattingData: Data? = nil
     var tagColor: CardTagColor? = nil
     var privacyMode: CardPrivacyMode = .none
 
@@ -42,7 +49,7 @@ final class Card: Identifiable, Codable {
     }
 
     enum CodingKeys: String, CodingKey {
-        case id, position, size, text, tagColor, privacyMode
+        case id, position, size, text, formattingData, tagColor, privacyMode
     }
 
     required init(from decoder: Decoder) throws {
@@ -63,6 +70,8 @@ final class Card: Identifiable, Codable {
         } else {
             text = ""
         }
+
+        formattingData = try container.decodeIfPresent(Data.self, forKey: .formattingData)
     }
 
     func encode(to encoder: Encoder) throws {
@@ -71,6 +80,7 @@ final class Card: Identifiable, Codable {
         try container.encode(position, forKey: .position)
         try container.encode(size, forKey: .size)
         try container.encode(text, forKey: .text)
+        try container.encodeIfPresent(formattingData, forKey: .formattingData)
         try container.encodeIfPresent(tagColor, forKey: .tagColor)
         try container.encode(privacyMode, forKey: .privacyMode)
     }

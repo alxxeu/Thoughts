@@ -293,6 +293,10 @@ private final class CardNSTextView: NSTextView {
 
 struct CardTextView: NSViewRepresentable {
     @Binding var text: String
+    /// Сериализованный NSAttributedString (bold и т.п.) — см. комментарий
+    /// у Card.formattingData. Восстанавливается в makeNSView, обновляется
+    /// в Coordinator.textDidChange вместе с text.
+    @Binding var formattingData: Data?
     @Binding var isFocused: Bool
     var cardSize: CGSize
     var onTextChange: () -> Void
@@ -350,10 +354,24 @@ struct CardTextView: NSViewRepresentable {
         textView.textColor = NSColor.white.withAlphaComponent(0.88)
         textView.typingAttributes = Self.baseAttributes()
 
-        textView.textStorage?.setAttributedString(Self.buildAttributedString(from: text))
+        textView.textStorage?.setAttributedString(Self.restoredAttributedString(text: text, formattingData: formattingData))
 
         scrollView.documentView = textView
         return scrollView
+    }
+
+    /// Если formattingData есть и реально соответствует text (совпадают
+    /// голые символы) — восстанавливает настоящий стиль. Иначе (нет
+    /// сохранённого форматирования, оно повреждено, или text был заменён
+    /// снаружи — например, AI-действием — без обновления formattingData)
+    /// откатывается к обычной plain-реконструкции, как было всегда.
+    fileprivate static func restoredAttributedString(text: String, formattingData: Data?) -> NSAttributedString {
+        if let data = formattingData,
+           let restored = try? NSKeyedUnarchiver.unarchivedObject(ofClass: NSAttributedString.self, from: data),
+           restored.string == text {
+            return restored
+        }
+        return buildAttributedString(from: text)
     }
 
     func updateNSView(_ nsView: NSScrollView, context: Context) {
@@ -610,6 +628,10 @@ struct CardTextView: NSViewRepresentable {
             replaceDashPrefixWithBulletIfNeeded(in: textView)
 
             parent.text = textView.string
+            parent.formattingData = try? NSKeyedArchiver.archivedData(
+                withRootObject: textView.attributedString(),
+                requiringSecureCoding: true
+            )
             parent.onTextChange()
         }
 

@@ -71,6 +71,7 @@ struct CardView: View {
             if !isPrivacyLocked {
                 CardTextView(
                     text: $card.text,
+                    formattingData: $card.formattingData,
                     isFocused: $isTextFocused,
                     cardSize: CGSize(
                         width: dragResizeSize?.width ?? card.size.width,
