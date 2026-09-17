@@ -263,10 +263,8 @@ final class BoardViewModel {
         let centerY = (topInset + canvasSize.height) / 2
         let halfWidth = max(Self.minCardSize, centerX - pad)
 
-        func quadrant(for card: Card) -> TidyQuadrant {
-            let cx = card.position.x + card.size.width / 2
-            let cy = card.position.y + card.size.height / 2
-            switch (cx < centerX, cy < centerY) {
+        func quadrant(forCenter point: CGPoint) -> TidyQuadrant {
+            switch (point.x < centerX, point.y < centerY) {
             case (true, true): return .topLeft
             case (false, true): return .topRight
             case (true, false): return .bottomLeft
@@ -274,35 +272,84 @@ final class BoardViewModel {
             }
         }
 
-        func readingOrder(_ a: Card, _ b: Card) -> Bool {
-            if abs(a.position.y - b.position.y) > gap {
-                return a.position.y < b.position.y
+        func center(of card: Card) -> CGPoint {
+            CGPoint(x: card.position.x + card.size.width / 2, y: card.position.y + card.size.height / 2)
+        }
+
+        // Шаг 1: у каждой карточки по умолчанию "родной" угол — тот же,
+        // что и раньше, по её текущему положению относительно центра.
+        var assignedQuadrant: [UUID: TidyQuadrant] = [:]
+        for card in cards {
+            assignedQuadrant[card.id] = quadrant(forCenter: center(of: card))
+        }
+
+        // Шаг 2: карточки с ОДИНАКОВЫМ тегом (если их 2+) ВСЕГДА стягиваются
+        // в один угол — тот, где их и так сейчас больше всего (реальное
+        // "скопление" тега). При ничьей по количеству явного скопления нет,
+        // но угол всё равно нужен один — берём угол, в который попадает
+        // центроид (средняя точка) всех карточек этого тега, а не оставляем
+        // их разбросанными по своим родным углам.
+        let taggedGroups = Dictionary(grouping: cards.filter { $0.tagColor != nil }) { $0.tagColor! }
+        for (_, groupCards) in taggedGroups where groupCards.count > 1 {
+            var counts: [TidyQuadrant: Int] = [:]
+            for card in groupCards {
+                counts[assignedQuadrant[card.id]!, default: 0] += 1
             }
-            return a.position.x < b.position.x
+            let maxCount = counts.values.max() ?? 0
+            let winners = counts.filter { $0.value == maxCount }.map(\.key)
+
+            let dominant: TidyQuadrant
+            if winners.count == 1, let onlyWinner = winners.first {
+                dominant = onlyWinner
+            } else {
+                let centers = groupCards.map(center(of:))
+                let avgCenter = CGPoint(
+                    x: centers.map(\.x).reduce(0, +) / CGFloat(centers.count),
+                    y: centers.map(\.y).reduce(0, +) / CGFloat(centers.count)
+                )
+                dominant = quadrant(forCenter: avgCenter)
+            }
+
+            for card in groupCards {
+                assignedQuadrant[card.id] = dominant
+            }
+        }
+
+        // Внутри угла — сначала группируем по тегу (чтобы одинаковые
+        // оказались физически рядом), внутри тега — обычный reading order.
+        // Внутри тега — по убыванию площади: крупные карточки заполняют
+        // угол первыми (то есть ближе к самому углу), а не вперемешку по
+        // случайному исходному положению — так масштаб карточек сам
+        // формирует что-то вроде masonry-раскладки, а не однородный ряд.
+        func tidyOrder(_ a: Card, _ b: Card) -> Bool {
+            let aTag = a.tagColor?.rawValue ?? ""
+            let bTag = b.tagColor?.rawValue ?? ""
+            if aTag != bTag { return aTag < bTag }
+            return (a.size.width * a.size.height) > (b.size.width * b.size.height)
         }
 
         var groups: [TidyQuadrant: [Card]] = [:]
         for card in cards {
-            groups[quadrant(for: card), default: []].append(card)
+            groups[assignedQuadrant[card.id]!, default: []].append(card)
         }
 
         packShelf(
-            (groups[.topLeft] ?? []).sorted(by: readingOrder),
+            (groups[.topLeft] ?? []).sorted(by: tidyOrder),
             anchor: CGPoint(x: pad, y: topInset), growRight: true, growDown: true,
             maxRowExtent: halfWidth, gap: gap
         )
         packShelf(
-            (groups[.topRight] ?? []).sorted(by: readingOrder),
+            (groups[.topRight] ?? []).sorted(by: tidyOrder),
             anchor: CGPoint(x: canvasSize.width - pad, y: topInset), growRight: false, growDown: true,
             maxRowExtent: halfWidth, gap: gap
         )
         packShelf(
-            (groups[.bottomLeft] ?? []).sorted(by: readingOrder),
+            (groups[.bottomLeft] ?? []).sorted(by: tidyOrder),
             anchor: CGPoint(x: pad, y: canvasSize.height - pad), growRight: true, growDown: false,
             maxRowExtent: halfWidth, gap: gap
         )
         packShelf(
-            (groups[.bottomRight] ?? []).sorted(by: readingOrder),
+            (groups[.bottomRight] ?? []).sorted(by: tidyOrder),
             anchor: CGPoint(x: canvasSize.width - pad, y: canvasSize.height - pad), growRight: false, growDown: false,
             maxRowExtent: halfWidth, gap: gap
         )
