@@ -13,56 +13,105 @@ struct AISettingsTab: View {
     @State private var openAIKeyDraft = ""
     @State private var anthropicKeyDraft = ""
     @FocusState private var focusedField: AIProviderKind?
+    @State private var isShowingAPIKeysSheet = false
 
     var body: some View {
-        Form {
-            Section {
-                Picker("Provider", selection: Binding(
-                    get: { settings.selectedProvider },
-                    set: { settings.selectedProvider = $0 }
-                )) {
-                    ForEach(AIProviderKind.allCases) { provider in
-                        Text(provider.displayName).tag(provider)
+        VStack(spacing: 0) {
+            Form {
+                Section {
+                    Picker("Provider", selection: Binding(
+                        get: { settings.selectedProvider },
+                        set: { settings.selectedProvider = $0 }
+                    )) {
+                        ForEach(AIProviderKind.allCases) { provider in
+                            Text(provider.displayName)
+                                .tag(provider)
+                                .disabled(!settings.hasKey(for: provider))
+                        }
                     }
+                    .pickerStyle(.segmented)
+                } footer: {
+                    Text("To select a provider for AI features, add an API key for it below.")
                 }
-                .pickerStyle(.segmented)
-            } footer: {
-                Text("Used for AI actions on cards (Summarize, Rewrite, Continue Writing, Fix Grammar).")
-            }
 
-            Section {
-                Picker("Send Message With", selection: Binding(
-                    get: { settings.sendKeyBinding },
-                    set: { settings.sendKeyBinding = $0 }
-                )) {
-                    ForEach(AISendKeyBinding.allCases) { option in
-                        Text(option.title).tag(option)
+                Section {
+                    Picker("Send Message With", selection: Binding(
+                        get: { settings.sendKeyBinding },
+                        set: { settings.sendKeyBinding = $0 }
+                    )) {
+                        ForEach(AISendKeyBinding.allCases) { option in
+                            Text(option.title).tag(option)
+                        }
                     }
+                    .pickerStyle(.segmented)
+                } header: {
+                    Text("Keyboard")
+                } footer: {
+                    Text(settings.sendKeyBinding.description)
                 }
-                .pickerStyle(.segmented)
-            } header: {
-                Text("Keyboard")
-            } footer: {
-                Text(settings.sendKeyBinding.description)
             }
+            .formStyle(.grouped)
+            // Иначе Form сам растягивается на всю доступную высоту таба
+            // (окно Settings фиксированного размера), и кнопка ниже
+            // добавляется уже ПОСЛЕ этого растяжения — вылезает за
+            // пределы видимой области вместо того, чтобы просто идти
+            // сразу под последней секцией.
+            .fixedSize(horizontal: false, vertical: true)
 
-            Section {
-                apiKeyRow(for: .openAI, draft: $openAIKeyDraft)
-            } header: {
-                Text("ChatGPT")
-            } footer: {
-                keyFooter(for: .openAI)
+            // ChatGPT/Claude API-ключи убраны в отдельный лист (тот же
+            // паттерн, что "Add Printer, Scanner, or Fax…" в системных
+            // Settings). Вынесено ЗА ПРЕДЕЛЫ Form целиком — .formStyle(.grouped)
+            // сам оборачивает в рамку любой топ-level контент внутри Form,
+            // даже без явного Section, так что иначе от рамки не избавиться.
+            HStack {
+                Spacer()
+                Button("Add API Key…") {
+                    isShowingAPIKeysSheet = true
+                }
             }
+            .padding(.horizontal)
+            .padding(.top, 8)
 
-            Section {
-                apiKeyRow(for: .anthropic, draft: $anthropicKeyDraft)
-            } header: {
-                Text("Claude")
-            } footer: {
-                keyFooter(for: .anthropic)
-            }
+            Spacer(minLength: 0)
         }
-        .formStyle(.grouped)
+        .sheet(isPresented: $isShowingAPIKeysSheet) {
+            apiKeysSheet
+        }
+    }
+
+    private var apiKeysSheet: some View {
+        VStack(spacing: 0) {
+            Form {
+                Section {
+                    apiKeyRow(for: .openAI, draft: $openAIKeyDraft)
+                } header: {
+                    Text("ChatGPT")
+                } footer: {
+                    keyFooter(for: .openAI)
+                }
+
+                Section {
+                    apiKeyRow(for: .anthropic, draft: $anthropicKeyDraft)
+                } header: {
+                    Text("Claude")
+                } footer: {
+                    keyFooter(for: .anthropic)
+                }
+            }
+            .formStyle(.grouped)
+
+            Divider()
+
+            HStack {
+                Spacer()
+                Button("Done") {
+                    isShowingAPIKeysSheet = false
+                }
+                .keyboardShortcut(.defaultAction)
+            }
+            .padding()
+        }
+        .frame(width: 420, height: 420)
     }
 
     @ViewBuilder

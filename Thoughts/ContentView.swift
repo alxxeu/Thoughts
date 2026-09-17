@@ -602,6 +602,20 @@ struct ContentView: View {
             withAnimation(spaceAISpring) { isAskingSpaceAI = false }
             spaceAIQuestion = ""
         }
+        // NSTextView не даёт placeholder "из коробки" (в отличие от
+        // NSTextField/SwiftUI TextField) — просто текст поверх, скрытый,
+        // как только начали печатать. Отступы подобраны под
+        // textContainerInset (6) + дефолтный lineFragmentPadding NSTextView (5).
+        .overlay(alignment: .topLeading) {
+            if spaceAIQuestion.isEmpty {
+                Text("Ask about your project…")
+                    .font(.system(size: 12))
+                    .foregroundStyle(Color.white.opacity(0.35))
+                    .padding(.leading, 11)
+                    .padding(.top, 6)
+                    .allowsHitTesting(false)
+            }
+        }
         .overlay(alignment: .bottomLeading) {
             HStack(spacing: 12) {
                 Button {
@@ -760,6 +774,7 @@ struct ContentView: View {
         )
         let card = viewModel.addCard(at: origin, size: size)
         card.text = text
+        card.isAIGenerated = true
         viewModel.saveImmediately()
         viewModel.aiHighlightedCardIDs.insert(card.id)
     }

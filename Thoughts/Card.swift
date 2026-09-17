@@ -39,6 +39,11 @@ final class Card: Identifiable, Codable {
     var formattingData: Data? = nil
     var tagColor: CardTagColor? = nil
     var privacyMode: CardPrivacyMode = .none
+    /// true для карточек, созданных Ask AI/Summarize/Extract (Pro) — в
+    /// отличие от aiHighlightedCardIDs в BoardViewModel (временная подсветка,
+    /// гаснет по клику, не персистится), это постоянная, сохранённая метка:
+    /// такая карточка навсегда помечена маленькой иконкой sparkle. См. CardView.
+    var isAIGenerated: Bool = false
 
     init(id: UUID = .init(), position: CGPoint, size: CGSize, text: String = "", tagColor: CardTagColor? = nil) {
         self.id = id
@@ -49,7 +54,7 @@ final class Card: Identifiable, Codable {
     }
 
     enum CodingKeys: String, CodingKey {
-        case id, position, size, text, formattingData, tagColor, privacyMode
+        case id, position, size, text, formattingData, tagColor, privacyMode, isAIGenerated
     }
 
     required init(from decoder: Decoder) throws {
@@ -72,6 +77,7 @@ final class Card: Identifiable, Codable {
         }
 
         formattingData = try container.decodeIfPresent(Data.self, forKey: .formattingData)
+        isAIGenerated = try container.decodeIfPresent(Bool.self, forKey: .isAIGenerated) ?? false
     }
 
     func encode(to encoder: Encoder) throws {
@@ -83,5 +89,6 @@ final class Card: Identifiable, Codable {
         try container.encodeIfPresent(formattingData, forKey: .formattingData)
         try container.encodeIfPresent(tagColor, forKey: .tagColor)
         try container.encode(privacyMode, forKey: .privacyMode)
+        try container.encode(isAIGenerated, forKey: .isAIGenerated)
     }
 }

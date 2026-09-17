@@ -177,7 +177,21 @@ struct CardView: View {
             // Выше оверлея Spoiler/Lock (zIndex 99), чтобы точка тега была
             // видна поверх тонировки, а не под ней.
             .zIndex(105)
-            
+
+            // AI-БЕЙДЖ — постоянный (не зависит от hover/isPrivacyLocked, в
+            // отличие от точки тега выше), ровно в том же месте, что точка
+            // тега, но выше по zIndex. allowsHitTesting(false) — клик
+            // проходит насквозь на кнопку тега под ним. См. Card.isAIGenerated.
+            if card.isAIGenerated {
+                Image(systemName: "sparkle")
+                    .font(.system(size: 9))
+                    .foregroundStyle(Color.white.opacity(0.8))
+                    .padding(9)
+                    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topTrailing)
+                    .allowsHitTesting(false)
+                    .zIndex(100)
+            }
+
             // RESIZE HANDLE
             Path { path in
                 path.move(to: CGPoint(x: 22, y: 14))
