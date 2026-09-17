@@ -500,9 +500,15 @@ struct ContentView: View {
                     .contentShape(Rectangle())
                     .onTapGesture {
                         if !isEditingWorkspaceName {
+                            dismissToolbarTooltip()
                             startWorkspaceRename()
                         }
                     }
+                    .onHover { inside in
+                        guard !isEditingWorkspaceName else { return }
+                        setToolbarHover(inside, "Rename")
+                    }
+                    .overlay(alignment: .top) { toolbarTooltip("Rename") }
 
                     // Иконки-действия пристёгнуты к тому же pill'у, что и
                     // название — не отдельные капсулы под ним, чтобы новая
