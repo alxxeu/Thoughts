@@ -635,7 +635,7 @@ struct ContentView: View {
                     dismissToolbarTooltip()
                     extractActionItems()
                 } label: {
-                    Image(systemName: "checklist")
+                    Image(systemName: "sparkle.text.clipboard")
                 }
                 .buttonStyle(.plain)
                 .foregroundStyle(Color.white.opacity(hoveredToolbarLabel == "Extract" ? 1 : 0.85))

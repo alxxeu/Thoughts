@@ -19,7 +19,7 @@ struct AISettingsTab: View {
         VStack(spacing: 0) {
             Form {
                 Section {
-                    Picker("Provider", selection: Binding(
+                    Picker("", selection: Binding(
                         get: { settings.selectedProvider },
                         set: { settings.selectedProvider = $0 }
                     )) {
@@ -29,9 +29,17 @@ struct AISettingsTab: View {
                                 .disabled(!settings.hasKey(for: provider))
                         }
                     }
-                    .pickerStyle(.segmented)
+                    .pickerStyle(.inline)
+                    .labelsHidden()
+                } header: {
+                    Text("Provider")
                 } footer: {
-                    Text("To select a provider for AI features, add an API key for it below.")
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text("Apple Intelligence runs on-device and needs no key. ChatGPT and Claude need an API key — add one below.")
+                        if let reason = AppleIntelligenceAvailability.unavailableReasonDescription {
+                            Text(reason)
+                        }
+                    }
                 }
 
                 Section {
@@ -138,6 +146,7 @@ struct AISettingsTab: View {
                 switch provider {
                 case .openAI: settings.openAIModel = newValue
                 case .anthropic: settings.anthropicModel = newValue
+                case .appleIntelligence: break // сюда не вызывается — нет строки модели в этом листе
                 }
             }
         ))
@@ -153,7 +162,10 @@ struct AISettingsTab: View {
     private func keyFooter(for provider: AIProviderKind) -> some View {
         HStack(spacing: 4) {
             Text(settings.hasKey(for: provider) ? "Key saved." : "No key saved yet.")
-            Link("Get an API key", destination: provider.apiKeyHelpURL)
+            // Только ChatGPT/Claude попадают в этот лист — у обоих apiKeyHelpURL всегда есть.
+            if let helpURL = provider.apiKeyHelpURL {
+                Link("Get an API key", destination: helpURL)
+            }
         }
     }
 

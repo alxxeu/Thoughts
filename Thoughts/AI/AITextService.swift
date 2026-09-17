@@ -32,15 +32,24 @@ enum AITextServiceFactory {
     static func makeActiveService() throws -> AITextService {
         let settings = AISettings.shared
         let provider = settings.selectedProvider
-        guard let apiKey = settings.apiKey(for: provider), !apiKey.isEmpty else {
-            throw AITextServiceError.missingAPIKey
-        }
-        let model = settings.model(for: provider)
         switch provider {
         case .openAI:
-            return OpenAITextService(apiKey: apiKey, model: model)
+            guard let apiKey = settings.apiKey(for: provider), !apiKey.isEmpty else {
+                throw AITextServiceError.missingAPIKey
+            }
+            return OpenAITextService(apiKey: apiKey, model: settings.model(for: provider))
         case .anthropic:
-            return AnthropicTextService(apiKey: apiKey, model: model)
+            guard let apiKey = settings.apiKey(for: provider), !apiKey.isEmpty else {
+                throw AITextServiceError.missingAPIKey
+            }
+            return AnthropicTextService(apiKey: apiKey, model: settings.model(for: provider))
+        case .appleIntelligence:
+            guard #available(macOS 26.0, *), AppleIntelligenceAvailability.isAvailable else {
+                throw AITextServiceError.apiError(
+                    AppleIntelligenceAvailability.unavailableReasonDescription ?? "Apple Intelligence is unavailable."
+                )
+            }
+            return AppleIntelligenceTextService()
         }
     }
 }

@@ -47,7 +47,7 @@ final class AISettings {
            let value = AIProviderKind(rawValue: raw) {
             selectedProvider = value
         } else {
-            selectedProvider = .openAI
+            selectedProvider = .appleIntelligence
         }
 
         if let raw = UserDefaults.standard.string(forKey: Self.sendKeyBindingKey),
@@ -68,13 +68,20 @@ final class AISettings {
         switch provider {
         case .openAI: return openAIModel
         case .anthropic: return anthropicModel
+        case .appleIntelligence: return provider.defaultModel
         }
     }
 
+    /// Для ChatGPT/Claude — есть ли сохранённый в Keychain ключ. Для
+    /// Apple Intelligence ключа не бывает — вместо этого проверяется,
+    /// доступна ли она вообще на этом Mac (см. AppleIntelligenceAvailability).
+    /// Оба смысла сходятся в одном: "можно ли прямо сейчас выбрать этого
+    /// провайдера" — этим гейтится сегмент в Picker.
     func hasKey(for provider: AIProviderKind) -> Bool {
         switch provider {
         case .openAI: return hasOpenAIKey
         case .anthropic: return hasAnthropicKey
+        case .appleIntelligence: return AppleIntelligenceAvailability.isAvailable
         }
     }
 
@@ -87,6 +94,7 @@ final class AISettings {
         switch provider {
         case .openAI: hasOpenAIKey = AIKeyStore.hasKey(for: .openAI)
         case .anthropic: hasAnthropicKey = AIKeyStore.hasKey(for: .anthropic)
+        case .appleIntelligence: break // Apple Intelligence ключей не хранит, сюда не вызывается
         }
     }
 
