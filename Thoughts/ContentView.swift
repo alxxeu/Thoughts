@@ -168,17 +168,35 @@ struct ContentView: View {
                 // Thoughts поверх него.
                 Color.clear
                     .transition(.opacity)
-            } else if viewModel.isActiveSpaceLocked {
-                // Полностью отдельная ветка дерева: карточки и canvas этого
-                // Space physически не существуют, пока он заблокирован —
-                // то же самое "выгружение", что происходит при обычном
-                // переключении между Spaces (ForEach(viewModel.cards) для
-                // невыбранного слота тоже не рендерится). Никакого
-                // отдельного blur-слоя поверх живого контента не нужно.
-                SpaceLockOverlayView(viewModel: viewModel)
-                    .transition(.opacity)
             } else {
-                unlockedSpaceContent
+                // Отдельная вложенная Group — лок/анлок анимируется
+                // изолированно от Desktop Mode выше, см. .transition(.identity)
+                // на unlockedSpaceContent ниже.
+                Group {
+                    if viewModel.isActiveSpaceLocked {
+                        // Полностью отдельная ветка дерева: карточки и canvas
+                        // этого Space physически не существуют, пока он
+                        // заблокирован — то же самое "выгружение", что
+                        // происходит при обычном переключении между Spaces
+                        // (ForEach(viewModel.cards) для невыбранного слота
+                        // тоже не рендерится). Никакого отдельного blur-слоя
+                        // поверх живого контента не нужно.
+                        SpaceLockOverlayView(viewModel: viewModel)
+                            .transition(.opacity)
+                    } else {
+                        // .identity, а не дефолтный .opacity — иначе при
+                        // блокировке карточки и полупрозрачный звёздный
+                        // оверлей 0.2с кросс-фейдятся ОДНОВРЕМЕННО, и текст
+                        // карточек явно просвечивает сквозь ещё-не-непрозрачный
+                        // StarField до того, как он долистает fade-in. Карточки
+                        // при блокировке должны исчезать мгновенно (оверлей и
+                        // так их визуально накрывает с первого кадра), а при
+                        // разблокировке — мгновенно появляться ПОД тающим
+                        // звёздным полем, как и задумано ("снятие вуали").
+                        unlockedSpaceContent
+                            .transition(.identity)
+                    }
+                }
             }
         }
         .overlay {
