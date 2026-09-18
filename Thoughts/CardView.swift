@@ -462,6 +462,12 @@ struct CardView: View {
                 
                 onPlacementPreviewChange(nil)
                 onEdgeHintsChange([])
+                // dragOrigin ставится только в onChanged реального драга — если
+                // он не nil, значит карточку и правда подвинули (не просто
+                // кликнули), см. OnboardingViewModel.handle(.cardMoved).
+                if dragOrigin != nil {
+                    NotificationCenter.default.post(name: .cardWasMoved, object: nil)
+                }
                 dragOrigin = nil
                 viewModel.saveGeometry()
             }
@@ -492,6 +498,7 @@ struct CardView: View {
                         height: BoardViewModel.snap(size.height)
                     )
                 }
+                NotificationCenter.default.post(name: .cardWasResized, object: nil)
                 dragResizeSize = nil
                 viewModel.saveGeometry()
             }

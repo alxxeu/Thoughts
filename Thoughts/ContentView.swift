@@ -141,9 +141,10 @@ struct ContentView: View {
     @State private var showEmptyHint = false
     @State private var emptyHintTask: Task<Void, Never>?
 
-    // Тур по фичам при первом запуске — поверх остального интерфейса, но
-    // не мешает locking-логике (на первом запуске Passcode ещё не включён).
-    @State private var isShowingOnboarding = !OnboardingState.hasCompletedTour
+    // Интерактивный тур по фичам при первом запуске — поверх остального
+    // интерфейса, но не мешает locking-логике (на первом запуске Passcode
+    // ещё не включён). Состояние/гейты — см. OnboardingViewModel.
+    @State private var onboardingViewModel = OnboardingViewModel()
 
     // File → Clear Space — сам alert живёт здесь, а не в ThoughtsApp, так
     // как ему нужно реальное удаление карточек через viewModel только
@@ -201,8 +202,8 @@ struct ContentView: View {
             }
         }
         .overlay {
-            if isShowingOnboarding {
-                OnboardingView(onFinish: { isShowingOnboarding = false })
+            if onboardingViewModel.isActive {
+                OnboardingView(onboardingViewModel: onboardingViewModel)
                     .transition(.opacity)
             }
         }
@@ -221,7 +222,7 @@ struct ContentView: View {
         // просто меняет текст — так выглядит собраннее, а не "будто всё
         // тает одним пятном".
         .animation(.easeOut(duration: 0.1), value: viewModel.activeSlot)
-        .animation(.easeOut(duration: 0.25), value: isShowingOnboarding)
+        .animation(.easeOut(duration: 0.25), value: onboardingViewModel.isActive)
         .background(
             WindowAccessor { window in
                 guard thoughtsWindow == nil else { return }
@@ -302,13 +303,26 @@ struct ContentView: View {
                 withAnimation(.easeOut(duration: 0.1)) {
                     viewModel.switchWorkspace(to: slot)
                 }
+                onboardingViewModel.handle(.spaceSwitched)
             }
         }
         .onReceive(NotificationCenter.default.publisher(for: .lockCurrentSpace)) { _ in
             viewModel.lockActiveSpaceManually()
         }
         .onReceive(NotificationCenter.default.publisher(for: .replayOnboarding)) { _ in
-            isShowingOnboarding = true
+            onboardingViewModel.start()
+        }
+        .onReceive(NotificationCenter.default.publisher(for: .cardWasMoved)) { _ in
+            onboardingViewModel.handle(.cardMoved)
+        }
+        .onReceive(NotificationCenter.default.publisher(for: .cardWasResized)) { _ in
+            onboardingViewModel.handle(.cardResized)
+        }
+        .onReceive(NotificationCenter.default.publisher(for: .cardTagColorWasSet)) { _ in
+            onboardingViewModel.handle(.tagColorSet)
+        }
+        .onReceive(NotificationCenter.default.publisher(for: .cardDidBecomeSpoiler)) { _ in
+            onboardingViewModel.handle(.spoilerSet)
         }
         .onReceive(NotificationCenter.default.publisher(for: .requestClearSpace)) { _ in
             isShowingClearSpaceConfirmation = true
@@ -585,14 +599,6 @@ struct ContentView: View {
                 if isAskingSpaceAI {
                     askAIPanel
                 }
-
-                // Текст подсказки
-                if showEmptyHint && viewModel.cards.isEmpty {
-                    Text("Drag anywhere to create your first card")
-                        .font(.system(size: 11, weight: .regular))
-                        .foregroundStyle(.primary.opacity(0.3))
-                        .transition(.opacity.combined(with: .move(edge: .top)))
-                }
             }
             .padding(.top, workspacePillTopPadding)
             .onReceive(NotificationCenter.default.publisher(for: .clearTextSelection)) { _ in
@@ -603,6 +609,26 @@ struct ContentView: View {
                 withAnimation(spaceAISpring) { isAskingSpaceAI = false }
             }
         }
+        .overlay(alignment: .center) {
+            // Подсказка на пустом Space — по центру канвы, а не под
+            // pill'ом сверху (там раньше был просто тусклый текст). Та же
+            // анимация "курсор растягивает карточку", что в шаге 1
+            // интерактивного онбординга (см. CreateCardGestureIcon) —
+            // единый визуальный язык, не два разных объяснения одного
+            // жеста. Декоративная — allowsHitTesting(false), чтобы сам
+            // драг создания карточки долетал до канвы под подсказкой.
+            if showEmptyHint && viewModel.cards.isEmpty {
+                VStack(spacing: 14) {
+                    CreateCardGestureIcon()
+                    Text("Drag anywhere to create your first card")
+                        .font(.system(size: 11, weight: .regular))
+                        .foregroundStyle(.primary)
+                }
+                .opacity(0.4)
+                .allowsHitTesting(false)
+                .transition(.opacity)
+            }
+        }
         .onAppear {
             updateEmptyHintState()
         }
@@ -610,6 +636,9 @@ struct ContentView: View {
             updateEmptyHintState()
         }
         .onChange(of: viewModel.cards.isEmpty) { _, _ in
+            updateEmptyHintState()
+        }
+        .onChange(of: onboardingViewModel.isActive) { _, _ in
             updateEmptyHintState()
         }
         .alert("AI Error", isPresented: Binding(
@@ -820,7 +849,13 @@ struct ContentView: View {
     private func updateEmptyHintState() {
         emptyHintTask?.cancel()
         showEmptyHint = false
-        
+
+        // Пока активен интерактивный тур, шаг 1 сам показывает "Drag
+        // anywhere to create your first card" — без этого guard'а старая
+        // подсказка всплыла бы поверх/рядом с ним через 2.5с и задублировала
+        // тот же текст.
+        guard !onboardingViewModel.isActive else { return }
+
         guard viewModel.cards.isEmpty else { return }
         
         emptyHintTask = Task {
@@ -990,7 +1025,8 @@ struct ContentView: View {
                 guard let frame = draftFrame else { return }
                 
                 viewModel.addCard(at: frame.origin, size: frame.size)
-                
+                onboardingViewModel.handle(.cardCreated)
+
                 if let newCard = viewModel.cards.last {
                     newlyCreatedCardID = newCard.id
                 }
