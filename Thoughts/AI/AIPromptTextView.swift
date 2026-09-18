@@ -48,7 +48,7 @@ struct AIPromptTextView: NSViewRepresentable {
         textView.drawsBackground = false
         textView.backgroundColor = .clear
         textView.isRichText = false
-        textView.font = .systemFont(ofSize: 12)
+        textView.font = .systemFont(ofSize: 13)
         textView.textColor = NSColor.white.withAlphaComponent(0.85)
         textView.insertionPointColor = NSColor.white.withAlphaComponent(0.85)
         textView.textContainerInset = NSSize(width: 6, height: 6)

@@ -46,6 +46,8 @@ private final class CardNSTextView: NSTextView {
     // надёжный сигнал смены фокуса.
     var onFirstResponderChange: ((Bool) -> Void)?
     var onAIAction: ((AITextAction, String) -> Void)?
+    /// Непустой только когда карточка в Focus Mode — см. cancelOperation ниже.
+    var onEscape: (() -> Void)?
 
     // Фикс. белый, а не адаптивный labelColor — фон карточки (CardSurfaceStyle)
     // больше не переключается в светлый в Light Mode, так что текст/линии
@@ -65,6 +67,18 @@ private final class CardNSTextView: NSTextView {
     override func paste(_ sender: Any?) {
         guard let plain = NSPasteboard.general.string(forType: .string) else { return }
         insertText(plain, replacementRange: selectedRange())
+    }
+
+    /// Escape в NSTextView штатно уходит в `complete:` и дальше по цепочке
+    /// не идёт — поэтому SwiftUI-модификатор .onExitCommand на карточке
+    /// его не увидел бы, пока текст в фокусе. Перехватываем здесь и только
+    /// когда снаружи реально есть, кому его отдать (Focus Mode).
+    override func cancelOperation(_ sender: Any?) {
+        guard let onEscape else {
+            super.cancelOperation(sender)
+            return
+        }
+        onEscape()
     }
 
     /// Рисует линии разделителей поверх обычного текста. Проходит по всем
@@ -305,6 +319,8 @@ struct CardTextView: NSViewRepresentable {
     /// параметр это весь текст карточки на момент клика (см. комментарий
     /// у CardNSTextView.menu(for:) про то, почему не берём только selection).
     var onAIAction: (AITextAction, String) -> Void
+    /// Escape внутри текста. nil — обычное поведение NSTextView.
+    var onEscape: (() -> Void)?
 
     private static let dividerPlaceholder: Character = "\u{FFFC}"
     /// Единственный источник горизонтального инсета текста — раньше
@@ -328,6 +344,7 @@ struct CardTextView: NSViewRepresentable {
         textView.onAIAction = { [weak coordinator = context.coordinator] action, text in
             coordinator?.parent.onAIAction(action, text)
         }
+        textView.onEscape = onEscape
         textView.drawsBackground = false
         textView.backgroundColor = .clear
         textView.isRichText = true
@@ -376,6 +393,11 @@ struct CardTextView: NSViewRepresentable {
 
     func updateNSView(_ nsView: NSScrollView, context: Context) {
         guard let textView = nsView.documentView as? CardNSTextView else { return }
+
+        // Переприсваивается на каждое обновление, а не берётся из
+        // coordinator.parent (SwiftUI его не освежает) — иначе при входе в
+        // Focus Mode текст остался бы со старым, пустым обработчиком.
+        textView.onEscape = onEscape
 
         let innerWidth = max(cardSize.width - Self.horizontalTextInset * 2, 10)
         if let container = textView.textContainer,

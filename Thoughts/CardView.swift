@@ -4,9 +4,21 @@ struct CardView: View {
     @Bindable var card: Card
     var viewModel: BoardViewModel
     var canvasSize: CGSize
+    /// Focus Mode (Cmd+F) — карточка отображается в едином фиксированном
+    /// размере по центру канвы, остальные гаснут. Позиция/размер задаются
+    /// снаружи (ContentView), сам `card` при этом не меняется.
+    var isInFocusMode: Bool = false
+    /// Текстовый курсор встал в эту карточку / ушёл из неё — ContentView
+    /// по этому определяет, какую карточку фокусировать по Cmd+F.
+    var onTextFocusChange: (Bool) -> Void = { _ in }
+    var onRequestExitFocus: () -> Void = {}
+    /// Карточка прямо сейчас едет в фокус или обратно. Приходит снаружи, а
+    /// не считается локально по isInFocusMode: флаг обязан меняться в том
+    /// же обновлении, что и сам фокус (см. ContentView.setFocusedCard).
+    var isFocusTransitioning: Bool = false
     var onPlacementPreviewChange: (CGRect?) -> Void
     var onEdgeHintsChange: ([EdgeHint]) -> Void
-    
+
     @State private var dragOrigin: CGPoint?
     @State private var dragResizeSize: CGSize?
     @State private var isHovering = false
@@ -21,6 +33,17 @@ struct CardView: View {
     @State private var unhighlightTask: Task<Void, Never>? = nil
     @State private var isGeneratingAI = false
     @State private var aiErrorMessage: String?
+    // Панель Ask AI под карточкой — только в Focus Mode. Ответ не правит
+    // текст карточки сам: он показывается под заданным вопросом, а что с
+    // ним делать, решают кнопки Insert Below / Replace / Ask Again.
+    @State private var isShowingCardAI = false
+    @State private var cardAIQuestion = ""
+    @State private var cardAIAnswer: String?
+    @State private var cardAIPlaceholder = AICardPrompt.randomSuggestion()
+    // Футер снимается СВОИМ состоянием, а не условием по isInFocusMode:
+    // оно переключается внутри анимации ContentView, из-за чего кнопка
+    // улетала вместе с уезжающей карточкой.
+    @State private var isFocusFooterVisible = false
     // Одноразовая анимация появления карточки из Ask AI/Summarize —
     // "выскакивает" из-под нотча к своей итоговой позиции. См.
     // triggerAIPopInAnimationIfNeeded().
@@ -54,7 +77,22 @@ struct CardView: View {
     private var isAIHighlighted: Bool {
         viewModel.aiHighlightedCardIDs.contains(card.id)
     }
-    
+    /// Контролы карточки скрыты и в самом фокусе, и всю дорогу туда-обратно:
+    /// иначе на выходе они возвращаются в первом же кадре и едут вместе со
+    /// сжимающейся карточкой до конца анимации.
+    private var isFocusHidden: Bool {
+        isInFocusMode || isFocusTransitioning
+    }
+    /// В Focus Mode размер продиктован фокусом, а не моделью/драгом.
+    private var effectiveSize: CGSize {
+        guard !isInFocusMode else { return BoardViewModel.focusCardSize }
+        return CGSize(
+            width: dragResizeSize?.width ?? card.size.width,
+            height: dragResizeSize?.height ?? card.size.height
+        )
+    }
+    private var cardAIAnimation: Animation { .easeInOut(duration: 0.22) }
+
     var body: some View {
         ZStack(alignment: .topLeading) {
             // Liquid Glass + тонкий чёрный тон поверх — см. CardSurfaceStyle.swift.
@@ -73,10 +111,7 @@ struct CardView: View {
                     text: $card.text,
                     formattingData: $card.formattingData,
                     isFocused: $isTextFocused,
-                    cardSize: CGSize(
-                        width: dragResizeSize?.width ?? card.size.width,
-                        height: dragResizeSize?.height ?? card.size.height
-                    ),
+                    cardSize: effectiveSize,
                     onTextChange: {
                         viewModel.scheduleDebouncedSave()
                     },
@@ -85,8 +120,18 @@ struct CardView: View {
                             viewModel.bringToFront(card)
                         }
                     },
-                    onAIAction: handleAIAction
+                    onAIAction: handleAIAction,
+                    onEscape: isInFocusMode ? onRequestExitFocus : nil
                 )
+                .opacity(isFocusTransitioning ? 0 : 1)
+                // Асимметрично и намеренно: прячем мгновенно (иначе текст
+                // остаётся полупрозрачно видимым ровно те кадры, пока
+                // NSTextView переверстывается под новую ширину — ради чего
+                // всё и затевалось), возвращаем мягким fade, когда карточка
+                // уже встала. nil здесь перебивает анимацию канвы из
+                // ContentView, которая иначе растянула бы скрытие на весь
+                // переход — тот же приём, что у точки тега ниже.
+                .animation(isFocusTransitioning ? nil : .easeIn(duration: 0.15), value: isFocusTransitioning)
                 .zIndex(0)
                 .mask(alignment: .top) {
                     VStack(spacing: 0) {
@@ -152,9 +197,9 @@ struct CardView: View {
             // отдельно ниже, иначе точка продолжает увеличиваться при
             // наведении на заблокированной карточке, создавая ложное
             // ощущение, что по ней можно нажать.
-            .allowsHitTesting(!isPrivacyLocked)
+            .allowsHitTesting(!isPrivacyLocked && !isInFocusMode)
             .onHover { inside in
-                guard !isPrivacyLocked else { return }
+                guard !isPrivacyLocked, !isInFocusMode else { return }
                 isHoveringTagButton = inside
                 if inside {
                     NSCursor.pointingHand.set()
@@ -170,10 +215,13 @@ struct CardView: View {
             }
             .padding(7)
             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topTrailing)
-            .opacity(card.tagColor != nil ? 1 : (showsHoverControls && !isPrivacyLocked ? 1 : 0))
+            .opacity(isFocusHidden ? 0 : (card.tagColor != nil ? 1 : (showsHoverControls && !isPrivacyLocked ? 1 : 0)))
             .animation(.spring(response: 0.2, dampingFraction: 0.7), value: isHoveringTagButton)
             .animation(.easeInOut(duration: 0.15), value: showsHoverControls)
             .animation(.easeInOut(duration: 0.15), value: card.tagColor)
+            // Мгновенно, без доигрывания: иначе точка тянется к новому углу
+            // вместе с карточкой, пока идёт анимация ContentView.
+            .animation(nil, value: isFocusHidden)
             // Выше оверлея Spoiler/Lock (zIndex 99), чтобы точка тега была
             // видна поверх тонировки, а не под ней.
             .zIndex(105)
@@ -182,64 +230,75 @@ struct CardView: View {
             // отличие от точки тега выше), ровно в том же месте, что точка
             // тега, но выше по zIndex. allowsHitTesting(false) — клик
             // проходит насквозь на кнопку тега под ним. См. Card.isAIGenerated.
-            if card.isAIGenerated {
+            if card.isAIGenerated && !isFocusHidden {
                 Image(systemName: "sparkle")
                     .font(.system(size: 9))
                     .foregroundStyle(Color.white.opacity(0.8))
                     .padding(9)
                     .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topTrailing)
                     .allowsHitTesting(false)
+                    .transition(.identity)
                     .zIndex(100)
             }
 
-            // RESIZE HANDLE
-            Path { path in
-                path.move(to: CGPoint(x: 22, y: 14))
-                path.addLine(to: CGPoint(x: 22, y: 14))
-                path.addQuadCurve(
-                    to: CGPoint(x: 14, y: 22),
-                    control: CGPoint(x: 22, y: 22)
-                )
-                path.addLine(to: CGPoint(x: 14, y: 22))
-            }
-            .stroke(Color.white.opacity(0.35), style: StrokeStyle(lineWidth: 2, lineCap: .round, lineJoin: .round))
-            .frame(width: 32, height: 32)
-            .contentShape(Rectangle())
-            .onHover { inside in
-                if inside {
-                    let selector = NSSelectorFromString("_windowResizeNorthWestSouthEastCursor")
-                    if NSCursor.responds(to: selector) {
-                        if let customCursor = NSCursor.perform(selector)?.takeUnretainedValue() as? NSCursor {
-                            customCursor.set()
-                        }
-                    }
-                } else {
-                    NSCursor.pop()
-                    NSCursor.arrow.set()
+            // RESIZE HANDLE и DRAG HANDLE — в Focus Mode не создаются вовсе:
+            // позиция и размер там продиктованы фокусом, а не моделью, так
+            // что двигать/тянуть карточку нечем. Не просто opacity(0):
+            // .onHover на macOS работает и у скрытых через hit-testing view,
+            // и невидимый хендл всё равно менял бы курсор.
+            if !isFocusHidden {
+                Path { path in
+                    path.move(to: CGPoint(x: 22, y: 14))
+                    path.addLine(to: CGPoint(x: 22, y: 14))
+                    path.addQuadCurve(
+                        to: CGPoint(x: 14, y: 22),
+                        control: CGPoint(x: 22, y: 22)
+                    )
+                    path.addLine(to: CGPoint(x: 14, y: 22))
                 }
-            }
-            .gesture(resizeGesture)
-            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottomTrailing)
-            .opacity(showsHoverControls ? 1 : 0)
-            .animation(.easeInOut(duration: 0.15), value: showsHoverControls)
-            .zIndex(101)
-            
-            // DRAG HANDLE
-            Rectangle()
-                .fill(Color.clear)
+                .stroke(Color.white.opacity(0.35), style: StrokeStyle(lineWidth: 2, lineCap: .round, lineJoin: .round))
+                .frame(width: 32, height: 32)
                 .contentShape(Rectangle())
-                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
-                .frame(height: 25)
-                .gesture(moveGesture)
-                .zIndex(102)
                 .onHover { inside in
                     if inside {
-                        dragOrigin != nil ? NSCursor.closedHand.set() : NSCursor.arrow.set()
+                        let selector = NSSelectorFromString("_windowResizeNorthWestSouthEastCursor")
+                        if NSCursor.responds(to: selector) {
+                            if let customCursor = NSCursor.perform(selector)?.takeUnretainedValue() as? NSCursor {
+                                customCursor.set()
+                            }
+                        }
+                    } else {
+                        NSCursor.pop()
+                        NSCursor.arrow.set()
                     }
                 }
-            
+                .gesture(resizeGesture)
+                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottomTrailing)
+                .opacity(showsHoverControls ? 1 : 0)
+                .animation(.easeInOut(duration: 0.15), value: showsHoverControls)
+                // .identity — исчезать при входе в фокус нужно мгновенно, а
+                // не доигрывать fade, растягиваясь вместе с карточкой (тот
+                // же приём, что у карточек при блокировке Space).
+                .transition(.identity)
+                .zIndex(101)
+
+                Rectangle()
+                    .fill(Color.clear)
+                    .contentShape(Rectangle())
+                    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+                    .frame(height: 25)
+                    .gesture(moveGesture)
+                    .transition(.identity)
+                    .zIndex(102)
+                    .onHover { inside in
+                        if inside {
+                            dragOrigin != nil ? NSCursor.closedHand.set() : NSCursor.arrow.set()
+                        }
+                    }
+            }
+
             // КНОПКА УДАЛЕНИЯ
-            if !isPrivacyLocked {
+            if !isPrivacyLocked && !isFocusHidden {
                 ZStack {
                     Circle()
                         .fill(Color.white.opacity(isPressingDelete ? 0.22 : (isHoveringDeleteButton ? 0.14 : 0.0)))
@@ -260,6 +319,7 @@ struct CardView: View {
                 .padding(5)
                 .opacity(showsHoverControls ? 1 : 0)
                 .animation(.easeInOut(duration: 0.15), value: showsHoverControls)
+                .transition(.identity)
                 .zIndex(103)
                 .onHover { inside in
                     isHoveringDeleteButton = inside
@@ -312,10 +372,27 @@ struct CardView: View {
                     .zIndex(107)
             }
         }
-        .frame(
-            width: dragResizeSize?.width ?? card.size.width,
-            height: dragResizeSize?.height ?? card.size.height
-        )
+        .frame(width: effectiveSize.width, height: effectiveSize.height)
+        // Футер Focus Mode — кнопка "Ask AI…", разворачивающаяся в панель
+        // во всю ширину карточки. Привязка к ВЕРХНЕМУ краю плюс сдвиг на
+        // высоту карточки: так положение не зависит от собственной высоты
+        // футера, которая скачет между кнопкой и раскрытой панелью
+        // (alignmentGuide внутри overlay это не решает).
+        .overlay(alignment: .top) {
+            if isFocusFooterVisible {
+                Group {
+                    if isShowingCardAI {
+                        cardAskAIPanel
+                    } else {
+                        askAIButton
+                    }
+                }
+                // Именно focusCardSize, а не effectiveSize: футер живёт
+                // только в фокусе, а на выходе effectiveSize уже вернулся
+                // к размеру карточки и сдвиг поехал бы вместе с ней.
+                .offset(y: BoardViewModel.focusCardSize.height + 12)
+            }
+        }
         .scaleEffect(aiPopInScale)
         .offset(aiPopInOffset)
         .onAppear { triggerAIPopInAnimationIfNeeded() }
@@ -333,6 +410,32 @@ struct CardView: View {
 
         .animation(.easeInOut(duration: 0.35), value: isPrivacyLocked)
         .animation(.easeInOut(duration: 0.15), value: isGeneratingAI)
+        .onChange(of: isTextFocused) { _, focused in
+            onTextFocusChange(focused)
+            // Клик обратно в текст карточки закрывает панель Ask AI: пока
+            // она открыта, курсор живёт в её собственном поле, так что
+            // возврат фокуса сюда — однозначный сигнал "я снова пишу".
+            if focused, isShowingCardAI {
+                collapseCardAI()
+            }
+        }
+        .onChange(of: isInFocusMode) { _, active in
+            if !active { collapseCardAI() }
+            // Футер гаснет тем же fade, что и появлялся, только быстрее —
+            // он привязан к карточке, а она в этот момент уже уезжает.
+            withAnimation(.easeOut(duration: 0.12)) { isFocusFooterVisible = false }
+        }
+        // Переход закончился — карточка встала на место. Только теперь
+        // возвращаем то, что прятали на время движения.
+        .onChange(of: isFocusTransitioning) { _, transitioning in
+            guard !transitioning, isInFocusMode else { return }
+            withAnimation(.easeIn(duration: 0.15)) { isFocusFooterVisible = true }
+        }
+        // Escape, когда текст карточки НЕ в фокусе (например, курсор ушёл в
+        // поле Ask AI или карточку просто не редактируют). Случай "текст в
+        // фокусе" перехватывается раньше, в CardNSTextView.cancelOperation —
+        // NSTextView не пропускает Escape дальше по цепочке сам.
+        .onExitCommand(perform: isInFocusMode ? onRequestExitFocus : nil)
         .alert("AI Error", isPresented: Binding(
             get: { aiErrorMessage != nil },
             set: { if !$0 { aiErrorMessage = nil } }
@@ -385,8 +488,217 @@ struct CardView: View {
                 }
             }
     
+    // MARK: - Ask AI внутри карточки (Focus Mode)
+
+    private var askAIButton: some View {
+        Button {
+            cardAIPlaceholder = AICardPrompt.randomSuggestion()
+            withAnimation(cardAIAnimation) { isShowingCardAI = true }
+        } label: {
+            HStack(spacing: 5) {
+                Image(systemName: "sparkle")
+                    .font(.system(size: 10))
+                Text("Ask AI\u{2026}")
+                    .font(.system(size: 11, weight: .medium))
+            }
+            .foregroundStyle(Color.white.opacity(0.85))
+            .padding(.horizontal, 10)
+            .padding(.vertical, 5)
+            .background(Capsule().fill(Color.white.opacity(0.1)))
+            .contentShape(Capsule())
+        }
+        .buttonStyle(.plain)
+        .onHover { inside in
+            if inside { NSCursor.pointingHand.set() } else { NSCursor.arrow.set() }
+        }
+        .transition(.opacity)
+    }
+
+    /// Тот же визуальный язык, что у ContentView.askAIPanel, но скоуп —
+    /// ровно эта карточка, и по ширине панель совпадает с ней. Фиксированных
+    /// инструментов здесь нет: Summarize/Rewrite/… остались в контекстном
+    /// меню текста (правый клик → AI), а тут — свободная формулировка,
+    /// подсказанная примером в пустом поле.
+    private var cardAskAIPanel: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            if let answer = cardAIAnswer {
+                Text(cardAIQuestion)
+                    .font(.system(size: 13, weight: .medium))
+                    .foregroundStyle(Color.white.opacity(0.55))
+                    .lineLimit(1)
+                    .truncationMode(.tail)
+                    .frame(maxWidth: .infinity, alignment: .center)
+                    .padding(.horizontal, 18)
+                    .padding(.top, 14)
+                    .padding(.bottom, 12)
+
+                Rectangle()
+                    .fill(Color.white.opacity(0.1))
+                    .frame(height: 1)
+
+                ScrollView {
+                    Text(answer)
+                        .font(.system(size: 14))
+                        .lineSpacing(4)
+                        .foregroundStyle(Color.white.opacity(0.88))
+                        .textSelection(.enabled)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .padding(.horizontal, 18)
+                        .padding(.vertical, 14)
+                }
+                .frame(height: 150)
+                // Гасится сам текст, а не подкладывается плашка сверху —
+                // тогда край гарантированно сходится с фоном панели, каким
+                // бы он ни был. Тот же приём уже используется у текста
+                // карточки (CardTextView в body выше).
+                .mask(
+                    LinearGradient(
+                        stops: [
+                            .init(color: .black, location: 0),
+                            .init(color: .black, location: 0.82),
+                            .init(color: .clear, location: 1)
+                        ],
+                        startPoint: .top,
+                        endPoint: .bottom
+                    )
+                )
+
+                cardAIActionBar(for: answer)
+            } else {
+                AIPromptTextView(text: $cardAIQuestion, shouldFocus: isShowingCardAI) {
+                    askCardAI()
+                }
+                .frame(height: 96)
+                .overlay(alignment: .topLeading) {
+                    if cardAIQuestion.isEmpty {
+                        Text(cardAIPlaceholder)
+                            .font(.system(size: 13))
+                            .foregroundStyle(Color.white.opacity(0.35))
+                            .padding(.leading, 11)
+                            .padding(.top, 6)
+                            .allowsHitTesting(false)
+                    }
+                }
+                .overlay(alignment: .bottomTrailing) {
+                    HStack(spacing: 8) {
+                        if isGeneratingAI {
+                            ProgressView()
+                                .controlSize(.small)
+                                .tint(.white)
+                        }
+                        Button {
+                            askCardAI()
+                        } label: {
+                            Image(systemName: "arrow.up.circle.fill")
+                                .font(.system(size: 22))
+                        }
+                        .buttonStyle(.plain)
+                        .foregroundStyle(Color.white.opacity(0.85))
+                        .disabled(isGeneratingAI || cardAIQuestion.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+                    }
+                }
+                .padding(12)
+            }
+        }
+        .frame(width: BoardViewModel.focusCardSize.width)
+        .background(
+            CardSurfaceBackground(
+                cornerRadius: 16,
+                usesGlassEffect: false,
+                tintOpacity: 0.15,
+                materialStyle: .thickMaterial,
+                lightMaterialStyle: .ultraThinMaterial,
+                lightTintOpacity: 0.2
+            )
+        )
+        .transition(.opacity)
+    }
+
+    /// Собственного фона у панели действий нет — она лежит прямо на фоне
+    /// всей панели Ask AI, поэтому цвет совпадает с ним по определению, и
+    /// нижние скругления панели ничем не перекрываются.
+    private func cardAIActionBar(for answer: String) -> some View {
+        HStack(spacing: 10) {
+            cardAIChip(title: "Insert Below", systemImage: "text.insert") {
+                card.text += (card.text.isEmpty ? "" : "\n\n") + answer
+                viewModel.scheduleDebouncedSave()
+                collapseCardAI()
+            }
+            cardAIChip(title: "Replace", systemImage: "arrow.triangle.2.circlepath") {
+                card.text = answer
+                viewModel.scheduleDebouncedSave()
+                collapseCardAI()
+            }
+            cardAIChip(title: "Ask Again", systemImage: "arrow.counterclockwise") {
+                cardAIAnswer = nil
+                cardAIQuestion = ""
+                cardAIPlaceholder = AICardPrompt.randomSuggestion()
+            }
+        }
+        .frame(maxWidth: .infinity)
+        .padding(.top, 16)
+        .padding(.bottom, 14)
+        .padding(.horizontal, 18)
+    }
+
+    private func cardAIChip(title: String, systemImage: String, action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            HStack(spacing: 6) {
+                Image(systemName: systemImage)
+                    .font(.system(size: 11))
+                Text(title)
+                    .font(.system(size: 12, weight: .medium))
+                    .lineLimit(1)
+            }
+            .foregroundStyle(Color.white.opacity(0.85))
+            .padding(.horizontal, 16)
+            .padding(.vertical, 9)
+            .background(Capsule().fill(Color.white.opacity(0.1)))
+            .contentShape(Capsule())
+        }
+        .buttonStyle(.plain)
+        .onHover { inside in
+            if inside { NSCursor.pointingHand.set() } else { NSCursor.arrow.set() }
+        }
+    }
+
+    /// Результат НЕ попадает в карточку сам — показывается под вопросом,
+    /// пользователь сам решает, дописать его, заменить им текст или
+    /// спросить заново.
+    private func askCardAI() {
+        let question = cardAIQuestion.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !question.isEmpty, !isGeneratingAI else { return }
+        let context = card.text
+        isGeneratingAI = true
+        Task {
+            do {
+                let service = try AITextServiceFactory.makeActiveService()
+                let userText = context.isEmpty ? question : "Note:\n\(context)\n\nRequest: \(question)"
+                let result = try await service.generate(
+                    systemPrompt: AICardPrompt.systemPrompt,
+                    userText: userText
+                )
+                await MainActor.run {
+                    cardAIAnswer = result
+                    isGeneratingAI = false
+                }
+            } catch {
+                await MainActor.run {
+                    aiErrorMessage = error.localizedDescription
+                    isGeneratingAI = false
+                }
+            }
+        }
+    }
+
+    private func collapseCardAI() {
+        withAnimation(cardAIAnimation) { isShowingCardAI = false }
+        cardAIQuestion = ""
+        cardAIAnswer = nil
+    }
+
     // MARK: - Helper Methods & Gestures
-    
+
     private func resetDeleteState() {
         isPressingDelete = false
         withAnimation(.easeOut(duration: 0.12)) {

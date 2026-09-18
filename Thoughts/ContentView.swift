@@ -118,6 +118,22 @@ struct ContentView: View {
     @State private var workspaceNameDraft = ""
     @FocusState private var isWorkspaceNameFieldFocused: Bool
 
+    // Focus Mode (Cmd+F) — чистое состояние отображения, ничего не
+    // персистится: position/size самой карточки не трогаются, фокус лишь
+    // переопределяет их на время. textFocusedCardID — какая карточка
+    // сейчас держит текстовый курсор, именно она и фокусируется.
+    @State private var focusedCardID: UUID?
+    @State private var textFocusedCardID: UUID?
+    // Подсказка про выход всплывает не сразу — тот же принцип, что у
+    // подсказки пустого Space ниже: сначала дать поработать, напомнить
+    // только если человек задержался.
+    @State private var showFocusHint = false
+    @State private var focusHintTask: Task<Void, Never>?
+    /// Карточка, которая прямо сейчас едет в фокус или обратно. Пока она
+    /// в переходе, её текст и контролы прячутся — см. setFocusedCard.
+    @State private var focusTransitionCardID: UUID?
+    @State private var focusTransitionTask: Task<Void, Never>?
+
     // AI для всего Space (Pro, BYOK) — Ask AI (+ Summarize внутри его
     // панели) под pill с названием. См. Thoughts/AI. Результат — новая
     // карточка на канве.
@@ -296,6 +312,9 @@ struct ContentView: View {
         }
         .onReceive(NotificationCenter.default.publisher(for: .switchWorkspace)) { notification in
             if let slot = notification.object as? Int {
+                // Нельзя оставить "зависший" фокус на карточке со Space, с
+                // которого только что ушли.
+                setFocusedCard(nil)
                 // Явный withAnimation здесь, а не только .animation(value:)
                 // ниже — через GeometryReader → ZStack → ForEach декларативная
                 // привязка по value надёжно анимирует уход старых карточек,
@@ -308,6 +327,19 @@ struct ContentView: View {
         }
         .onReceive(NotificationCenter.default.publisher(for: .lockCurrentSpace)) { _ in
             viewModel.lockActiveSpaceManually()
+        }
+        .onReceive(NotificationCenter.default.publisher(for: .toggleFocusCard)) { _ in
+            guard !viewModel.isActiveSpaceLocked,
+                  !viewModel.desktopOverlay.isDesktopModeActive,
+                  !onboardingViewModel.isActive else { return }
+            if focusedCardID != nil {
+                setFocusedCard(nil)
+            } else if let textFocusedCardID {
+                setFocusedCard(textFocusedCardID)
+                // Капсула Space в фокусе скрыта целиком — иначе открытая
+                // Space-панель Ask AI просто "вернулась" бы при выходе.
+                isAskingSpaceAI = false
+            }
         }
         .onReceive(NotificationCenter.default.publisher(for: .replayOnboarding)) { _ in
             onboardingViewModel.start()
@@ -353,12 +385,29 @@ struct ContentView: View {
                     }
 
                 ForEach(viewModel.cards) { card in
-                    let adaptedPosition = BoardViewModel.clampedPosition(card.position, size: card.size, canvasSize: proxy.size, topInset: effectiveTopInset)
+                    let isFocused = card.id == focusedCardID
+                    let displaySize = isFocused ? BoardViewModel.focusCardSize : card.size
+                    let displayPosition = isFocused
+                        ? BoardViewModel.focusOrigin(canvasSize: proxy.size, topInset: effectiveTopInset)
+                        : BoardViewModel.clampedPosition(card.position, size: card.size, canvasSize: proxy.size, topInset: effectiveTopInset)
 
                     CardView(
                         card: card,
                         viewModel: viewModel,
                         canvasSize: proxy.size,
+                        isInFocusMode: isFocused,
+                        onTextFocusChange: { focused in
+                            // "Чистим только если это всё ещё наше" — при
+                            // переходе фокуса с карточки на карточку blur
+                            // прежней может прийти ПОСЛЕ focus новой.
+                            if focused {
+                                textFocusedCardID = card.id
+                            } else if textFocusedCardID == card.id {
+                                textFocusedCardID = nil
+                            }
+                        },
+                        onRequestExitFocus: { setFocusedCard(nil) },
+                        isFocusTransitioning: card.id == focusTransitionCardID,
                         onPlacementPreviewChange: { preview in
                             resizeDebounceTask?.cancel()
                             
@@ -383,14 +432,42 @@ struct ContentView: View {
                         },
                         onEdgeHintsChange: { edgeHints = $0 }
                     )
-                    .frame(width: card.size.width, height: card.size.height, alignment: .topLeading)
-                    .offset(x: adaptedPosition.x, y: adaptedPosition.y)
+                    .frame(width: displaySize.width, height: displaySize.height, alignment: .topLeading)
+                    // Подсказка над карточкой — снизу теперь живёт кнопка
+                    // Ask AI и её панель (см. CardView). Привязка к НИЖНЕМУ
+                    // краю со сдвигом на высоту карточки — не зависит от
+                    // собственной высоты подписи.
+                    .overlay(alignment: .bottom) {
+                        if isFocused && showFocusHint {
+                            Text("Click anywhere to exit Focus Mode")
+                                .font(.system(size: 11))
+                                // Фиксированно белая в обеих темах: лежит на
+                                // затемнённой подложке, а не на фоне окна,
+                                // так что .primary в светлой давал чёрный
+                                // текст на тёмном.
+                                .foregroundStyle(Color.white)
+                                .opacity(0.4)
+                                .fixedSize()
+                                .offset(y: -(displaySize.height + 12))
+                                .allowsHitTesting(false)
+                                .transition(.opacity)
+                        }
+                    }
+                    .offset(x: displayPosition.x, y: displayPosition.y)
                     // .compositingGroup() — карточка (стекло + текст +
                     // чат тега/кнопок) смешивается с тем, что позади, как
                     // один плоский слой при fade, а не покомпонентно;
                     // должно убрать серый след, который оставляло живое
                     // стекло при анимированном opacity.
                     .compositingGroup()
+                    // Focus Mode: сфокусированная карточка поднимается над
+                    // затемнением (zIndex 500 ниже), остальные гаснут, но
+                    // НЕ выгружаются из дерева — в отличие от Space Lock
+                    // это про визуальный шум, а не про приватность, и
+                    // пересоздание карточек на выходе выглядело бы резче.
+                    .zIndex(isFocused ? 1000 : 0)
+                    .opacity(focusedCardID == nil || isFocused ? 1 : 0)
+                    .allowsHitTesting(focusedCardID == nil || isFocused)
                     // Исчезновение — быстрее появления: своя анимация на
                     // каждой стороне через .animation(_:) на AnyTransition,
                     // а не общая длительность из withAnimation в месте
@@ -413,6 +490,18 @@ struct ContentView: View {
                     }
                 }
                 
+                // Затемнение под сфокусированной карточкой — ложится поверх
+                // всех остальных слоёв канвы (zIndex по умолчанию 0) и под
+                // саму карточку (1000). Клик по нему — один из трёх способов
+                // выйти из Focus Mode, см. подпись под карточкой.
+                if focusedCardID != nil {
+                    Color.black.opacity(0.45)
+                        .contentShape(Rectangle())
+                        .onTapGesture { setFocusedCard(nil) }
+                        .zIndex(500)
+                        .transition(.opacity)
+                }
+
                 if let placementPreview {
                     RoundedRectangle(cornerRadius: 12)
                         .fill(Color.primary.opacity(0.05))
@@ -467,7 +556,8 @@ struct ContentView: View {
             .coordinateSpace(name: "canvas")
             .frame(width: proxy.size.width, height: proxy.size.height)
             .animation(.easeOut(duration: 0.12), value: edgeHints.count)
-            
+            .animation(.easeInOut(duration: 0.28), value: focusedCardID)
+
             .onChange(of: proxy.size) { _, newValue in
                 isWindowResizing = true
                 canvasSize = newValue
@@ -601,6 +691,13 @@ struct ContentView: View {
                 }
             }
             .padding(.top, workspacePillTopPadding)
+            // В Focus Mode капсула Space скрыта целиком — она ломает
+            // ощущение погружения, а её действия относятся ко всему Space,
+            // не к сфокусированной карточке. Подсказки/hover-состояния
+            // внутри неё лежат в этом же поддереве, так что гаснут вместе.
+            .opacity(focusedCardID == nil ? 1 : 0)
+            .allowsHitTesting(focusedCardID == nil)
+            .animation(.easeInOut(duration: 0.28), value: focusedCardID)
             .onReceive(NotificationCenter.default.publisher(for: .clearTextSelection)) { _ in
                 // Клик по свободному холсту закрывает панель Ask AI, но
                 // только если в поле ещё ничего не напечатано — не хотим
@@ -641,6 +738,20 @@ struct ContentView: View {
         .onChange(of: onboardingViewModel.isActive) { _, _ in
             updateEmptyHintState()
         }
+        // Покрывает все входы и выходы сразу (Cmd+F, Escape, клик по фону,
+        // смена Space) — все они меняют именно focusedCardID.
+        .onChange(of: focusedCardID) { _, newValue in
+            focusHintTask?.cancel()
+            showFocusHint = false
+            guard newValue != nil else { return }
+            focusHintTask = Task {
+                try? await Task.sleep(for: .seconds(3))
+                guard !Task.isCancelled else { return }
+                withAnimation(.easeInOut(duration: 0.35)) {
+                    showFocusHint = true
+                }
+            }
+        }
         .alert("AI Error", isPresented: Binding(
             get: { spaceAIErrorMessage != nil },
             set: { if !$0 { spaceAIErrorMessage = nil } }
@@ -676,7 +787,7 @@ struct ContentView: View {
         .overlay(alignment: .topLeading) {
             if spaceAIQuestion.isEmpty {
                 Text("Ask about your project…")
-                    .font(.system(size: 12))
+                    .font(.system(size: 13))
                     .foregroundStyle(Color.white.opacity(0.35))
                     .padding(.leading, 11)
                     .padding(.top, 6)
@@ -733,7 +844,16 @@ struct ContentView: View {
         }
         .padding(6)
         .frame(width: 300)
-        .background(CardSurfaceBackground(cornerRadius: 16, usesGlassEffect: false, tintOpacity: 0.15, materialStyle: .thickMaterial))
+        .background(
+            CardSurfaceBackground(
+                cornerRadius: 16,
+                usesGlassEffect: false,
+                tintOpacity: 0.15,
+                materialStyle: .thickMaterial,
+                lightMaterialStyle: .ultraThinMaterial,
+                lightTintOpacity: 0.2
+            )
+        )
         .transition(
             .asymmetric(
                 insertion: .scale(scale: 0.5, anchor: .top).combined(with: .opacity)
@@ -1000,6 +1120,9 @@ struct ContentView: View {
     private func canvasDragGesture(in canvasSize: CGSize) -> some Gesture {
         DragGesture(minimumDistance: 4, coordinateSpace: .named("canvas"))
             .onChanged { value in
+                // Затемнение поверх канвы и так перехватывает всё, пока
+                // активен фокус — кроме драга, начатого ДО входа в него.
+                guard focusedCardID == nil else { return }
                 NotificationCenter.default.post(name: .clearTextSelection, object: nil)
                 NSApp.keyWindow?.makeFirstResponder(nil)
                 if creationStart == nil {
@@ -1093,6 +1216,22 @@ struct ContentView: View {
                 .allowsHitTesting(false)
                 .offset(y: 24)
                 .transition(.opacity)
+        }
+    }
+
+    /// Единственная точка смены фокуса. Флаг перехода обязан меняться в
+    /// ТОМ ЖЕ обновлении, что и сам focusedCardID: если взводить его
+    /// отдельным .onChange, он опаздывает на кадр, и контролы карточки
+    /// успевают вернуться и проехать вместе с ней до конца анимации.
+    private func setFocusedCard(_ id: UUID?) {
+        guard focusedCardID != id else { return }
+        focusTransitionTask?.cancel()
+        focusTransitionCardID = id ?? focusedCardID
+        focusedCardID = id
+        focusTransitionTask = Task {
+            try? await Task.sleep(for: .seconds(0.3))
+            guard !Task.isCancelled else { return }
+            focusTransitionCardID = nil
         }
     }
 

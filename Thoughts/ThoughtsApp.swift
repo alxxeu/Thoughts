@@ -75,6 +75,15 @@ struct ThoughtsApp: App {
                 .keyboardShortcut("l", modifiers: .command)
                 .disabled(!viewModel.securitySettings.isPasscodeEnabled)
 
+                // Toggle: если фокус уже активен — выходит из него, иначе
+                // фокусирует карточку с текстовым курсором. Без такой
+                // карточки ничего не делает (см. ContentView).
+                Button("Focus Card") {
+                    NotificationCenter.default.post(name: .toggleFocusCard, object: nil)
+                }
+                .keyboardShortcut("f", modifiers: .command)
+                .disabled(viewModel.isActiveSpaceLocked || viewModel.desktopOverlay.isDesktopModeActive)
+
                 // Однонаправленный вход в Desktop mode — не toggle: повторное
                 // ⌥D, уже находясь в этом режиме, не делает ничего. Выход —
                 // только через выбор любого Space в CommandMenu ниже.

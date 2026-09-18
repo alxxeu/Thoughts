@@ -27,8 +27,24 @@ struct CardSurfaceBackground: View {
     /// Material подложить под тон (напр. панели Ask AI нужен более
     /// плотный .thickMaterial, а не общий .ultraThinMaterial).
     var materialStyle: Material = .ultraThinMaterial
+    /// Материал в светлой теме, если он должен отличаться от materialStyle.
+    /// Панелям Ask AI нужен именно так: .thickMaterial на светлом фоне даёт
+    /// плотную молочную плашку, через которую совсем не читается то, что
+    /// под ней. nil — тот же материал, что и в тёмной.
+    var lightMaterialStyle: Material? = nil
+    /// Тон в светлой теме, если нужен не дефолтный. nil — прежнее правило
+    /// tintOpacity + 0.1 (см. комментарий у самой подложки ниже).
+    var lightTintOpacity: Double? = nil
 
     @Environment(\.colorScheme) private var colorScheme
+
+    private var effectiveMaterial: Material {
+        colorScheme == .dark ? materialStyle : (lightMaterialStyle ?? materialStyle)
+    }
+
+    private var effectiveTintOpacity: Double {
+        colorScheme == .dark ? tintOpacity : (lightTintOpacity ?? tintOpacity + 0.1)
+    }
 
     var body: some View {
         Group {
@@ -54,10 +70,10 @@ struct CardSurfaceBackground: View {
                 // окна в грязно-серый — тон должен быть минимально
                 // необходимым для читаемости, а не плоской заливкой.
                 RoundedRectangle(cornerRadius: cornerRadius)
-                    .fill(materialStyle)
+                    .fill(effectiveMaterial)
                     .overlay(
                         RoundedRectangle(cornerRadius: cornerRadius)
-                            .fill(Color.black.opacity(colorScheme == .dark ? tintOpacity : tintOpacity + 0.1))
+                            .fill(Color.black.opacity(effectiveTintOpacity))
                     )
             } else {
                 RoundedRectangle(cornerRadius: cornerRadius)
