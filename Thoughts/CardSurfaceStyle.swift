@@ -41,14 +41,19 @@ struct CardSurfaceBackground: View {
                         in: .rect(cornerRadius: cornerRadius)
                     )
             } else if includesMaterial {
-                // Без glassEffect нет его автоподстройки тона под фон —
-                // берём фиксированное затемнение (не зависящее от
-                // colorScheme), чтобы поверхность не бледнела в Light Mode.
+                // Без glassEffect нет его автоподстройки тона под фон — сами
+                // чуть усиливаем тон в Light Mode. Текст/иконки поверх этих
+                // поверхностей везде фиксированно белые (не адаптируются
+                // под colorScheme), так что в Light Mode материал сам по
+                // себе (светлый блюр) даёт слишком бледную, нечитаемую
+                // подложку. +0.25 (было раньше) душило цветные обои позади
+                // окна в грязно-серый — тон должен быть минимально
+                // необходимым для читаемости, а не плоской заливкой.
                 RoundedRectangle(cornerRadius: cornerRadius)
                     .fill(.ultraThinMaterial)
                     .overlay(
                         RoundedRectangle(cornerRadius: cornerRadius)
-                            .fill(Color.black.opacity(tintOpacity))
+                            .fill(Color.black.opacity(colorScheme == .dark ? tintOpacity : tintOpacity + 0.1))
                     )
             } else {
                 RoundedRectangle(cornerRadius: cornerRadius)

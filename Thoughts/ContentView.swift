@@ -105,6 +105,7 @@ private struct WindowAccessor: NSViewRepresentable {
 
 struct ContentView: View {
     var viewModel: BoardViewModel
+    @Environment(\.colorScheme) private var colorScheme
     @State private var creationStart: CGPoint?
     @State private var draftFrame: CGRect?
     @State private var placementPreview: CGRect?
@@ -489,7 +490,20 @@ struct ContentView: View {
                 }
                 .padding(.horizontal, 10)
                 .padding(.vertical, 5)
-                .background(Capsule().fill(Color.black.opacity(0.1)))
+                // Название поверх — фиксированно белое в обеих темах. Раньше
+                // здесь был чистый Color.black.opacity(...) без материала —
+                // плоская краска, а не блюр, поэтому на цветных обоях
+                // (реальный десктоп через полупрозрачное окно) она не
+                // блендится с фоном, а просто грязно его гасит. Материал
+                // снизу даёт настоящее размытие/vibrancy, тон сверху —
+                // только чтобы белый текст оставался читаемым, и в Light
+                // Mode он ощутимо легче, чем раньше (0.35 давало ту же
+                // "грязь", просто через материал).
+                .background(
+                    Capsule()
+                        .fill(.ultraThinMaterial)
+                        .overlay(Capsule().fill(Color.black.opacity(colorScheme == .dark ? 0.1 : 0.18)))
+                )
                 .contentShape(Capsule())
                 .onTapGesture {
                     if !isEditingWorkspaceName {
