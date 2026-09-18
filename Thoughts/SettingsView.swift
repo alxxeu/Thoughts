@@ -103,6 +103,11 @@ struct SettingsView: View {
                             Label("Security", systemImage: "lock.shield")
                         }
 
+                    ShortcutsSettingsTab()
+                        .tabItem {
+                            Label("Shortcuts", systemImage: "keyboard")
+                        }
+
                     Form {
                         Section {
                             LabeledContent("Version", value: appVersion)

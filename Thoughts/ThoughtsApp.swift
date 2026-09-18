@@ -92,6 +92,23 @@ struct ThoughtsApp: App {
             // SettingsView (isActiveSpaceLocked → lockedPlaceholder), а не
             // в disabled-состоянии пункта меню — так что убрать дубль можно
             // без потери защиты.
+            // .after(.windowArrangement) — стандартная точка вставки
+            // приложением своих пунктов в системное меню Window, ниже
+            // "Zoom"/"Move Window to..." и разделителя перед списком окон.
+            CommandGroup(after: .windowArrangement) {
+                Toggle("Desktop Overlay", isOn: Binding(
+                    get: { viewModel.desktopOverlay.isEnabled },
+                    set: { viewModel.desktopOverlay.isEnabled = $0 }
+                ))
+            }
+            // .after(.help), а не .replacing(.help) — иначе слетает
+            // системное поле поиска по меню, которое SwiftUI туда кладёт
+            // по умолчанию.
+            CommandGroup(after: .help) {
+                Button("Replay Onboarding") {
+                    NotificationCenter.default.post(name: .replayOnboarding, object: nil)
+                }
+            }
             CommandMenu("Spaces") {
                 ForEach(viewModel.workspaces) { workspace in
                     Button(workspace.name) {
