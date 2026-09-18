@@ -14,18 +14,20 @@ struct TagPopoverView: View {
                 ForEach(CardTagColor.allCases.prefix(3)) { tagColor in
                     TagCircleButton(tagColor: tagColor, isSelected: selectedColor == tagColor) {
                         selectedColor = tagColor
+                        NotificationCenter.default.post(name: .cardTagColorWasSet, object: nil)
                         onSelect()
                     }
                 }
-                
+
                 TagCircleButton(tagColor: nil, isSelected: selectedColor == nil) {
                     selectedColor = nil
                     onSelect()
                 }
-                
+
                 ForEach(CardTagColor.allCases.suffix(4)) { tagColor in
                     TagCircleButton(tagColor: tagColor, isSelected: selectedColor == tagColor) {
                         selectedColor = tagColor
+                        NotificationCenter.default.post(name: .cardTagColorWasSet, object: nil)
                         onSelect()
                     }
                 }
@@ -46,9 +48,12 @@ struct TagPopoverView: View {
                     withAnimation(.easeInOut(duration: 0.25)) {
                         privacyMode = (privacyMode == .spoiler) ? .none : .spoiler
                     }
+                    if privacyMode == .spoiler {
+                        NotificationCenter.default.post(name: .cardDidBecomeSpoiler, object: nil)
+                    }
                     onSelect()
                 }
-                
+
                 // LOCK
                 PrivacyActionButton(
                     title: "Lock",
