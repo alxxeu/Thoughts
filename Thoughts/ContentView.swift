@@ -105,6 +105,7 @@ private struct WindowAccessor: NSViewRepresentable {
 
 struct ContentView: View {
     var viewModel: BoardViewModel
+    @Environment(\.colorScheme) private var colorScheme
     @State private var creationStart: CGPoint?
     @State private var draftFrame: CGRect?
     @State private var placementPreview: CGRect?
@@ -566,7 +567,20 @@ struct ContentView: View {
                 }
                 .padding(.horizontal, 14)
                 .padding(.vertical, 5)
-                .background(Capsule().fill(Color.black.opacity(0.1)))
+                // Название/иконки поверх — фиксированно белые в обеих темах.
+                // Раньше здесь был чистый Color.black.opacity(...) без
+                // материала — плоская краска, а не блюр, поэтому на цветных
+                // обоях (реальный десктоп через полупрозрачное окно) она не
+                // блендится с фоном, а просто грязно его гасит. Материал
+                // снизу даёт настоящее размытие/vibrancy, тон сверху —
+                // только чтобы белый текст оставался читаемым, и в Light
+                // Mode он ощутимо легче, чем раньше (0.35 давало ту же
+                // "грязь", просто через материал).
+                .background(
+                    Capsule()
+                        .fill(.ultraThinMaterial)
+                        .overlay(Capsule().fill(Color.black.opacity(colorScheme == .dark ? 0.1 : 0.18)))
+                )
 
                 if isAskingSpaceAI {
                     askAIPanel
@@ -1031,7 +1045,14 @@ struct ContentView: View {
                 // фоне канвы визуально неотличим от полностью непрозрачного
                 // — настоящий материал реально размывает/пропускает то,
                 // что под ним, а не просто гасит альфой поверх тёмного.
-                .background(.ultraThinMaterial.opacity(0.9), in: Capsule())
+                // Сам материал светлый в Light Mode — белый текст поверх
+                // него без тона нечитаем, поэтому дотемняем чёрным тоном
+                // (в Dark Mode тон не нужен — материал и так тёмный).
+                .background(
+                    Capsule()
+                        .fill(.ultraThinMaterial.opacity(0.9))
+                        .overlay(Capsule().fill(Color.black.opacity(colorScheme == .dark ? 0 : 0.18)))
+                )
                 .fixedSize()
                 .allowsHitTesting(false)
                 .offset(y: 24)
