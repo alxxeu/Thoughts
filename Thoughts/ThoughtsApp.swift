@@ -61,8 +61,13 @@ struct ThoughtsApp: App {
             // см. requestClearSpace/isShowingClearSpaceConfirmation в
             // ContentView, где и происходит реальный вызов
             // clearActiveSpace() после явного "Clear All Cards".
-            CommandGroup(after: .newItem) {
-                Divider()
+            //
+            // .replacing(.newItem), а не .after — WindowGroup сам кладёт в
+            // эту группу системный пункт "New Window"/Cmd+N, а приложение
+            // однооконное (BoardViewModel/BoardStore — общее состояние):
+            // второе окно просто накладывалось бы поверх первого без
+            // какого-либо смысла. .replacing убирает его полностью.
+            CommandGroup(replacing: .newItem) {
                 Button("Clear Space…") {
                     NotificationCenter.default.post(name: .requestClearSpace, object: nil)
                 }

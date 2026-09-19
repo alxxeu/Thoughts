@@ -213,22 +213,32 @@ final class BoardViewModel {
     /// разложено по строкам.
     private enum TidyQuadrant { case topLeft, topRight, bottomLeft, bottomRight }
 
-    /// Раскладывает cardsToPack построчно ("shelf packing"), начиная от
-    /// anchor и разрастаясь вдоль строки в сторону growRight/строк вниз в
-    /// сторону growDown — так один и тот же алгоритм обслуживает все 4
-    /// угла: для "исходящих от центра" углов growRight/growDown = false
-    /// значит расти влево/вверх, а не вправо/вниз.
-    private func packShelf(
+    private struct ShelfLayout {
+        var positions: [UUID: CGPoint]
+        var boundingSize: CGSize
+    }
+
+    /// Чистый расчёт построчной упаковки ("shelf packing") — без мутации
+    /// карточек, только позиции + итоговая занимаемая площадь. Начинает
+    /// от anchor и разрастается вдоль строки в сторону growRight/строк
+    /// вниз в сторону growDown — так один и тот же алгоритм обслуживает
+    /// все 4 угла: для "исходящих от центра" углов growRight/growDown =
+    /// false значит расти влево/вверх, а не вправо/вниз. Вынесено из
+    /// мутирующей версии, чтобы можно было прогнать несколько вариантов
+    /// maxRowExtent и выбрать самый компактный — см. bestShelfLayout.
+    private func computeShelfLayout(
         _ cardsToPack: [Card],
         anchor: CGPoint,
         growRight: Bool,
         growDown: Bool,
         maxRowExtent: CGFloat,
         gap: CGFloat
-    ) {
+    ) -> ShelfLayout {
+        var positions: [UUID: CGPoint] = [:]
         var alongAxis: CGFloat = 0
         var acrossAxis: CGFloat = 0
         var rowExtent: CGFloat = 0
+        var maxAlongUsed: CGFloat = 0
 
         for card in cardsToPack {
             if alongAxis > 0, alongAxis + card.size.width > maxRowExtent {
@@ -239,11 +249,72 @@ final class BoardViewModel {
 
             let x = growRight ? anchor.x + alongAxis : anchor.x - alongAxis - card.size.width
             let y = growDown ? anchor.y + acrossAxis : anchor.y - acrossAxis - card.size.height
-            card.position = CGPoint(x: x, y: y)
+            positions[card.id] = CGPoint(x: x, y: y)
 
             alongAxis += card.size.width + gap
             rowExtent = max(rowExtent, card.size.height)
+            maxAlongUsed = max(maxAlongUsed, alongAxis - gap)
         }
+
+        // "along" — всегда горизонтальная протяжённость (по ширине
+        // карточек в ряду), "across" — всегда вертикальная (по высоте
+        // рядов), независимо от направления growRight/growDown: они
+        // только меняют знак смещения, не то, какая ось за что отвечает.
+        return ShelfLayout(positions: positions, boundingSize: CGSize(width: maxAlongUsed, height: acrossAxis + rowExtent))
+    }
+
+    /// Подбирает ширину ряда, дающую минимальную занимаемую площадь для
+    /// данного (уже упорядоченного) набора карточек — не полноценный 2D
+    /// bin packing, а перебор кандидатов: кумулятивная ширина после
+    /// каждой карточки. Между двумя соседними кандидатами поведение
+    /// переноса строк не меняется, так что это полный набор различимых
+    /// вариантов для этого порядка карточек, а не выборка наугад. Именно
+    /// это заменяет прежний единственный фиксированный maxRowExtent
+    /// (обычно ~половина ширины канвы), из-за которого крупные карточки
+    /// успевали растянуть один ряд в широкую полосу до первого переноса.
+    /// maxColumnExtent — высотный бюджет угла (симметричный maxRowExtent
+    /// по вертикали). Без него минимизация площади математически
+    /// предпочитает узкую высокую колонку квадратному блоку (для
+    /// одинаковых по размеру карточек колонка занимает МЕНЬШУЮ площадь,
+    /// чем сетка — меньше "потерь" по периметру), а такая колонка ничем
+    /// не ограничена по высоте и может вырасти за пределы своей половины
+    /// канвы, наложившись на карточки соседнего угла.
+    private func bestShelfLayout(
+        _ cardsToPack: [Card],
+        anchor: CGPoint,
+        growRight: Bool,
+        growDown: Bool,
+        maxRowExtent: CGFloat,
+        maxColumnExtent: CGFloat,
+        gap: CGFloat
+    ) -> ShelfLayout {
+        guard !cardsToPack.isEmpty else {
+            return ShelfLayout(positions: [:], boundingSize: .zero)
+        }
+
+        var cumulative: CGFloat = 0
+        var candidates: Set<CGFloat> = [maxRowExtent]
+        for card in cardsToPack {
+            cumulative += card.size.width + gap
+            candidates.insert(min(cumulative - gap, maxRowExtent))
+        }
+
+        var best: ShelfLayout?
+        for width in candidates {
+            let layout = computeShelfLayout(cardsToPack, anchor: anchor, growRight: growRight, growDown: growDown, maxRowExtent: width, gap: gap)
+            // Кандидат учитывается, только если физически помещается в
+            // свою половину канвы по ОБЕИМ осям — иначе "самый компактный
+            // по площади" вариант может быть слишком высоким.
+            guard layout.boundingSize.height <= maxColumnExtent else { continue }
+            let area = layout.boundingSize.width * layout.boundingSize.height
+            if best == nil || area < best!.boundingSize.width * best!.boundingSize.height {
+                best = layout
+            }
+        }
+        // Ни один кандидат не уложился по высоте (крайний случай — очень
+        // много крупных карточек в одном углу) — фолбэк на прежнее
+        // поведение "во всю ширину", не хуже, чем было раньше.
+        return best ?? computeShelfLayout(cardsToPack, anchor: anchor, growRight: growRight, growDown: growDown, maxRowExtent: maxRowExtent, gap: gap)
     }
 
     /// Tidy Cards (Pro) — детерминированная раскладка, без какого-либо AI
@@ -262,6 +333,7 @@ final class BoardViewModel {
         let centerX = canvasSize.width / 2
         let centerY = (topInset + canvasSize.height) / 2
         let halfWidth = max(Self.minCardSize, centerX - pad)
+        let halfHeight = max(Self.minCardSize, (canvasSize.height - topInset) / 2 - pad)
 
         func quadrant(forCenter point: CGPoint) -> TidyQuadrant {
             switch (point.x < centerX, point.y < centerY) {
@@ -333,26 +405,25 @@ final class BoardViewModel {
             groups[assignedQuadrant[card.id]!, default: []].append(card)
         }
 
-        packShelf(
-            (groups[.topLeft] ?? []).sorted(by: tidyOrder),
-            anchor: CGPoint(x: pad, y: topInset), growRight: true, growDown: true,
-            maxRowExtent: halfWidth, gap: gap
-        )
-        packShelf(
-            (groups[.topRight] ?? []).sorted(by: tidyOrder),
-            anchor: CGPoint(x: canvasSize.width - pad, y: topInset), growRight: false, growDown: true,
-            maxRowExtent: halfWidth, gap: gap
-        )
-        packShelf(
-            (groups[.bottomLeft] ?? []).sorted(by: tidyOrder),
-            anchor: CGPoint(x: pad, y: canvasSize.height - pad), growRight: true, growDown: false,
-            maxRowExtent: halfWidth, gap: gap
-        )
-        packShelf(
-            (groups[.bottomRight] ?? []).sorted(by: tidyOrder),
-            anchor: CGPoint(x: canvasSize.width - pad, y: canvasSize.height - pad), growRight: false, growDown: false,
-            maxRowExtent: halfWidth, gap: gap
-        )
+        let corners: [(quadrant: TidyQuadrant, anchor: CGPoint, growRight: Bool, growDown: Bool)] = [
+            (.topLeft, CGPoint(x: pad, y: topInset), true, true),
+            (.topRight, CGPoint(x: canvasSize.width - pad, y: topInset), false, true),
+            (.bottomLeft, CGPoint(x: pad, y: canvasSize.height - pad), true, false),
+            (.bottomRight, CGPoint(x: canvasSize.width - pad, y: canvasSize.height - pad), false, false)
+        ]
+
+        for corner in corners {
+            let sorted = (groups[corner.quadrant] ?? []).sorted(by: tidyOrder)
+            let layout = bestShelfLayout(
+                sorted, anchor: corner.anchor, growRight: corner.growRight, growDown: corner.growDown,
+                maxRowExtent: halfWidth, maxColumnExtent: halfHeight, gap: gap
+            )
+            for card in sorted {
+                if let position = layout.positions[card.id] {
+                    card.position = position
+                }
+            }
+        }
 
         saveImmediately()
     }

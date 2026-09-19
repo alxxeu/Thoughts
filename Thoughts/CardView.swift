@@ -44,6 +44,12 @@ struct CardView: View {
     // оно переключается внутри анимации ContentView, из-за чего кнопка
     // улетала вместе с уезжающей карточкой.
     @State private var isFocusFooterVisible = false
+    // Ненавязчивая одноразовая подсказка про Cmd+F — см. .onChange(of:
+    // card.text) ниже. hasShownFocusTipHint не даёт показать её больше
+    // одного раза за время жизни этой CardView (новый релонч приложения
+    // или новая карточка — снова доступно).
+    @State private var focusTipHint = HintTimer()
+    @State private var hasShownFocusTipHint = false
     // Одноразовая анимация появления карточки из Ask AI/Summarize —
     // "выскакивает" из-под нотча к своей итоговой позиции. См.
     // triggerAIPopInAnimationIfNeeded().
@@ -393,6 +399,21 @@ struct CardView: View {
                 .offset(y: BoardViewModel.focusCardSize.height + 12)
             }
         }
+        // Подсказка про Cmd+F во время печати в обычной карточке — над
+        // самой карточкой, мелким полупрозрачным текстом, не мешает
+        // печатать (allowsHitTesting(false), не блокирующий элемент).
+        .overlay(alignment: .top) {
+            if focusTipHint.isVisible {
+                // .primary, а не дефолтный белый у HintLabel — этот хинт
+                // висит прямо над обычной карточкой на фоне канвы, не
+                // поверх затемнения (в отличие от подсказки выхода из
+                // Focus Mode), так что фиксированный белый в светлой теме
+                // был бы нечитаем — та же причина, что у подсказки
+                // пустого Space.
+                HintLabel(text: "Try \u{2318}F to focus this card", fontSize: 10, color: AnyShapeStyle(.primary), opacity: 0.5)
+                    .offset(y: -22)
+            }
+        }
         .scaleEffect(aiPopInScale)
         .offset(aiPopInOffset)
         .onAppear { triggerAIPopInAnimationIfNeeded() }
@@ -424,6 +445,21 @@ struct CardView: View {
             // Футер гаснет тем же fade, что и появлялся, только быстрее —
             // он привязан к карточке, а она в этот момент уже уезжает.
             withAnimation(.easeOut(duration: 0.12)) { isFocusFooterVisible = false }
+            if active {
+                // Подсказка про Cmd+F теряет смысл ровно в момент, когда
+                // Cmd+F уже нажали — не даём ей доиграть поверх входа в фокус.
+                focusTipHint.cancel()
+            }
+        }
+        // Срабатывает только на реальный переход через порог во время
+        // печати в этой сессии — .onChange не триггерится на начальное
+        // значение при монтировании, так что открытие уже длинной
+        // существующей карточки подсказку не покажет.
+        .onChange(of: card.text) { oldValue, newValue in
+            guard !isInFocusMode, !hasShownFocusTipHint,
+                  oldValue.count < Self.focusTipThreshold, newValue.count >= Self.focusTipThreshold else { return }
+            hasShownFocusTipHint = true
+            focusTipHint.show(holdFor: Self.focusTipHoldDuration)
         }
         // Переход закончился — карточка встала на место. Только теперь
         // возвращаем то, что прятали на время движения.
@@ -492,6 +528,12 @@ struct CardView: View {
 
     private var askAIButton: some View {
         Button {
+            // Пока пользователь печатал в самой карточке, её текстовое
+            // поле удерживает first responder — панель Ask AI должна
+            // явно получить его, а не соревноваться за фокус в тот же
+            // момент. isTextFocused = false тем же путём, что и обычная
+            // потеря фокуса, уводит первый respond'ер с CardTextView.
+            isTextFocused = false
             cardAIPlaceholder = AICardPrompt.randomSuggestion()
             withAnimation(cardAIAnimation) { isShowingCardAI = true }
         } label: {
@@ -696,6 +738,12 @@ struct CardView: View {
         cardAIQuestion = ""
         cardAIAnswer = nil
     }
+
+    // MARK: - Подсказка "Try Cmd+F"
+
+    private static let focusTipThreshold = 60
+    /// Втрое дольше исходных 1.5с — не успевали прочитать.
+    private static let focusTipHoldDuration: Double = 4.5
 
     // MARK: - Helper Methods & Gestures
 

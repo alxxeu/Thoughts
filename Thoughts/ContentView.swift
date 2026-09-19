@@ -126,9 +126,9 @@ struct ContentView: View {
     @State private var textFocusedCardID: UUID?
     // Подсказка про выход всплывает не сразу — тот же принцип, что у
     // подсказки пустого Space ниже: сначала дать поработать, напомнить
-    // только если человек задержался.
-    @State private var showFocusHint = false
-    @State private var focusHintTask: Task<Void, Never>?
+    // только если человек задержался. Статичная (без holdFor) — держится,
+    // пока фокус не будет снят снаружи.
+    @State private var focusExitHint = HintTimer()
     /// Карточка, которая прямо сейчас едет в фокус или обратно. Пока она
     /// в переходе, её текст и контролы прячутся — см. setFocusedCard.
     @State private var focusTransitionCardID: UUID?
@@ -153,9 +153,9 @@ struct ContentView: View {
     // AI-карточка могла стартовать анимацию из-под нотча к центру экрана.
     @State private var canvasSize: CGSize = .zero
     
-    // Состояние и таймер для подсказки пустого спэйса
-    @State private var showEmptyHint = false
-    @State private var emptyHintTask: Task<Void, Never>?
+    // Подсказка пустого спэйса — статичная (без holdFor), держится, пока
+    // не появится первая карточка.
+    @State private var emptyHint = HintTimer()
 
     // Интерактивный тур по фичам при первом запуске — поверх остального
     // интерфейса, но не мешает locking-логике (на первом запуске Passcode
@@ -438,19 +438,13 @@ struct ContentView: View {
                     // краю со сдвигом на высоту карточки — не зависит от
                     // собственной высоты подписи.
                     .overlay(alignment: .bottom) {
-                        if isFocused && showFocusHint {
-                            Text("Click anywhere to exit Focus Mode")
-                                .font(.system(size: 11))
-                                // Фиксированно белая в обеих темах: лежит на
-                                // затемнённой подложке, а не на фоне окна,
-                                // так что .primary в светлой давал чёрный
-                                // текст на тёмном.
-                                .foregroundStyle(Color.white)
-                                .opacity(0.4)
-                                .fixedSize()
+                        if isFocused && focusExitHint.isVisible {
+                            // HintLabel фиксированно белый в обеих темах:
+                            // лежит на затемнённой подложке, а не на фоне
+                            // окна, так что .primary в светлой давал бы
+                            // чёрный текст на тёмном.
+                            HintLabel(text: "Click anywhere to exit Focus Mode")
                                 .offset(y: -(displaySize.height + 12))
-                                .allowsHitTesting(false)
-                                .transition(.opacity)
                         }
                     }
                     .offset(x: displayPosition.x, y: displayPosition.y)
@@ -626,6 +620,13 @@ struct ContentView: View {
 
                         Button {
                             dismissToolbarTooltip()
+                            // Если в этот момент печатали в какой-то карточке,
+                            // её текстовое поле удерживает first responder —
+                            // панель Ask AI должна явно получить его, а не
+                            // соревноваться за фокус в тот же момент. Тот же
+                            // вызов, что уже используется при тапе по пустому
+                            // холсту для снятия фокуса с редактируемой карточки.
+                            NSApp.keyWindow?.makeFirstResponder(nil)
                             withAnimation(spaceAISpring) { isAskingSpaceAI.toggle() }
                         } label: {
                             Image(systemName: "sparkle")
@@ -714,12 +715,13 @@ struct ContentView: View {
             // единый визуальный язык, не два разных объяснения одного
             // жеста. Декоративная — allowsHitTesting(false), чтобы сам
             // драг создания карточки долетал до канвы под подсказкой.
-            if showEmptyHint && viewModel.cards.isEmpty {
+            if emptyHint.isVisible && viewModel.cards.isEmpty {
+                // opacity: 1 на самой подсказке — общее затемнение 0.4
+                // ниже уже покрывает и иконку, и текст вместе, как одну
+                // группу (задваивать прозрачность не нужно).
                 VStack(spacing: 14) {
                     CreateCardGestureIcon()
-                    Text("Drag anywhere to create your first card")
-                        .font(.system(size: 11, weight: .regular))
-                        .foregroundStyle(.primary)
+                    HintLabel(text: "Drag anywhere to create your first card", color: AnyShapeStyle(.primary), opacity: 1)
                 }
                 .opacity(0.4)
                 .allowsHitTesting(false)
@@ -741,16 +743,9 @@ struct ContentView: View {
         // Покрывает все входы и выходы сразу (Cmd+F, Escape, клик по фону,
         // смена Space) — все они меняют именно focusedCardID.
         .onChange(of: focusedCardID) { _, newValue in
-            focusHintTask?.cancel()
-            showFocusHint = false
+            focusExitHint.cancel()
             guard newValue != nil else { return }
-            focusHintTask = Task {
-                try? await Task.sleep(for: .seconds(3))
-                guard !Task.isCancelled else { return }
-                withAnimation(.easeInOut(duration: 0.35)) {
-                    showFocusHint = true
-                }
-            }
+            focusExitHint.show(afterDelay: 3)
         }
         .alert("AI Error", isPresented: Binding(
             get: { spaceAIErrorMessage != nil },
@@ -967,8 +962,7 @@ struct ContentView: View {
     }
 
     private func updateEmptyHintState() {
-        emptyHintTask?.cancel()
-        showEmptyHint = false
+        emptyHint.cancel()
 
         // Пока активен интерактивный тур, шаг 1 сам показывает "Drag
         // anywhere to create your first card" — без этого guard'а старая
@@ -977,14 +971,8 @@ struct ContentView: View {
         guard !onboardingViewModel.isActive else { return }
 
         guard viewModel.cards.isEmpty else { return }
-        
-        emptyHintTask = Task {
-            try? await Task.sleep(for: .seconds(2.5))
-            guard !Task.isCancelled else { return }
-            withAnimation(.easeInOut(duration: 0.35)) {
-                showEmptyHint = true
-            }
-        }
+
+        emptyHint.show(afterDelay: 2.5)
     }
 
     /// Применяет/откатывает уровень, collectionBehavior, ignoresMouseEvents

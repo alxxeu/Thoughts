@@ -71,14 +71,33 @@ struct AIPromptTextView: NSViewRepresentable {
         textView.onSend = onSend
 
         if shouldFocus {
-            if !context.coordinator.didRequestFocus {
-                context.coordinator.didRequestFocus = true
-                if nsView.window?.firstResponder !== textView {
-                    nsView.window?.makeFirstResponder(textView)
+            // Панель появляется через transition/withAnimation — в этот
+            // же проход, когда updateNSView вызывается, view ещё может не
+            // быть по-настоящему вставлена в иерархию окна, и
+            // makeFirstResponder молча не срабатывает. Раньше didRequestFocus
+            // защёлкивался безусловно, поэтому неудавшаяся попытка никогда
+            // не повторялась. Теперь: сам вызов откладывается на следующий
+            // проход runloop (тот же приём, что уже работает для похожей
+            // задачи в ContentView.startWorkspaceRename()), и флаг
+            // ставится только если фокус реально достался этому полю.
+            if !context.coordinator.didRequestFocus && !context.coordinator.isFocusRequestPending {
+                context.coordinator.isFocusRequestPending = true
+                DispatchQueue.main.async { [weak coordinator = context.coordinator] in
+                    // isFocusRequestPending, а не parent.shouldFocus: Coordinator.parent
+                    // не обновляется на каждый updateNSView, так что читал бы устаревшее
+                    // значение. Если панель успела закрыться до этого момента,
+                    // shouldFocus == false уже сбросил этот флаг в false — запрос
+                    // просто отменяется, без обращения к first responder.
+                    guard let coordinator, coordinator.isFocusRequestPending else { return }
+                    coordinator.isFocusRequestPending = false
+                    if nsView.window?.firstResponder === textView || nsView.window?.makeFirstResponder(textView) == true {
+                        coordinator.didRequestFocus = true
+                    }
                 }
             }
         } else {
             context.coordinator.didRequestFocus = false
+            context.coordinator.isFocusRequestPending = false
         }
     }
 
@@ -89,6 +108,7 @@ struct AIPromptTextView: NSViewRepresentable {
     final class Coordinator: NSObject, NSTextViewDelegate {
         var parent: AIPromptTextView
         var didRequestFocus = false
+        var isFocusRequestPending = false
 
         init(_ parent: AIPromptTextView) {
             self.parent = parent
