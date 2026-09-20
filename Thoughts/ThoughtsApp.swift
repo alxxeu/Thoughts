@@ -61,8 +61,13 @@ struct ThoughtsApp: App {
             // см. requestClearSpace/isShowingClearSpaceConfirmation в
             // ContentView, где и происходит реальный вызов
             // clearActiveSpace() после явного "Clear All Cards".
-            CommandGroup(after: .newItem) {
-                Divider()
+            //
+            // .replacing(.newItem), а не .after — WindowGroup сам кладёт в
+            // эту группу системный пункт "New Window"/Cmd+N, а приложение
+            // однооконное (BoardViewModel/BoardStore — общее состояние):
+            // второе окно просто накладывалось бы поверх первого без
+            // какого-либо смысла. .replacing убирает его полностью.
+            CommandGroup(replacing: .newItem) {
                 Button("Clear Space…") {
                     NotificationCenter.default.post(name: .requestClearSpace, object: nil)
                 }
@@ -74,6 +79,15 @@ struct ThoughtsApp: App {
                 }
                 .keyboardShortcut("l", modifiers: .command)
                 .disabled(!viewModel.securitySettings.isPasscodeEnabled)
+
+                // Toggle: если фокус уже активен — выходит из него, иначе
+                // фокусирует карточку с текстовым курсором. Без такой
+                // карточки ничего не делает (см. ContentView).
+                Button("Focus Card") {
+                    NotificationCenter.default.post(name: .toggleFocusCard, object: nil)
+                }
+                .keyboardShortcut("f", modifiers: .command)
+                .disabled(viewModel.isActiveSpaceLocked || viewModel.desktopOverlay.isDesktopModeActive)
 
                 // Однонаправленный вход в Desktop mode — не toggle: повторное
                 // ⌥D, уже находясь в этом режиме, не делает ничего. Выход —
@@ -92,6 +106,23 @@ struct ThoughtsApp: App {
             // SettingsView (isActiveSpaceLocked → lockedPlaceholder), а не
             // в disabled-состоянии пункта меню — так что убрать дубль можно
             // без потери защиты.
+            // .after(.windowArrangement) — стандартная точка вставки
+            // приложением своих пунктов в системное меню Window, ниже
+            // "Zoom"/"Move Window to..." и разделителя перед списком окон.
+            CommandGroup(after: .windowArrangement) {
+                Toggle("Desktop Overlay", isOn: Binding(
+                    get: { viewModel.desktopOverlay.isEnabled },
+                    set: { viewModel.desktopOverlay.isEnabled = $0 }
+                ))
+            }
+            // .after(.help), а не .replacing(.help) — иначе слетает
+            // системное поле поиска по меню, которое SwiftUI туда кладёт
+            // по умолчанию.
+            CommandGroup(after: .help) {
+                Button("Replay Onboarding") {
+                    NotificationCenter.default.post(name: .replayOnboarding, object: nil)
+                }
+            }
             CommandMenu("Spaces") {
                 ForEach(viewModel.workspaces) { workspace in
                     Button(workspace.name) {

@@ -37,6 +37,18 @@ final class DividerAttachment: NSTextAttachment {
 // MARK: - Custom NSTextView (plain-text paste + divider drawing)
 
 private final class CardNSTextView: NSTextView {
+    // Источник истины для фокуса наружу, в SwiftUI. NSTextViewDelegate's
+    // textDidBeginEditing/textDidEndEditing здесь на практике не
+    // срабатывают на обычный клик (похоже, из-за override'ов ниже,
+    // управляющих курсором в обход стандартной editing-сессии) — а вот
+    // become/resignFirstResponder вызываются гарантированно, на них и
+    // держится I-beam-курсор чуть ниже, так что это единственный
+    // надёжный сигнал смены фокуса.
+    var onFirstResponderChange: ((Bool) -> Void)?
+    var onAIAction: ((AITextAction, String) -> Void)?
+    /// Непустой только когда карточка в Focus Mode — см. cancelOperation ниже.
+    var onEscape: (() -> Void)?
+
     // Фикс. белый, а не адаптивный labelColor — фон карточки (CardSurfaceStyle)
     // больше не переключается в светлый в Light Mode, так что текст/линии
     // поверх него тоже должны оставаться светлыми в обеих темах.
@@ -55,6 +67,18 @@ private final class CardNSTextView: NSTextView {
     override func paste(_ sender: Any?) {
         guard let plain = NSPasteboard.general.string(forType: .string) else { return }
         insertText(plain, replacementRange: selectedRange())
+    }
+
+    /// Escape в NSTextView штатно уходит в `complete:` и дальше по цепочке
+    /// не идёт — поэтому SwiftUI-модификатор .onExitCommand на карточке
+    /// его не увидел бы, пока текст в фокусе. Перехватываем здесь и только
+    /// когда снаружи реально есть, кому его отдать (Focus Mode).
+    override func cancelOperation(_ sender: Any?) {
+        guard let onEscape else {
+            super.cancelOperation(sender)
+            return
+        }
+        onEscape()
     }
 
     /// Рисует линии разделителей поверх обычного текста. Проходит по всем
@@ -120,6 +144,9 @@ private final class CardNSTextView: NSTextView {
     override func becomeFirstResponder() -> Bool {
         let result = super.becomeFirstResponder()
         window?.invalidateCursorRects(for: self)
+        if result {
+            onFirstResponderChange?(true)
+        }
         return result
     }
 
@@ -139,7 +166,68 @@ private final class CardNSTextView: NSTextView {
     override func resignFirstResponder() -> Bool {
         let result = super.resignFirstResponder()
         window?.invalidateCursorRects(for: self)
+        if result {
+            onFirstResponderChange?(false)
+            // Синхронный setSelectedRange здесь раньше приводил к
+            // залипающему I-beam на других карточках (см. коммит, где это
+            // убирали) — похоже, вмешивался в ещё не устаканившийся
+            // responder chain. async откладывает его на следующий цикл
+            // run loop, когда window.firstResponder уже точно обновлён, но
+            // при этом сохраняет исходную цель вызова: без него выделение
+            // остаётся видимым на расфокусированной карточке (можно
+            // выделить текст сразу в нескольких карточках одновременно), а
+            // override setSelectedRange больше не форсирует needsDisplay —
+            // отсюда и оставшиеся "фантомные" полосы старой подсветки.
+            DispatchQueue.main.async { [weak self] in
+                guard let self else { return }
+                self.setSelectedRange(NSRange(location: 0, length: 0))
+                // needsDisplay внутри override'а иногда недостаточно —
+                // NSTextView сидит как documentView в NSScrollView, и её
+                // собственный (возможно, тоже layer-backed) contentView не
+                // всегда сам решает перерисоваться вслед за documentView.
+                // displayIfNeeded форсирует реальный синхронный flush, а не
+                // просто пометку "грязным" до следующего цикла.
+                self.enclosingScrollView?.contentView.needsDisplay = true
+                self.enclosingScrollView?.needsDisplay = true
+                self.displayIfNeeded()
+                self.enclosingScrollView?.displayIfNeeded()
+            }
+        }
         return result
+    }
+
+    /// Добавляет AI-подменю (Pro) к стандартному контекстному меню
+    /// NSTextView (Cut/Copy/Paste/Spelling…), а не заменяет его. Действует
+    /// на весь текст карточки, а не только на selection — точечная замена
+    /// части текста потребовала бы аккуратного маппинга NSRange обратно в
+    /// String (с учётом DividerAttachment), это отдельная задача на потом.
+    override func menu(for event: NSEvent) -> NSMenu? {
+        guard let menu = super.menu(for: event) else { return nil }
+        guard onAIAction != nil else { return menu }
+
+        let aiMenuItem = NSMenuItem(title: "AI", action: nil, keyEquivalent: "")
+        let submenu = NSMenu(title: "AI")
+        for action in AITextAction.allCases {
+            let item = NSMenuItem(
+                title: action.title,
+                action: #selector(handleAIMenuItem(_:)),
+                keyEquivalent: ""
+            )
+            item.target = self
+            item.image = NSImage(systemSymbolName: action.systemImage, accessibilityDescription: nil)
+            item.representedObject = action
+            submenu.addItem(item)
+        }
+        aiMenuItem.submenu = submenu
+
+        menu.addItem(.separator())
+        menu.addItem(aiMenuItem)
+        return menu
+    }
+
+    @objc private func handleAIMenuItem(_ sender: NSMenuItem) {
+        guard let action = sender.representedObject as? AITextAction else { return }
+        onAIAction?(action, string)
     }
 
     private static func clampSelectionRange(_ range: NSRange, in textView: NSTextView) -> NSRange {
@@ -219,10 +307,20 @@ private final class CardNSTextView: NSTextView {
 
 struct CardTextView: NSViewRepresentable {
     @Binding var text: String
+    /// Сериализованный NSAttributedString (bold и т.п.) — см. комментарий
+    /// у Card.formattingData. Восстанавливается в makeNSView, обновляется
+    /// в Coordinator.textDidChange вместе с text.
+    @Binding var formattingData: Data?
     @Binding var isFocused: Bool
     var cardSize: CGSize
     var onTextChange: () -> Void
     var onFocusChange: (Bool) -> Void
+    /// Пункт AI-подменю контекстного меню карточки был выбран — второй
+    /// параметр это весь текст карточки на момент клика (см. комментарий
+    /// у CardNSTextView.menu(for:) про то, почему не берём только selection).
+    var onAIAction: (AITextAction, String) -> Void
+    /// Escape внутри текста. nil — обычное поведение NSTextView.
+    var onEscape: (() -> Void)?
 
     private static let dividerPlaceholder: Character = "\u{FFFC}"
     /// Единственный источник горизонтального инсета текста — раньше
@@ -240,6 +338,13 @@ struct CardTextView: NSViewRepresentable {
 
         let textView = CardNSTextView(frame: .zero)
         textView.delegate = context.coordinator
+        textView.onFirstResponderChange = { [weak coordinator = context.coordinator] focused in
+            coordinator?.handleFirstResponderChange(focused)
+        }
+        textView.onAIAction = { [weak coordinator = context.coordinator] action, text in
+            coordinator?.parent.onAIAction(action, text)
+        }
+        textView.onEscape = onEscape
         textView.drawsBackground = false
         textView.backgroundColor = .clear
         textView.isRichText = true
@@ -266,14 +371,33 @@ struct CardTextView: NSViewRepresentable {
         textView.textColor = NSColor.white.withAlphaComponent(0.88)
         textView.typingAttributes = Self.baseAttributes()
 
-        textView.textStorage?.setAttributedString(Self.buildAttributedString(from: text))
+        textView.textStorage?.setAttributedString(Self.restoredAttributedString(text: text, formattingData: formattingData))
 
         scrollView.documentView = textView
         return scrollView
     }
 
+    /// Если formattingData есть и реально соответствует text (совпадают
+    /// голые символы) — восстанавливает настоящий стиль. Иначе (нет
+    /// сохранённого форматирования, оно повреждено, или text был заменён
+    /// снаружи — например, AI-действием — без обновления formattingData)
+    /// откатывается к обычной plain-реконструкции, как было всегда.
+    fileprivate static func restoredAttributedString(text: String, formattingData: Data?) -> NSAttributedString {
+        if let data = formattingData,
+           let restored = try? NSKeyedUnarchiver.unarchivedObject(ofClass: NSAttributedString.self, from: data),
+           restored.string == text {
+            return restored
+        }
+        return buildAttributedString(from: text)
+    }
+
     func updateNSView(_ nsView: NSScrollView, context: Context) {
         guard let textView = nsView.documentView as? CardNSTextView else { return }
+
+        // Переприсваивается на каждое обновление, а не берётся из
+        // coordinator.parent (SwiftUI его не освежает) — иначе при входе в
+        // Focus Mode текст остался бы со старым, пустым обработчиком.
+        textView.onEscape = onEscape
 
         let innerWidth = max(cardSize.width - Self.horizontalTextInset * 2, 10)
         if let container = textView.textContainer,
@@ -526,23 +650,21 @@ struct CardTextView: NSViewRepresentable {
             replaceDashPrefixWithBulletIfNeeded(in: textView)
 
             parent.text = textView.string
+            parent.formattingData = try? NSKeyedArchiver.archivedData(
+                withRootObject: textView.attributedString(),
+                requiringSecureCoding: true
+            )
             parent.onTextChange()
         }
 
-        func textDidBeginEditing(_ notification: Notification) {
+        /// Единственный реальный источник смены фокуса — см. комментарий у
+        /// CardNSTextView.onFirstResponderChange. textDidBeginEditing/
+        /// textDidEndEditing из NSTextViewDelegate на практике не
+        /// срабатывают на обычный клик в этом кастомном NSTextView.
+        func handleFirstResponderChange(_ focused: Bool) {
             DispatchQueue.main.async {
-                self.parent.isFocused = true
-                self.parent.onFocusChange(true)
-            }
-        }
-
-        func textDidEndEditing(_ notification: Notification) {
-            if let textView = notification.object as? NSTextView {
-                textView.setSelectedRange(NSRange(location: 0, length: 0))
-            }
-            DispatchQueue.main.async {
-                self.parent.isFocused = false
-                self.parent.onFocusChange(false)
+                self.parent.isFocused = focused
+                self.parent.onFocusChange(focused)
             }
         }
 

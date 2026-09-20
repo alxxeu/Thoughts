@@ -40,7 +40,10 @@ struct SettingsView: View {
                 lockedPlaceholder
                     .frame(width: 460, height: 420)
             } else {
-                TabView {
+                TabView(selection: Binding(
+                    get: { SettingsNavigator.shared.selectedTab },
+                    set: { SettingsNavigator.shared.selectedTab = $0 }
+                )) {
                     Form {
                         Section {
                             Toggle("Launch at Login", isOn: $launchAtLogin)
@@ -77,6 +80,7 @@ struct SettingsView: View {
                     .tabItem {
                         Label("General", systemImage: "gearshape")
                     }
+                    .tag(SettingsTab.general)
 
                     Form {
                         Section {
@@ -97,11 +101,35 @@ struct SettingsView: View {
                     .tabItem {
                         Label("Appearance", systemImage: "paintbrush")
                     }
+                    .tag(SettingsTab.appearance)
 
                     SecuritySettingsTab(viewModel: viewModel)
                         .tabItem {
                             Label("Security", systemImage: "lock.shield")
                         }
+                        .tag(SettingsTab.security)
+
+                    ShortcutsSettingsTab()
+                        .tabItem {
+                            Label("Shortcuts", systemImage: "keyboard")
+                        }
+                        .tag(SettingsTab.shortcuts)
+
+                    AISettingsTab()
+                        .tabItem {
+                            Label("AI", systemImage: "sparkles")
+                        }
+                        .tag(SettingsTab.ai)
+
+                    ProSettingsTab()
+                        .tabItem {
+                            Label {
+                                Text("Pro")
+                            } icon: {
+                                proTabIcon
+                            }
+                        }
+                        .tag(SettingsTab.pro)
 
                     Form {
                         Section {
@@ -134,6 +162,7 @@ struct SettingsView: View {
                     .tabItem {
                         Label("About", systemImage: "info.circle")
                     }
+                    .tag(SettingsTab.about)
                 }
                 .frame(width: 460, height: 420)
             }
