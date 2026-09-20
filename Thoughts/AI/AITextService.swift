@@ -23,15 +23,26 @@ protocol AITextService {
     func generate(systemPrompt: String, userText: String) async throws -> String
 }
 
-/// Возвращает сервис для текущего провайдера — в этой сборке всегда
-/// Apple Intelligence (см. AIProviderKind).
+/// Возвращает сервис для текущего провайдера. ChatGPT/Claude — Pro-тизер
+/// (см. AIProviderKind/AISettings) — Picker их выбор не даёт совершить, но
+/// явная ветка здесь на случай "застрявшего" значения в UserDefaults
+/// (например, после переключения веток на одной машине) — честнее
+/// бросить ошибку, чем молча выполнить запрос через Apple Intelligence
+/// под видом другого провайдера.
 enum AITextServiceFactory {
     static func makeActiveService() throws -> AITextService {
-        guard #available(macOS 26.0, *), AppleIntelligenceAvailability.isAvailable else {
+        switch AISettings.shared.selectedProvider {
+        case .appleIntelligence:
+            guard #available(macOS 26.0, *), AppleIntelligenceAvailability.isAvailable else {
+                throw AITextServiceError.apiError(
+                    AppleIntelligenceAvailability.unavailableReasonDescription ?? "Apple Intelligence is unavailable."
+                )
+            }
+            return AppleIntelligenceTextService()
+        case .openAI, .anthropic:
             throw AITextServiceError.apiError(
-                AppleIntelligenceAvailability.unavailableReasonDescription ?? "Apple Intelligence is unavailable."
+                "\(AISettings.shared.selectedProvider.displayName) will be available later in a Pro subscription."
             )
         }
-        return AppleIntelligenceTextService()
     }
 }

@@ -17,6 +17,11 @@ private let shortcuts: [ShortcutInfo] = [
         symbol: "\u{2318}L"
     ),
     ShortcutInfo(
+        title: "Focus Card",
+        subtitle: "Hide every other card and focus on the one you\u{2019}re editing.",
+        symbol: "\u{2318}F"
+    ),
+    ShortcutInfo(
         title: "Show Desktop",
         subtitle: "Enter Desktop Overlay mode, showing your desktop icons.",
         symbol: "\u{2325}D"

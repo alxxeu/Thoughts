@@ -1,10 +1,10 @@
 import Foundation
 
-/// Настройки AI-фич: провайдер (в этой сборке всегда Apple Intelligence —
-/// BYOK для ChatGPT/Claude остаётся Pro-эксклюзивом) и клавиша отправки в
-/// панели Ask AI. selectedProvider сохранён как концепция (не просто
-/// константа) ради структурной совместимости с feature/pro-subscription —
-/// см. комментарий в AIProviderKind.
+/// Настройки AI-фич: провайдер и клавиша отправки в панели Ask AI. ChatGPT/
+/// Claude показываются в Provider-пикере как тизер Pro-подписки, но
+/// реально выбрать их нельзя — hasKey(for:) ниже жёстко возвращает false
+/// для обоих (Keychain-хранилища на этой ветке нет), а строки в пикере
+/// гасятся через тот же .disabled(!hasKey(...)), что и на Pro-ветке.
 @Observable
 final class AISettings {
     static let shared = AISettings()
@@ -25,8 +25,13 @@ final class AISettings {
     }
 
     private init() {
+        // Только .appleIntelligence реально доступен на этой сборке —
+        // если в UserDefaults лежит "openAI"/"anthropic" (например, после
+        // переключения веток на одной машине), не застреваем на
+        // недоступном провайдере молча, откатываемся на рабочий сразу.
         if let raw = UserDefaults.standard.string(forKey: Self.providerKey),
-           let value = AIProviderKind(rawValue: raw) {
+           let value = AIProviderKind(rawValue: raw),
+           value == .appleIntelligence {
             selectedProvider = value
         } else {
             selectedProvider = .appleIntelligence
@@ -46,8 +51,13 @@ final class AISettings {
 
     /// Apple Intelligence не хранит ключей — вместо этого проверяется,
     /// доступна ли она вообще на этом Mac (см. AppleIntelligenceAvailability).
+    /// ChatGPT/Claude — Pro-эксклюзив, на этой сборке нет ни Keychain, ни
+    /// сетевых сервисов для них, поэтому всегда false.
     func hasKey(for provider: AIProviderKind) -> Bool {
-        AppleIntelligenceAvailability.isAvailable
+        switch provider {
+        case .appleIntelligence: return AppleIntelligenceAvailability.isAvailable
+        case .openAI, .anthropic: return false
+        }
     }
 
     /// Настроен ли активный провайдер — им гейтится включение AI-действий
