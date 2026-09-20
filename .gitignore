@@ -1,0 +1,17 @@
+# macOS
+.DS_Store
+
+# Xcode
+xcuserdata/
+DerivedData/
+*.xcuserstate
+*.moved-aside
+*.hmap
+*.ipa
+*.dSYM
+*.dSYM.zip
+Thoughts.xcodeproj/xcshareddata/xcodecloud/
+
+# Локальные заметки по процессу разработки — не для публичного репозитория
+BACKLOG.md
+EXECUTE.md
