@@ -108,6 +108,11 @@ struct SettingsView: View {
                             Label("Shortcuts", systemImage: "keyboard")
                         }
 
+                    AISettingsTab()
+                        .tabItem {
+                            Label("AI", systemImage: "sparkles")
+                        }
+
                     Form {
                         Section {
                             LabeledContent("Version", value: appVersion)

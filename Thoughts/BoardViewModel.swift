@@ -19,6 +19,7 @@ final class BoardViewModel {
     let securitySettings = SecuritySettings.shared
     let appearanceSettings = AppearanceSettings.shared
     let desktopOverlay = DesktopOverlaySettings.shared
+    let aiSettings = AISettings.shared
 
     /// Слоты защищённых (Workspace.isProtected == true) Space, прошедшие
     /// аутентификацию в ЭТОЙ сессии. Runtime-only, никогда не персистится:
@@ -28,6 +29,13 @@ final class BoardViewModel {
     /// имеющий блокировку", но при этом сейчас открыт.
     private var unlockedProtectedSlots: Set<Int> = []
     private var idleLockTasks: [Int: Task<Void, Never>] = [:]
+
+    /// Карточки, созданные Ask AI/Summarize (Pro), которые ещё не были
+    /// "активированы" явным кликом — см. CardView. Runtime-only, как
+    /// unlockedProtectedSlots выше: не персистится и не переживает
+    /// перезапуск приложения, но это ОК — постоянная подсветка нужна
+    /// только для ориентации в текущей сессии.
+    var aiHighlightedCardIDs: Set<UUID> = []
 
     var isActiveSpaceLocked: Bool {
         securitySettings.isPasscodeEnabled
@@ -307,6 +315,29 @@ final class BoardViewModel {
 }
 
 extension BoardViewModel {
+    /// Единый размер карточки в Focus Mode — один и тот же для любой
+    /// карточки, независимо от её реального `card.size` (см. ContentView:
+    /// сам `card.size` при этом не меняется, фокус только переопределяет
+    /// отображение).
+    static let focusCardSize = CGSize(width: 640, height: 480)
+
+    /// Под сфокусированной карточкой всегда висит кнопка "Ask AI…" — без
+    /// этого резерва композиция "карточка + кнопка" читалась бы смещённой
+    /// вниз, хотя сама карточка строго по центру.
+    static let focusFooterReserve: CGFloat = 44
+
+    /// Верхний левый угол сфокусированной карточки. При канве меньше
+    /// самой карточки центрирование дало бы отрицательный origin и увело
+    /// бы её верх/левый край за экран — поэтому зажимаем по тем же
+    /// границам, что и обычные карточки.
+    static func focusOrigin(canvasSize: CGSize, topInset: CGFloat = topCreationLimit) -> CGPoint {
+        let availableHeight = canvasSize.height - topInset - focusFooterReserve
+        return CGPoint(
+            x: max(canvasSidePadding, (canvasSize.width - focusCardSize.width) / 2),
+            y: max(topInset, topInset + (availableHeight - focusCardSize.height) / 2)
+        )
+    }
+
     static func placementPreview(
         movingId: UUID,
         movingPosition: CGPoint,

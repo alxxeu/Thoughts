@@ -117,10 +117,45 @@ struct ContentView: View {
     @State private var isEditingWorkspaceName = false
     @State private var workspaceNameDraft = ""
     @FocusState private var isWorkspaceNameFieldFocused: Bool
+
+    // Focus Mode (Cmd+F) — чистое состояние отображения, ничего не
+    // персистится: position/size самой карточки не трогаются, фокус лишь
+    // переопределяет их на время. textFocusedCardID — какая карточка
+    // сейчас держит текстовый курсор, именно она и фокусируется.
+    @State private var focusedCardID: UUID?
+    @State private var textFocusedCardID: UUID?
+    // Подсказка про выход всплывает не сразу — тот же принцип, что у
+    // подсказки пустого Space ниже: сначала дать поработать, напомнить
+    // только если человек задержался. Статичная (без holdFor) — держится,
+    // пока фокус не будет снят снаружи.
+    @State private var focusExitHint = HintTimer()
+    /// Карточка, которая прямо сейчас едет в фокус или обратно. Пока она
+    /// в переходе, её текст и контролы прячутся — см. setFocusedCard.
+    @State private var focusTransitionCardID: UUID?
+    @State private var focusTransitionTask: Task<Void, Never>?
+
+    // AI для всего Space (Pro, BYOK) — Ask AI (+ Summarize внутри его
+    // панели) под pill с названием. См. Thoughts/AI. Результат — новая
+    // карточка на канве.
+    @State private var isAskingSpaceAI = false
+    @State private var spaceAIQuestion = ""
+    @State private var isSpaceAIBusy = false
+    @State private var spaceAIErrorMessage: String?
+    /// Название функции, над иконкой которой сейчас курсор — управляет
+    /// мгновенной подсветкой самой иконки.
+    @State private var hoveredToolbarLabel: String?
+    /// В отличие от hoveredToolbarLabel выше — не мгновенно: всплывающая
+    /// подсказка под иконкой появляется только после небольшой задержки
+    /// наведения (см. setToolbarHover), как обычные системные tooltips.
+    @State private var tooltipVisibleLabel: String?
+    @State private var tooltipTask: Task<Void, Never>?
+    // Актуальный размер канвы — нужен вне GeometryReader, чтобы новая
+    // AI-карточка могла стартовать анимацию из-под нотча к центру экрана.
+    @State private var canvasSize: CGSize = .zero
     
-    // Состояние и таймер для подсказки пустого спэйса
-    @State private var showEmptyHint = false
-    @State private var emptyHintTask: Task<Void, Never>?
+    // Подсказка пустого спэйса — статичная (без holdFor), держится, пока
+    // не появится первая карточка.
+    @State private var emptyHint = HintTimer()
 
     // Интерактивный тур по фичам при первом запуске — поверх остального
     // интерфейса, но не мешает locking-логике (на первом запуске Passcode
@@ -277,6 +312,9 @@ struct ContentView: View {
         }
         .onReceive(NotificationCenter.default.publisher(for: .switchWorkspace)) { notification in
             if let slot = notification.object as? Int {
+                // Нельзя оставить "зависший" фокус на карточке со Space, с
+                // которого только что ушли.
+                setFocusedCard(nil)
                 // Явный withAnimation здесь, а не только .animation(value:)
                 // ниже — через GeometryReader → ZStack → ForEach декларативная
                 // привязка по value надёжно анимирует уход старых карточек,
@@ -289,6 +327,19 @@ struct ContentView: View {
         }
         .onReceive(NotificationCenter.default.publisher(for: .lockCurrentSpace)) { _ in
             viewModel.lockActiveSpaceManually()
+        }
+        .onReceive(NotificationCenter.default.publisher(for: .toggleFocusCard)) { _ in
+            guard !viewModel.isActiveSpaceLocked,
+                  !viewModel.desktopOverlay.isDesktopModeActive,
+                  !onboardingViewModel.isActive else { return }
+            if focusedCardID != nil {
+                setFocusedCard(nil)
+            } else if let textFocusedCardID {
+                setFocusedCard(textFocusedCardID)
+                // Капсула Space в фокусе скрыта целиком — иначе открытая
+                // Space-панель Ask AI просто "вернулась" бы при выходе.
+                isAskingSpaceAI = false
+            }
         }
         .onReceive(NotificationCenter.default.publisher(for: .replayOnboarding)) { _ in
             onboardingViewModel.start()
@@ -334,12 +385,29 @@ struct ContentView: View {
                     }
 
                 ForEach(viewModel.cards) { card in
-                    let adaptedPosition = BoardViewModel.clampedPosition(card.position, size: card.size, canvasSize: proxy.size, topInset: effectiveTopInset)
+                    let isFocused = card.id == focusedCardID
+                    let displaySize = isFocused ? BoardViewModel.focusCardSize : card.size
+                    let displayPosition = isFocused
+                        ? BoardViewModel.focusOrigin(canvasSize: proxy.size, topInset: effectiveTopInset)
+                        : BoardViewModel.clampedPosition(card.position, size: card.size, canvasSize: proxy.size, topInset: effectiveTopInset)
 
                     CardView(
                         card: card,
                         viewModel: viewModel,
                         canvasSize: proxy.size,
+                        isInFocusMode: isFocused,
+                        onTextFocusChange: { focused in
+                            // "Чистим только если это всё ещё наше" — при
+                            // переходе фокуса с карточки на карточку blur
+                            // прежней может прийти ПОСЛЕ focus новой.
+                            if focused {
+                                textFocusedCardID = card.id
+                            } else if textFocusedCardID == card.id {
+                                textFocusedCardID = nil
+                            }
+                        },
+                        onRequestExitFocus: { setFocusedCard(nil) },
+                        isFocusTransitioning: card.id == focusTransitionCardID,
                         onPlacementPreviewChange: { preview in
                             resizeDebounceTask?.cancel()
                             
@@ -364,14 +432,36 @@ struct ContentView: View {
                         },
                         onEdgeHintsChange: { edgeHints = $0 }
                     )
-                    .frame(width: card.size.width, height: card.size.height, alignment: .topLeading)
-                    .offset(x: adaptedPosition.x, y: adaptedPosition.y)
+                    .frame(width: displaySize.width, height: displaySize.height, alignment: .topLeading)
+                    // Подсказка над карточкой — снизу теперь живёт кнопка
+                    // Ask AI и её панель (см. CardView). Привязка к НИЖНЕМУ
+                    // краю со сдвигом на высоту карточки — не зависит от
+                    // собственной высоты подписи.
+                    .overlay(alignment: .bottom) {
+                        if isFocused && focusExitHint.isVisible {
+                            // HintLabel фиксированно белый в обеих темах:
+                            // лежит на затемнённой подложке, а не на фоне
+                            // окна, так что .primary в светлой давал бы
+                            // чёрный текст на тёмном.
+                            HintLabel(text: "Click anywhere to exit Focus Mode")
+                                .offset(y: -(displaySize.height + 12))
+                        }
+                    }
+                    .offset(x: displayPosition.x, y: displayPosition.y)
                     // .compositingGroup() — карточка (стекло + текст +
                     // чат тега/кнопок) смешивается с тем, что позади, как
                     // один плоский слой при fade, а не покомпонентно;
                     // должно убрать серый след, который оставляло живое
                     // стекло при анимированном opacity.
                     .compositingGroup()
+                    // Focus Mode: сфокусированная карточка поднимается над
+                    // затемнением (zIndex 500 ниже), остальные гаснут, но
+                    // НЕ выгружаются из дерева — в отличие от Space Lock
+                    // это про визуальный шум, а не про приватность, и
+                    // пересоздание карточек на выходе выглядело бы резче.
+                    .zIndex(isFocused ? 1000 : 0)
+                    .opacity(focusedCardID == nil || isFocused ? 1 : 0)
+                    .allowsHitTesting(focusedCardID == nil || isFocused)
                     // Исчезновение — быстрее появления: своя анимация на
                     // каждой стороне через .animation(_:) на AnyTransition,
                     // а не общая длительность из withAnimation в месте
@@ -394,6 +484,18 @@ struct ContentView: View {
                     }
                 }
                 
+                // Затемнение под сфокусированной карточкой — ложится поверх
+                // всех остальных слоёв канвы (zIndex по умолчанию 0) и под
+                // саму карточку (1000). Клик по нему — один из трёх способов
+                // выйти из Focus Mode, см. подпись под карточкой.
+                if focusedCardID != nil {
+                    Color.black.opacity(0.45)
+                        .contentShape(Rectangle())
+                        .onTapGesture { setFocusedCard(nil) }
+                        .zIndex(500)
+                        .transition(.opacity)
+                }
+
                 if let placementPreview {
                     RoundedRectangle(cornerRadius: 12)
                         .fill(Color.primary.opacity(0.05))
@@ -448,10 +550,12 @@ struct ContentView: View {
             .coordinateSpace(name: "canvas")
             .frame(width: proxy.size.width, height: proxy.size.height)
             .animation(.easeOut(duration: 0.12), value: edgeHints.count)
-            
-            .onChange(of: proxy.size) { _, _ in
+            .animation(.easeInOut(duration: 0.28), value: focusedCardID)
+
+            .onChange(of: proxy.size) { _, newValue in
                 isWindowResizing = true
-                
+                canvasSize = newValue
+
                 resizeDebounceTask?.cancel()
                 resizeDebounceTask = Task {
                     try? await Task.sleep(for: .seconds(0.15))
@@ -459,41 +563,104 @@ struct ContentView: View {
                     isWindowResizing = false
                 }
             }
+            .onAppear {
+                canvasSize = proxy.size
+            }
         }
         .background(Color.clear)
         .overlay(alignment: .top) {
             VStack(spacing: 6) {
-                Group {
-                    if isEditingWorkspaceName {
-                        TextField("Space name", text: $workspaceNameDraft)
-                            .textFieldStyle(.plain)
-                            .font(.system(size: 11, weight: .semibold))
-                            .foregroundStyle(Color.white.opacity(0.85))
-                            .multilineTextAlignment(.center)
-                            .frame(width: 100)
-                            .focused($isWorkspaceNameFieldFocused)
-                            .onSubmit { commitWorkspaceRename() }
-                            .onExitCommand { cancelWorkspaceRename() }
-                            .onChange(of: isWorkspaceNameFieldFocused) { _, focused in
-                                if !focused { commitWorkspaceRename() }
-                            }
-                            .onChange(of: workspaceNameDraft) { _, newValue in
-                                if newValue.count > BoardViewModel.maxWorkspaceNameLength {
-                                    workspaceNameDraft = String(newValue.prefix(BoardViewModel.maxWorkspaceNameLength))
+                HStack(spacing: 10) {
+                    Group {
+                        if isEditingWorkspaceName {
+                            TextField("Space name", text: $workspaceNameDraft)
+                                .textFieldStyle(.plain)
+                                .font(.system(size: 11, weight: .semibold))
+                                .foregroundStyle(Color.white.opacity(0.85))
+                                .multilineTextAlignment(.center)
+                                .frame(width: 100)
+                                .focused($isWorkspaceNameFieldFocused)
+                                .onSubmit { commitWorkspaceRename() }
+                                .onExitCommand { cancelWorkspaceRename() }
+                                .onChange(of: isWorkspaceNameFieldFocused) { _, focused in
+                                    if !focused { commitWorkspaceRename() }
                                 }
-                            }
-                    } else {
-                        Text(viewModel.activeWorkspace?.name ?? Workspace.defaultName(forSlot: viewModel.activeSlot))
-                            .font(.system(size: 11, weight: .semibold))
-                            .foregroundStyle(Color.white.opacity(0.9))
+                                .onChange(of: workspaceNameDraft) { _, newValue in
+                                    if newValue.count > BoardViewModel.maxWorkspaceNameLength {
+                                        workspaceNameDraft = String(newValue.prefix(BoardViewModel.maxWorkspaceNameLength))
+                                    }
+                                }
+                        } else {
+                            Text(viewModel.activeWorkspace?.name ?? Workspace.defaultName(forSlot: viewModel.activeSlot))
+                                .font(.system(size: 11, weight: .semibold))
+                                .foregroundStyle(Color.white.opacity(0.9))
+                        }
+                    }
+                    .contentShape(Rectangle())
+                    .onTapGesture {
+                        if !isEditingWorkspaceName {
+                            dismissToolbarTooltip()
+                            startWorkspaceRename()
+                        }
+                    }
+                    .onHover { inside in
+                        guard !isEditingWorkspaceName else { return }
+                        setToolbarHover(inside, "Rename")
+                    }
+                    .overlay(alignment: .top) { toolbarTooltip("Rename") }
+
+                    // Иконки-действия пристёгнуты к тому же pill'у, что и
+                    // название — не отдельные капсулы под ним, чтобы новая
+                    // функция была ещё одной иконкой в этом же ряду, а не
+                    // ещё одной строкой вниз.
+                    if !isEditingWorkspaceName {
+                        Rectangle()
+                            .fill(Color.white.opacity(0.15))
+                            .frame(width: 1, height: 14)
+
+                        Button {
+                            dismissToolbarTooltip()
+                            // Если в этот момент печатали в какой-то карточке,
+                            // её текстовое поле удерживает first responder —
+                            // панель Ask AI должна явно получить его, а не
+                            // соревноваться за фокус в тот же момент. Тот же
+                            // вызов, что уже используется при тапе по пустому
+                            // холсту для снятия фокуса с редактируемой карточки.
+                            NSApp.keyWindow?.makeFirstResponder(nil)
+                            withAnimation(spaceAISpring) { isAskingSpaceAI.toggle() }
+                        } label: {
+                            Image(systemName: "sparkle")
+                                // Развёрнутая на 45° звёздочка читается как
+                                // крестик — понятная подсказка "нажми ещё
+                                // раз, чтобы закрыть".
+                                .rotationEffect(.degrees(isAskingSpaceAI ? 45 : 0))
+                        }
+                        .buttonStyle(.plain)
+                        .foregroundStyle(Color.white.opacity(isAskingSpaceAI || hoveredToolbarLabel == "Ask AI" ? 1 : 0.85))
+                        .font(.system(size: 15))
+                        .onHover { setToolbarHover($0, "Ask AI") }
+                        .overlay(alignment: .top) { toolbarTooltip("Ask AI") }
+
+                        Button {
+                            dismissToolbarTooltip()
+                            NotificationCenter.default.post(name: .requestClearSpace, object: nil)
+                        } label: {
+                            Image(systemName: "trash.fill")
+                        }
+                        .buttonStyle(.plain)
+                        .foregroundStyle(Color.white.opacity(hoveredToolbarLabel == "Clear Space" ? 1 : 0.85))
+                        .font(.system(size: 15))
+                        .disabled(viewModel.cards.isEmpty)
+                        .onHover { setToolbarHover($0, "Clear Space") }
+                        .overlay(alignment: .top) { toolbarTooltip("Clear Space") }
                     }
                 }
-                .padding(.horizontal, 10)
+                .padding(.horizontal, 14)
                 .padding(.vertical, 5)
-                // Название поверх — фиксированно белое в обеих темах. Раньше
-                // здесь был чистый Color.black.opacity(...) без материала —
-                // плоская краска, а не блюр, поэтому на цветных обоях
-                // (реальный десктоп через полупрозрачное окно) она не
+                // Название/иконки поверх — фиксированно белые в обеих темах.
+                // Раньше здесь был чистый Color.black.opacity(...) без
+                // материала — плоская краска, а не блюр, поэтому на цветных
+                // обоях (реальный десктоп через полупрозрачное окно) она не
                 // блендится с фоном, а просто грязно его гасит. Материал
                 // снизу даёт настоящее размытие/vibrancy, тон сверху —
                 // только чтобы белый текст оставался читаемым, и в Light
@@ -504,14 +671,26 @@ struct ContentView: View {
                         .fill(.ultraThinMaterial)
                         .overlay(Capsule().fill(Color.black.opacity(colorScheme == .dark ? 0.1 : 0.18)))
                 )
-                .contentShape(Capsule())
-                .onTapGesture {
-                    if !isEditingWorkspaceName {
-                        startWorkspaceRename()
-                    }
+
+                if isAskingSpaceAI {
+                    askAIPanel
                 }
             }
             .padding(.top, workspacePillTopPadding)
+            // В Focus Mode капсула Space скрыта целиком — она ломает
+            // ощущение погружения, а её действия относятся ко всему Space,
+            // не к сфокусированной карточке. Подсказки/hover-состояния
+            // внутри неё лежат в этом же поддереве, так что гаснут вместе.
+            .opacity(focusedCardID == nil ? 1 : 0)
+            .allowsHitTesting(focusedCardID == nil)
+            .animation(.easeInOut(duration: 0.28), value: focusedCardID)
+            .onReceive(NotificationCenter.default.publisher(for: .clearTextSelection)) { _ in
+                // Клик по свободному холсту закрывает панель Ask AI, но
+                // только если в поле ещё ничего не напечатано — не хотим
+                // терять черновик вопроса случайным кликом мимо.
+                guard isAskingSpaceAI, spaceAIQuestion.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return }
+                withAnimation(spaceAISpring) { isAskingSpaceAI = false }
+            }
         }
         .overlay(alignment: .center) {
             // Подсказка на пустом Space — по центру канвы, а не под
@@ -521,12 +700,13 @@ struct ContentView: View {
             // единый визуальный язык, не два разных объяснения одного
             // жеста. Декоративная — allowsHitTesting(false), чтобы сам
             // драг создания карточки долетал до канвы под подсказкой.
-            if showEmptyHint && viewModel.cards.isEmpty {
+            if emptyHint.isVisible && viewModel.cards.isEmpty {
+                // opacity: 1 на самой подсказке — общее затемнение 0.4
+                // ниже уже покрывает и иконку, и текст вместе, как одну
+                // группу (задваивать прозрачность не нужно).
                 VStack(spacing: 14) {
                     CreateCardGestureIcon()
-                    Text("Drag anywhere to create your first card")
-                        .font(.system(size: 11, weight: .regular))
-                        .foregroundStyle(.primary)
+                    HintLabel(text: "Drag anywhere to create your first card", color: AnyShapeStyle(.primary), opacity: 1)
                 }
                 .opacity(0.4)
                 .allowsHitTesting(false)
@@ -545,11 +725,229 @@ struct ContentView: View {
         .onChange(of: onboardingViewModel.isActive) { _, _ in
             updateEmptyHintState()
         }
+        // Покрывает все входы и выходы сразу (Cmd+F, Escape, клик по фону,
+        // смена Space) — все они меняют именно focusedCardID.
+        .onChange(of: focusedCardID) { _, newValue in
+            focusExitHint.cancel()
+            guard newValue != nil else { return }
+            focusExitHint.show(afterDelay: 3)
+        }
+        .alert("AI Error", isPresented: Binding(
+            get: { spaceAIErrorMessage != nil },
+            set: { if !$0 { spaceAIErrorMessage = nil } }
+        )) {
+            Button("OK") { spaceAIErrorMessage = nil }
+        } message: {
+            Text(spaceAIErrorMessage ?? "")
+        }
+    }
+
+    private var spaceAISpring: Animation { .spring(response: 0.4, dampingFraction: 0.76) }
+
+    /// Раскрывается/закрывается через insertion/removal (не морфинг pill'а
+    /// — sparkle теперь просто иконка в кластере рядом с названием, см.
+    /// .overlay(alignment: .top) в body), с масштабом от верхнего края и
+    /// пружиной на входе. Summarize/Extract — иконки в левом нижнем углу
+    /// того же поля, а не отдельная строка кнопок под ним; подсказки —
+    /// тот же toolbarTooltip/setToolbarHover, что у верхнего кластера.
+    private var askAIPanel: some View {
+        AIPromptTextView(text: $spaceAIQuestion, shouldFocus: isAskingSpaceAI) {
+            askSpaceAI()
+        }
+        .frame(maxWidth: .infinity)
+        .frame(height: 130)
+        .onExitCommand {
+            withAnimation(spaceAISpring) { isAskingSpaceAI = false }
+            spaceAIQuestion = ""
+        }
+        // NSTextView не даёт placeholder "из коробки" (в отличие от
+        // NSTextField/SwiftUI TextField) — просто текст поверх, скрытый,
+        // как только начали печатать. Отступы подобраны под
+        // textContainerInset (6) + дефолтный lineFragmentPadding NSTextView (5).
+        .overlay(alignment: .topLeading) {
+            if spaceAIQuestion.isEmpty {
+                Text("Ask about your project…")
+                    .font(.system(size: 13))
+                    .foregroundStyle(Color.white.opacity(0.35))
+                    .padding(.leading, 11)
+                    .padding(.top, 6)
+                    .allowsHitTesting(false)
+            }
+        }
+        .overlay(alignment: .bottomLeading) {
+            HStack(spacing: 12) {
+                Button {
+                    dismissToolbarTooltip()
+                    summarizeSpace()
+                } label: {
+                    Image(systemName: "sparkles")
+                }
+                .buttonStyle(.plain)
+                .foregroundStyle(Color.white.opacity(hoveredToolbarLabel == "Summarize" ? 1 : 0.85))
+                .font(.system(size: 14))
+                .disabled(isSpaceAIBusy || spaceAIContextText().isEmpty)
+                .onHover { setToolbarHover($0, "Summarize") }
+                .overlay(alignment: .top) { toolbarTooltip("Summarize") }
+
+                Button {
+                    dismissToolbarTooltip()
+                    extractActionItems()
+                } label: {
+                    Image(systemName: "sparkle.text.clipboard")
+                }
+                .buttonStyle(.plain)
+                .foregroundStyle(Color.white.opacity(hoveredToolbarLabel == "Extract" ? 1 : 0.85))
+                .font(.system(size: 14))
+                .disabled(isSpaceAIBusy || spaceAIContextText().isEmpty)
+                .onHover { setToolbarHover($0, "Extract") }
+                .overlay(alignment: .top) { toolbarTooltip("Extract") }
+
+                if isSpaceAIBusy {
+                    ProgressView()
+                        .controlSize(.small)
+                        .tint(.white)
+                }
+            }
+            .padding(6)
+        }
+        .overlay(alignment: .bottomTrailing) {
+            Button {
+                askSpaceAI()
+            } label: {
+                Image(systemName: "arrow.up.circle.fill")
+                    .font(.system(size: 20))
+            }
+            .buttonStyle(.plain)
+            .foregroundStyle(Color.white.opacity(0.85))
+            .disabled(isSpaceAIBusy || spaceAIQuestion.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+            .padding(5)
+        }
+        .padding(6)
+        .frame(width: 300)
+        .background(
+            CardSurfaceBackground(
+                cornerRadius: 16,
+                usesGlassEffect: false,
+                tintOpacity: 0.15,
+                materialStyle: .thickMaterial,
+                lightMaterialStyle: .ultraThinMaterial,
+                lightTintOpacity: 0.2
+            )
+        )
+        .transition(
+            .asymmetric(
+                insertion: .scale(scale: 0.5, anchor: .top).combined(with: .opacity)
+                    .animation(spaceAISpring),
+                removal: .scale(scale: 0.5, anchor: .top).combined(with: .opacity)
+                    .animation(.easeIn(duration: 0.15))
+            )
+        )
+    }
+
+    private func spaceAIContextText() -> String {
+        viewModel.cards
+            .filter { $0.privacyMode == .none && !$0.text.isEmpty }
+            .map(\.text)
+            .joined(separator: "\n---\n")
+    }
+
+    private func summarizeSpace() {
+        let context = spaceAIContextText()
+        guard !context.isEmpty, !isSpaceAIBusy else { return }
+        isSpaceAIBusy = true
+        Task {
+            do {
+                let service = try AITextServiceFactory.makeActiveService()
+                let result = try await service.generate(
+                    systemPrompt: AISpaceAction.summarizeSystemPrompt,
+                    userText: context
+                )
+                await MainActor.run {
+                    insertAIResultCard(result)
+                    withAnimation(spaceAISpring) { isAskingSpaceAI = false }
+                    isSpaceAIBusy = false
+                }
+            } catch {
+                await MainActor.run {
+                    spaceAIErrorMessage = error.localizedDescription
+                    isSpaceAIBusy = false
+                }
+            }
+        }
+    }
+
+    private func extractActionItems() {
+        let context = spaceAIContextText()
+        guard !context.isEmpty, !isSpaceAIBusy else { return }
+        isSpaceAIBusy = true
+        Task {
+            do {
+                let service = try AITextServiceFactory.makeActiveService()
+                let result = try await service.generate(
+                    systemPrompt: AISpaceAction.extractActionItemsSystemPrompt,
+                    userText: context
+                )
+                await MainActor.run {
+                    insertAIResultCard(result)
+                    withAnimation(spaceAISpring) { isAskingSpaceAI = false }
+                    isSpaceAIBusy = false
+                }
+            } catch {
+                await MainActor.run {
+                    spaceAIErrorMessage = error.localizedDescription
+                    isSpaceAIBusy = false
+                }
+            }
+        }
+    }
+
+    private func askSpaceAI() {
+        let question = spaceAIQuestion.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !question.isEmpty, !isSpaceAIBusy else { return }
+        let context = spaceAIContextText()
+        isSpaceAIBusy = true
+        Task {
+            do {
+                let service = try AITextServiceFactory.makeActiveService()
+                let userText = context.isEmpty ? question : "Notes:\n\(context)\n\nQuestion: \(question)"
+                let result = try await service.generate(
+                    systemPrompt: AISpaceAction.askSystemPrompt,
+                    userText: userText
+                )
+                await MainActor.run {
+                    insertAIResultCard(result)
+                    spaceAIQuestion = ""
+                    withAnimation(spaceAISpring) { isAskingSpaceAI = false }
+                    isSpaceAIBusy = false
+                }
+            } catch {
+                await MainActor.run {
+                    spaceAIErrorMessage = error.localizedDescription
+                    isSpaceAIBusy = false
+                }
+            }
+        }
+    }
+
+    /// Не выставляет newlyCreatedCardID — та карточка сразу получает фокус
+    /// текстового ввода (.focusNewCard), что фактически "активирует" её и
+    /// сразу же снимало бы постоянную AI-подсветку (см. aiHighlightedCardIDs
+    /// и CardView) прежде, чем пользователь вообще успеет её заметить.
+    private func insertAIResultCard(_ text: String) {
+        let size = CGSize(width: 280, height: 220)
+        let origin = CGPoint(
+            x: max(0, (canvasSize.width - size.width) / 2),
+            y: max(0, (canvasSize.height - size.height) / 2)
+        )
+        let card = viewModel.addCard(at: origin, size: size)
+        card.text = text
+        card.isAIGenerated = true
+        viewModel.saveImmediately()
+        viewModel.aiHighlightedCardIDs.insert(card.id)
     }
 
     private func updateEmptyHintState() {
-        emptyHintTask?.cancel()
-        showEmptyHint = false
+        emptyHint.cancel()
 
         // Пока активен интерактивный тур, шаг 1 сам показывает "Drag
         // anywhere to create your first card" — без этого guard'а старая
@@ -558,14 +956,8 @@ struct ContentView: View {
         guard !onboardingViewModel.isActive else { return }
 
         guard viewModel.cards.isEmpty else { return }
-        
-        emptyHintTask = Task {
-            try? await Task.sleep(for: .seconds(2.5))
-            guard !Task.isCancelled else { return }
-            withAnimation(.easeInOut(duration: 0.35)) {
-                showEmptyHint = true
-            }
-        }
+
+        emptyHint.show(afterDelay: 2.5)
     }
 
     /// Применяет/откатывает уровень, collectionBehavior, ignoresMouseEvents
@@ -701,6 +1093,9 @@ struct ContentView: View {
     private func canvasDragGesture(in canvasSize: CGSize) -> some Gesture {
         DragGesture(minimumDistance: 4, coordinateSpace: .named("canvas"))
             .onChanged { value in
+                // Затемнение поверх канвы и так перехватывает всё, пока
+                // активен фокус — кроме драга, начатого ДО входа в него.
+                guard focusedCardID == nil else { return }
                 NotificationCenter.default.post(name: .clearTextSelection, object: nil)
                 NSApp.keyWindow?.makeFirstResponder(nil)
                 if creationStart == nil {
@@ -732,6 +1127,85 @@ struct ContentView: View {
                     newlyCreatedCardID = newCard.id
                 }
             }
+    }
+
+    /// Не просто `hoveredToolbarLabel = inside ? label : nil` — если курсор
+    /// уходит с одной иконки сразу на соседнюю, exit-событие первой может
+    /// прийти ПОСЛЕ enter-события второй, и голое присваивание стёрло бы
+    /// уже выставленный новый label. Очищаем только если он всё ещё
+    /// принадлежит этой же иконке.
+    private func setToolbarHover(_ inside: Bool, _ label: String) {
+        if inside {
+            hoveredToolbarLabel = label
+        } else if hoveredToolbarLabel == label {
+            hoveredToolbarLabel = nil
+        }
+
+        tooltipTask?.cancel()
+        if inside {
+            tooltipTask = Task {
+                try? await Task.sleep(for: .seconds(0.45))
+                guard !Task.isCancelled else { return }
+                withAnimation(.easeIn(duration: 0.1)) {
+                    tooltipVisibleLabel = label
+                }
+            }
+        } else if tooltipVisibleLabel == label {
+            withAnimation(.easeOut(duration: 0.08)) {
+                tooltipVisibleLabel = nil
+            }
+        }
+    }
+
+    /// Отдельно от setToolbarHover — щёлкая по кнопке, курсор физически
+    /// остаётся на месте (onHover не получает "мышь ушла"), так что без
+    /// явной отмены подсказка осталась бы висеть поверх уже открытой панели.
+    private func dismissToolbarTooltip() {
+        tooltipTask?.cancel()
+        tooltipVisibleLabel = nil
+    }
+
+    @ViewBuilder
+    private func toolbarTooltip(_ label: String) -> some View {
+        if tooltipVisibleLabel == label {
+            Text(label)
+                .font(.system(size: 10, weight: .medium))
+                .foregroundStyle(Color.white.opacity(0.9))
+                .padding(.horizontal, 8)
+                .padding(.vertical, 4)
+                // Обычный Color.black.opacity(...) на и без того тёмном
+                // фоне канвы визуально неотличим от полностью непрозрачного
+                // — настоящий материал реально размывает/пропускает то,
+                // что под ним, а не просто гасит альфой поверх тёмного.
+                // Сам материал светлый в Light Mode — белый текст поверх
+                // него без тона нечитаем, поэтому дотемняем чёрным тоном
+                // (в Dark Mode тон не нужен — материал и так тёмный).
+                .background(
+                    Capsule()
+                        .fill(.ultraThinMaterial.opacity(0.9))
+                        .overlay(Capsule().fill(Color.black.opacity(colorScheme == .dark ? 0 : 0.18)))
+                )
+                .fixedSize()
+                .allowsHitTesting(false)
+                .offset(y: 24)
+                .transition(.opacity)
+        }
+    }
+
+    /// Единственная точка смены фокуса. Флаг перехода обязан меняться в
+    /// ТОМ ЖЕ обновлении, что и сам focusedCardID: если взводить его
+    /// отдельным .onChange, он опаздывает на кадр, и контролы карточки
+    /// успевают вернуться и проехать вместе с ней до конца анимации.
+    private func setFocusedCard(_ id: UUID?) {
+        guard focusedCardID != id else { return }
+        focusTransitionTask?.cancel()
+        focusTransitionCardID = id ?? focusedCardID
+        focusedCardID = id
+        focusTransitionTask = Task {
+            try? await Task.sleep(for: .seconds(0.3))
+            guard !Task.isCancelled else { return }
+            focusTransitionCardID = nil
+        }
     }
 
     private func startWorkspaceRename() {
