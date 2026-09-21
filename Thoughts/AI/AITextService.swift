@@ -1,11 +1,14 @@
 import Foundation
 
 enum AITextServiceError: LocalizedError {
+    case missingAPIKey
     case invalidResponse
     case apiError(String)
 
     var errorDescription: String? {
         switch self {
+        case .missingAPIKey:
+            return "No API key configured. Add one in Settings → AI."
         case .invalidResponse:
             return "The AI provider returned an unexpected response."
         case .apiError(let message):
@@ -14,8 +17,8 @@ enum AITextServiceError: LocalizedError {
     }
 }
 
-/// Общий интерфейс для любого провайдера — карточка/меню действий не
-/// знает, с кем конкретно говорит.
+/// Общий интерфейс для любого провайдера (ChatGPT/Claude) — карточка/меню
+/// действий не знает, с кем конкретно говорит.
 protocol AITextService {
     /// - Parameters:
     ///   - systemPrompt: инструкция про роль/формат ответа (без самого текста карточки).
@@ -23,15 +26,23 @@ protocol AITextService {
     func generate(systemPrompt: String, userText: String) async throws -> String
 }
 
-/// Возвращает сервис для текущего провайдера. ChatGPT/Claude — Pro-тизер
-/// (см. AIProviderKind/AISettings) — Picker их выбор не даёт совершить, но
-/// явная ветка здесь на случай "застрявшего" значения в UserDefaults
-/// (например, после переключения веток на одной машине) — честнее
-/// бросить ошибку, чем молча выполнить запрос через Apple Intelligence
-/// под видом другого провайдера.
+/// Возвращает сервис для текущего выбранного в Settings провайдера,
+/// используя сохранённые в Keychain ключ и модель.
 enum AITextServiceFactory {
     static func makeActiveService() throws -> AITextService {
-        switch AISettings.shared.selectedProvider {
+        let settings = AISettings.shared
+        let provider = settings.selectedProvider
+        switch provider {
+        case .openAI:
+            guard let apiKey = settings.apiKey(for: provider), !apiKey.isEmpty else {
+                throw AITextServiceError.missingAPIKey
+            }
+            return OpenAITextService(apiKey: apiKey, model: settings.model(for: provider))
+        case .anthropic:
+            guard let apiKey = settings.apiKey(for: provider), !apiKey.isEmpty else {
+                throw AITextServiceError.missingAPIKey
+            }
+            return AnthropicTextService(apiKey: apiKey, model: settings.model(for: provider))
         case .appleIntelligence:
             guard #available(macOS 26.0, *), AppleIntelligenceAvailability.isAvailable else {
                 throw AITextServiceError.apiError(
@@ -39,10 +50,6 @@ enum AITextServiceFactory {
                 )
             }
             return AppleIntelligenceTextService()
-        case .openAI, .anthropic:
-            throw AITextServiceError.apiError(
-                "\(AISettings.shared.selectedProvider.displayName) will be available later in a Pro subscription."
-            )
         }
     }
 }

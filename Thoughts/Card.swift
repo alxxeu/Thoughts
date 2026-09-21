@@ -39,7 +39,7 @@ final class Card: Identifiable, Codable {
     var formattingData: Data? = nil
     var tagColor: CardTagColor? = nil
     var privacyMode: CardPrivacyMode = .none
-    /// true для карточек, созданных Ask AI/Summarize/Extract (Pro) — в
+    /// true для карточек, созданных Ask AI/Summarize/Extract — в
     /// отличие от aiHighlightedCardIDs в BoardViewModel (временная подсветка,
     /// гаснет по клику, не персистится), это постоянная, сохранённая метка:
     /// такая карточка навсегда помечена маленькой иконкой sparkle. См. CardView.
