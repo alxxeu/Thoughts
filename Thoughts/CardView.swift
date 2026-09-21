@@ -893,7 +893,7 @@ struct CardView: View {
         relockTask = nil
     }
 
-    // MARK: - AI actions (Pro, BYOK — см. Thoughts/AI)
+    // MARK: - AI actions (см. Thoughts/AI)
 
     /// Играется один раз при появлении карточки, созданной Ask AI/Summarize
     /// (см. aiHighlightedCardIDs) — стартует из точки под нотчем (там же,

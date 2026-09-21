@@ -106,7 +106,6 @@ private struct WindowAccessor: NSViewRepresentable {
 struct ContentView: View {
     var viewModel: BoardViewModel
     @Environment(\.colorScheme) private var colorScheme
-    @Environment(\.openSettings) private var openSettings
     @State private var creationStart: CGPoint?
     @State private var draftFrame: CGRect?
     @State private var placementPreview: CGRect?
@@ -135,7 +134,7 @@ struct ContentView: View {
     @State private var focusTransitionCardID: UUID?
     @State private var focusTransitionTask: Task<Void, Never>?
 
-    // AI для всего Space (Pro, BYOK) — Ask AI (+ Summarize внутри его
+    // AI для всего Space — Ask AI (+ Summarize внутри его
     // панели) под pill с названием. См. Thoughts/AI. Результат — новая
     // карточка на канве.
     @State private var isAskingSpaceAI = false
@@ -642,21 +641,20 @@ struct ContentView: View {
                         .onHover { setToolbarHover($0, "Ask AI") }
                         .overlay(alignment: .top) { toolbarTooltip("Ask AI") }
 
-                        // Tidy Cards — Pro-функция; на этой сборке кода нет
-                        // (BoardViewModel), кнопка — чистый тизер, ведёт в
-                        // Settings → Pro вместо тайдинга.
                         Button {
                             dismissToolbarTooltip()
-                            SettingsNavigator.shared.selectedTab = .pro
-                            openSettings()
+                            withAnimation(.spring(response: 0.4, dampingFraction: 0.8)) {
+                                viewModel.tidyCards(canvasSize: canvasSize, topInset: effectiveTopInset)
+                            }
                         } label: {
                             Image(systemName: "square.grid.2x2.fill")
                         }
                         .buttonStyle(.plain)
-                        .foregroundStyle(Color.white.opacity(hoveredToolbarLabel == "Tidy Cards \u{00B7} Pro" ? 1 : 0.85))
+                        .foregroundStyle(Color.white.opacity(hoveredToolbarLabel == "Tidy Cards" ? 1 : 0.85))
                         .font(.system(size: 15))
-                        .onHover { setToolbarHover($0, "Tidy Cards \u{00B7} Pro") }
-                        .overlay(alignment: .top) { toolbarTooltip("Tidy Cards \u{00B7} Pro") }
+                        .disabled(viewModel.cards.isEmpty)
+                        .onHover { setToolbarHover($0, "Tidy Cards") }
+                        .overlay(alignment: .top) { toolbarTooltip("Tidy Cards") }
 
                         Button {
                             dismissToolbarTooltip()

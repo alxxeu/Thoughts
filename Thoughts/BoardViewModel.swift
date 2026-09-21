@@ -30,7 +30,7 @@ final class BoardViewModel {
     private var unlockedProtectedSlots: Set<Int> = []
     private var idleLockTasks: [Int: Task<Void, Never>] = [:]
 
-    /// Карточки, созданные Ask AI/Summarize (Pro), которые ещё не были
+    /// Карточки, созданные Ask AI/Summarize, которые ещё не были
     /// "активированы" явным кликом — см. CardView. Runtime-only, как
     /// unlockedProtectedSlots выше: не персистится и не переживает
     /// перезапуск приложения, но это ОК — постоянная подсветка нужна
@@ -201,6 +201,230 @@ final class BoardViewModel {
 
     func deleteCard(_ card: Card) {
         cards.removeAll { $0.id == card.id }
+        saveImmediately()
+    }
+
+    /// Tidy Cards — детерминированная построчная упаковка ("shelf
+    /// packing"), без какого-либо AI: геометрия с наложениями — плохая
+    /// задача для языковой модели, а сетка карточек и так уже квантована
+    /// шагом cardSizeStep/cardGap, так что тут просто раскладка по рядам.
+    /// Порядок — по текущей позиции (сверху-вниз, слева-направо), а не по
+    /// порядку создания, чтобы не перемешивать то, что уже осмысленно
+    /// разложено по строкам.
+    private enum TidyQuadrant { case topLeft, topRight, bottomLeft, bottomRight }
+
+    private struct ShelfLayout {
+        var positions: [UUID: CGPoint]
+        var boundingSize: CGSize
+    }
+
+    /// Чистый расчёт построчной упаковки ("shelf packing") — без мутации
+    /// карточек, только позиции + итоговая занимаемая площадь. Начинает
+    /// от anchor и разрастается вдоль строки в сторону growRight/строк
+    /// вниз в сторону growDown — так один и тот же алгоритм обслуживает
+    /// все 4 угла: для "исходящих от центра" углов growRight/growDown =
+    /// false значит расти влево/вверх, а не вправо/вниз. Вынесено из
+    /// мутирующей версии, чтобы можно было прогнать несколько вариантов
+    /// maxRowExtent и выбрать самый компактный — см. bestShelfLayout.
+    private func computeShelfLayout(
+        _ cardsToPack: [Card],
+        anchor: CGPoint,
+        growRight: Bool,
+        growDown: Bool,
+        maxRowExtent: CGFloat,
+        gap: CGFloat
+    ) -> ShelfLayout {
+        var positions: [UUID: CGPoint] = [:]
+        var alongAxis: CGFloat = 0
+        var acrossAxis: CGFloat = 0
+        var rowExtent: CGFloat = 0
+        var maxAlongUsed: CGFloat = 0
+
+        for card in cardsToPack {
+            if alongAxis > 0, alongAxis + card.size.width > maxRowExtent {
+                acrossAxis += rowExtent + gap
+                alongAxis = 0
+                rowExtent = 0
+            }
+
+            let x = growRight ? anchor.x + alongAxis : anchor.x - alongAxis - card.size.width
+            let y = growDown ? anchor.y + acrossAxis : anchor.y - acrossAxis - card.size.height
+            positions[card.id] = CGPoint(x: x, y: y)
+
+            alongAxis += card.size.width + gap
+            rowExtent = max(rowExtent, card.size.height)
+            maxAlongUsed = max(maxAlongUsed, alongAxis - gap)
+        }
+
+        // "along" — всегда горизонтальная протяжённость (по ширине
+        // карточек в ряду), "across" — всегда вертикальная (по высоте
+        // рядов), независимо от направления growRight/growDown: они
+        // только меняют знак смещения, не то, какая ось за что отвечает.
+        return ShelfLayout(positions: positions, boundingSize: CGSize(width: maxAlongUsed, height: acrossAxis + rowExtent))
+    }
+
+    /// Подбирает ширину ряда, дающую минимальную занимаемую площадь для
+    /// данного (уже упорядоченного) набора карточек — не полноценный 2D
+    /// bin packing, а перебор кандидатов: кумулятивная ширина после
+    /// каждой карточки. Между двумя соседними кандидатами поведение
+    /// переноса строк не меняется, так что это полный набор различимых
+    /// вариантов для этого порядка карточек, а не выборка наугад. Именно
+    /// это заменяет прежний единственный фиксированный maxRowExtent
+    /// (обычно ~половина ширины канвы), из-за которого крупные карточки
+    /// успевали растянуть один ряд в широкую полосу до первого переноса.
+    /// maxColumnExtent — высотный бюджет угла (симметричный maxRowExtent
+    /// по вертикали). Без него минимизация площади математически
+    /// предпочитает узкую высокую колонку квадратному блоку (для
+    /// одинаковых по размеру карточек колонка занимает МЕНЬШУЮ площадь,
+    /// чем сетка — меньше "потерь" по периметру), а такая колонка ничем
+    /// не ограничена по высоте и может вырасти за пределы своей половины
+    /// канвы, наложившись на карточки соседнего угла.
+    private func bestShelfLayout(
+        _ cardsToPack: [Card],
+        anchor: CGPoint,
+        growRight: Bool,
+        growDown: Bool,
+        maxRowExtent: CGFloat,
+        maxColumnExtent: CGFloat,
+        gap: CGFloat
+    ) -> ShelfLayout {
+        guard !cardsToPack.isEmpty else {
+            return ShelfLayout(positions: [:], boundingSize: .zero)
+        }
+
+        var cumulative: CGFloat = 0
+        var candidates: Set<CGFloat> = [maxRowExtent]
+        for card in cardsToPack {
+            cumulative += card.size.width + gap
+            candidates.insert(min(cumulative - gap, maxRowExtent))
+        }
+
+        var best: ShelfLayout?
+        for width in candidates {
+            let layout = computeShelfLayout(cardsToPack, anchor: anchor, growRight: growRight, growDown: growDown, maxRowExtent: width, gap: gap)
+            // Кандидат учитывается, только если физически помещается в
+            // свою половину канвы по ОБЕИМ осям — иначе "самый компактный
+            // по площади" вариант может быть слишком высоким.
+            guard layout.boundingSize.height <= maxColumnExtent else { continue }
+            let area = layout.boundingSize.width * layout.boundingSize.height
+            if best == nil || area < best!.boundingSize.width * best!.boundingSize.height {
+                best = layout
+            }
+        }
+        // Ни один кандидат не уложился по высоте (крайний случай — очень
+        // много крупных карточек в одном углу) — фолбэк на прежнее
+        // поведение "во всю ширину", не хуже, чем было раньше.
+        return best ?? computeShelfLayout(cardsToPack, anchor: anchor, growRight: growRight, growDown: growDown, maxRowExtent: maxRowExtent, gap: gap)
+    }
+
+    /// Tidy Cards — детерминированная раскладка, без какого-либо AI
+    /// (геометрия с наложениями — плохая задача для языковой модели, а
+    /// сетка карточек и так уже квантована шагом cardSizeStep/cardGap).
+    /// Карточки делятся на 4 группы по тому, в какой четверти канвы
+    /// сейчас находится их центр (относительно центра канвы), и каждая
+    /// группа стягивается к СВОЕМУ углу — а не все карточки в один общий
+    /// поток от верхнего левого угла, из-за чего при широком окне всё
+    /// раньше укладывалось в один длинный верхний ряд.
+    func tidyCards(canvasSize: CGSize, topInset: CGFloat = topCreationLimit) {
+        guard !cards.isEmpty else { return }
+
+        let pad = Self.canvasSidePadding
+        let gap = Self.cardGap
+        let centerX = canvasSize.width / 2
+        let centerY = (topInset + canvasSize.height) / 2
+        let halfWidth = max(Self.minCardSize, centerX - pad)
+        let halfHeight = max(Self.minCardSize, (canvasSize.height - topInset) / 2 - pad)
+
+        func quadrant(forCenter point: CGPoint) -> TidyQuadrant {
+            switch (point.x < centerX, point.y < centerY) {
+            case (true, true): return .topLeft
+            case (false, true): return .topRight
+            case (true, false): return .bottomLeft
+            case (false, false): return .bottomRight
+            }
+        }
+
+        func center(of card: Card) -> CGPoint {
+            CGPoint(x: card.position.x + card.size.width / 2, y: card.position.y + card.size.height / 2)
+        }
+
+        // Шаг 1: у каждой карточки по умолчанию "родной" угол — тот же,
+        // что и раньше, по её текущему положению относительно центра.
+        var assignedQuadrant: [UUID: TidyQuadrant] = [:]
+        for card in cards {
+            assignedQuadrant[card.id] = quadrant(forCenter: center(of: card))
+        }
+
+        // Шаг 2: карточки с ОДИНАКОВЫМ тегом (если их 2+) ВСЕГДА стягиваются
+        // в один угол — тот, где их и так сейчас больше всего (реальное
+        // "скопление" тега). При ничьей по количеству явного скопления нет,
+        // но угол всё равно нужен один — берём угол, в который попадает
+        // центроид (средняя точка) всех карточек этого тега, а не оставляем
+        // их разбросанными по своим родным углам.
+        let taggedGroups = Dictionary(grouping: cards.filter { $0.tagColor != nil }) { $0.tagColor! }
+        for (_, groupCards) in taggedGroups where groupCards.count > 1 {
+            var counts: [TidyQuadrant: Int] = [:]
+            for card in groupCards {
+                counts[assignedQuadrant[card.id]!, default: 0] += 1
+            }
+            let maxCount = counts.values.max() ?? 0
+            let winners = counts.filter { $0.value == maxCount }.map(\.key)
+
+            let dominant: TidyQuadrant
+            if winners.count == 1, let onlyWinner = winners.first {
+                dominant = onlyWinner
+            } else {
+                let centers = groupCards.map(center(of:))
+                let avgCenter = CGPoint(
+                    x: centers.map(\.x).reduce(0, +) / CGFloat(centers.count),
+                    y: centers.map(\.y).reduce(0, +) / CGFloat(centers.count)
+                )
+                dominant = quadrant(forCenter: avgCenter)
+            }
+
+            for card in groupCards {
+                assignedQuadrant[card.id] = dominant
+            }
+        }
+
+        // Внутри угла — сначала группируем по тегу (чтобы одинаковые
+        // оказались физически рядом), внутри тега — обычный reading order.
+        // Внутри тега — по убыванию площади: крупные карточки заполняют
+        // угол первыми (то есть ближе к самому углу), а не вперемешку по
+        // случайному исходному положению — так масштаб карточек сам
+        // формирует что-то вроде masonry-раскладки, а не однородный ряд.
+        func tidyOrder(_ a: Card, _ b: Card) -> Bool {
+            let aTag = a.tagColor?.rawValue ?? ""
+            let bTag = b.tagColor?.rawValue ?? ""
+            if aTag != bTag { return aTag < bTag }
+            return (a.size.width * a.size.height) > (b.size.width * b.size.height)
+        }
+
+        var groups: [TidyQuadrant: [Card]] = [:]
+        for card in cards {
+            groups[assignedQuadrant[card.id]!, default: []].append(card)
+        }
+
+        let corners: [(quadrant: TidyQuadrant, anchor: CGPoint, growRight: Bool, growDown: Bool)] = [
+            (.topLeft, CGPoint(x: pad, y: topInset), true, true),
+            (.topRight, CGPoint(x: canvasSize.width - pad, y: topInset), false, true),
+            (.bottomLeft, CGPoint(x: pad, y: canvasSize.height - pad), true, false),
+            (.bottomRight, CGPoint(x: canvasSize.width - pad, y: canvasSize.height - pad), false, false)
+        ]
+
+        for corner in corners {
+            let sorted = (groups[corner.quadrant] ?? []).sorted(by: tidyOrder)
+            let layout = bestShelfLayout(
+                sorted, anchor: corner.anchor, growRight: corner.growRight, growDown: corner.growDown,
+                maxRowExtent: halfWidth, maxColumnExtent: halfHeight, gap: gap
+            )
+            for card in sorted {
+                if let position = layout.positions[card.id] {
+                    card.position = position
+                }
+            }
+        }
+
         saveImmediately()
     }
 
