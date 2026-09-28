@@ -1,14 +1,27 @@
 import SwiftUI
 import AppKit
 
-/// Простой многострочный ввод для панели Ask AI — не через SwiftUI
+/// Простой многострочный ввод для панели Ask AI (и Quick Capture, см.
+/// QuickCapturePanel.swift) — не через SwiftUI
 /// TextEditor (у него нет способа перехватить именно Return/Shift+Return
 /// по отдельности), а через свой NSTextView, как уже сделано для карточек
 /// в CardTextView.swift.
 private final class AIPromptNSTextView: NSTextView {
     var onSend: (() -> Void)?
+    /// nil — по настройке Settings → AI.
+    var sendKeyBinding: AISendKeyBinding?
+    /// nil — обычное поведение NSTextView (Escape уходит в complete:).
+    var onEscape: (() -> Void)?
 
     override func keyDown(with event: NSEvent) {
+        // Escape ловим здесь, а не в cancelOperation: в non-activating
+        // панели Quick Capture (приложение при этом неактивно) NSTextView
+        // уводит Escape в complete: и до cancelOperation дело не доходит.
+        if event.keyCode == 53, let onEscape, !hasMarkedText() {
+            onEscape()
+            return
+        }
+
         let returnKeyCodes: Set<UInt16> = [36, 76] // Return, numpad Enter
         // hasMarkedText() — не перехватываем Return во время набора через
         // IME (подтверждение варианта в композиции для китайского/японского
@@ -19,7 +32,7 @@ private final class AIPromptNSTextView: NSTextView {
         }
 
         let isShiftHeld = event.modifierFlags.contains(.shift)
-        let sendsOnShift = AISettings.shared.sendKeyBinding == .shiftReturnSends
+        let sendsOnShift = (sendKeyBinding ?? AISettings.shared.sendKeyBinding) == .shiftReturnSends
         if isShiftHeld == sendsOnShift {
             onSend?()
         } else {
@@ -35,6 +48,11 @@ struct AIPromptTextView: NSViewRepresentable {
     /// закрытие панели по клику вовне решается отдельно через .clearTextSelection.
     var shouldFocus: Bool
     var onSend: () -> Void
+    var font: NSFont = .systemFont(ofSize: 13)
+    var textColor: NSColor = NSColor.white.withAlphaComponent(0.85)
+    /// nil — по настройке Settings → AI (панели Ask AI).
+    var sendKeyBinding: AISendKeyBinding? = nil
+    var onEscape: (() -> Void)? = nil
 
     func makeNSView(context: Context) -> NSScrollView {
         let scrollView = NSScrollView()
@@ -48,9 +66,9 @@ struct AIPromptTextView: NSViewRepresentable {
         textView.drawsBackground = false
         textView.backgroundColor = .clear
         textView.isRichText = false
-        textView.font = .systemFont(ofSize: 13)
-        textView.textColor = NSColor.white.withAlphaComponent(0.85)
-        textView.insertionPointColor = NSColor.white.withAlphaComponent(0.85)
+        textView.font = font
+        textView.textColor = textColor
+        textView.insertionPointColor = textColor
         textView.textContainerInset = NSSize(width: 6, height: 6)
         textView.isVerticallyResizable = true
         textView.isHorizontallyResizable = false
@@ -58,6 +76,8 @@ struct AIPromptTextView: NSViewRepresentable {
         textView.textContainer?.widthTracksTextView = true
         textView.string = text
         textView.onSend = onSend
+        textView.sendKeyBinding = sendKeyBinding
+        textView.onEscape = onEscape
 
         scrollView.documentView = textView
         return scrollView
@@ -69,6 +89,13 @@ struct AIPromptTextView: NSViewRepresentable {
             textView.string = text
         }
         textView.onSend = onSend
+        textView.sendKeyBinding = sendKeyBinding
+        textView.onEscape = onEscape
+        if textView.font != font { textView.font = font }
+        if textView.textColor != textColor {
+            textView.textColor = textColor
+            textView.insertionPointColor = textColor
+        }
 
         if shouldFocus {
             // Панель появляется через transition/withAnimation — в этот
@@ -120,3 +147,4 @@ struct AIPromptTextView: NSViewRepresentable {
         }
     }
 }
+

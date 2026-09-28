@@ -68,6 +68,13 @@ struct ThoughtsApp: App {
             // второе окно просто накладывалось бы поверх первого без
             // какого-либо смысла. .replacing убирает его полностью.
             CommandGroup(replacing: .newItem) {
+                // Без собственного keyEquivalent: глобальный хоткей Quick
+                // Capture (настраивается в Settings → Shortcuts) срабатывает
+                // и когда Thoughts активен, второй шорткат в меню задвоил бы его.
+                Button("Quick Capture…") {
+                    QuickCaptureController.shared.show()
+                }
+                Divider()
                 Button("Clear Space…") {
                     NotificationCenter.default.post(name: .requestClearSpace, object: nil)
                 }
@@ -169,6 +176,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     /// их обработал.
     func applicationDidFinishLaunching(_ notification: Notification) {
         NSApp.windows.first?.acceptsMouseMovedEvents = true
+        if let viewModel {
+            QuickCaptureController.shared.start(viewModel: viewModel)
+        }
         interactionMonitor = NSEvent.addLocalMonitorForEvents(
             matching: [
                 .leftMouseDown, .rightMouseDown, .otherMouseDown,

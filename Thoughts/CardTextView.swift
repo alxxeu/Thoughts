@@ -12,9 +12,12 @@ import AppKit
 /// `layoutManager` в момент самой отрисовки, каждый раз заново.
 final class DividerAttachment: NSTextAttachment {
     /// Высота строки, которую резервирует под себя разделитель в тексте —
-    /// заметно больше обычной строки (15pt шрифт + 4pt lineSpacing ≈ 22pt),
-    /// чтобы всегда был чёткий зазор до соседних строк сверху и снизу.
-    static let rowHeight: CGFloat = 30
+    /// заметно больше обычной строки (15pt шрифт + 4pt lineSpacing ≈ 22pt
+    /// → 30pt), чтобы всегда был чёткий зазор до соседних строк сверху и
+    /// снизу. Растёт вместе с размером текста (Settings → Appearance).
+    static var rowHeight: CGFloat {
+        max(30, (AppearanceSettings.shared.cardTypography.font.pointSize * 2).rounded())
+    }
 
     override func attachmentBounds(
         for textContainer: NSTextContainer?,
@@ -49,10 +52,11 @@ private final class CardNSTextView: NSTextView {
     /// Непустой только когда карточка в Focus Mode — см. cancelOperation ниже.
     var onEscape: (() -> Void)?
 
-    // Фикс. белый, а не адаптивный labelColor — фон карточки (CardSurfaceStyle)
-    // больше не переключается в светлый в Light Mode, так что текст/линии
-    // поверх него тоже должны оставаться светлыми в обеих темах.
-    static let dividerLineColor = NSColor.white.withAlphaComponent(0.22)
+    // Производный от цвета текста (Settings → Appearance), а не
+    // адаптивный labelColor — фон карточки (CardSurfaceStyle) не
+    // переключается в светлый в Light Mode, так что линии поверх него
+    // должны следовать за текстом, а не за темой.
+    var dividerLineColor = CardTypography.legacyTextColor.withAlphaComponent(0.22)
 
     // Требование 4: вставка всегда plain text в стиле карточки.
     // Работает только с диапазоном вставки — существующие NSTextAttachment
@@ -106,7 +110,7 @@ private final class CardNSTextView: NSTextView {
             path.move(to: NSPoint(x: origin.x, y: y))
             path.line(to: NSPoint(x: origin.x + textContainer.size.width, y: y))
             path.lineWidth = 1
-            Self.dividerLineColor.setStroke()
+            dividerLineColor.setStroke()
             path.stroke()
         }
     }
@@ -321,6 +325,10 @@ struct CardTextView: NSViewRepresentable {
     var onAIAction: (AITextAction, String) -> Void
     /// Escape внутри текста. nil — обычное поведение NSTextView.
     var onEscape: (() -> Void)?
+    /// Шрифт/цвет из Settings → Appearance. Параметр, а не чтение
+    /// AppearanceSettings внутри: смена стиля должна приводить к
+    /// updateNSView, а это происходит только при изменении входных данных.
+    var typography: CardTypography
 
     private static let dividerPlaceholder: Character = "\u{FFFC}"
     /// Единственный источник горизонтального инсета текста — раньше
@@ -368,10 +376,14 @@ struct CardTextView: NSViewRepresentable {
         textView.autoresizingMask = [.width]
         textView.minSize = NSSize(width: 0, height: 0)
         textView.maxSize = NSSize(width: CGFloat.greatestFiniteMagnitude, height: CGFloat.greatestFiniteMagnitude)
-        textView.textColor = NSColor.white.withAlphaComponent(0.88)
-        textView.typingAttributes = Self.baseAttributes()
+        Self.applyChrome(typography, to: textView)
 
-        textView.textStorage?.setAttributedString(Self.restoredAttributedString(text: text, formattingData: formattingData))
+        let restored = NSMutableAttributedString(
+            attributedString: Self.restoredAttributedString(text: text, formattingData: formattingData, typography: typography)
+        )
+        Self.restyle(restored, with: typography, previous: nil)
+        textView.textStorage?.setAttributedString(restored)
+        context.coordinator.lastTypography = typography
 
         scrollView.documentView = textView
         return scrollView
@@ -382,13 +394,13 @@ struct CardTextView: NSViewRepresentable {
     /// сохранённого форматирования, оно повреждено, или text был заменён
     /// снаружи — например, AI-действием — без обновления formattingData)
     /// откатывается к обычной plain-реконструкции, как было всегда.
-    fileprivate static func restoredAttributedString(text: String, formattingData: Data?) -> NSAttributedString {
+    fileprivate static func restoredAttributedString(text: String, formattingData: Data?, typography: CardTypography) -> NSAttributedString {
         if let data = formattingData,
            let restored = try? NSKeyedUnarchiver.unarchivedObject(ofClass: NSAttributedString.self, from: data),
            restored.string == text {
             return restored
         }
-        return buildAttributedString(from: text)
+        return buildAttributedString(from: text, typography: typography)
     }
 
     func updateNSView(_ nsView: NSScrollView, context: Context) {
@@ -398,6 +410,22 @@ struct CardTextView: NSViewRepresentable {
         // coordinator.parent (SwiftUI его не освежает) — иначе при входе в
         // Focus Mode текст остался бы со старым, пустым обработчиком.
         textView.onEscape = onEscape
+
+        // Стиль поменяли в Settings, пока карточка открыта — перекрашиваем
+        // уже набранный текст на месте. text не меняется, так что
+        // textDidChange не нужен: formattingData перезапишется при
+        // следующей правке, а до тех пор restyle в makeNSView всё равно
+        // применяет актуальный стиль.
+        if context.coordinator.lastTypography != typography, let storage = textView.textStorage {
+            let selectedRanges = textView.selectedRanges
+            storage.beginEditing()
+            Self.restyle(storage, with: typography, previous: context.coordinator.lastTypography)
+            storage.endEditing()
+            textView.selectedRanges = selectedRanges
+            Self.applyChrome(typography, to: textView)
+            textView.needsDisplay = true
+            context.coordinator.lastTypography = typography
+        }
 
         let innerWidth = max(cardSize.width - Self.horizontalTextInset * 2, 10)
         if let container = textView.textContainer,
@@ -414,7 +442,7 @@ struct CardTextView: NSViewRepresentable {
         // (textDidChange -> $text = ... -> updateNSView -> setAttributedString -> ...).
         if textView.string != text {
             let selectedRanges = textView.selectedRanges
-            let attributed = Self.buildAttributedString(from: text)
+            let attributed = Self.buildAttributedString(from: text, typography: typography)
             textView.textStorage?.setAttributedString(attributed)
             textView.selectedRanges = selectedRanges
         }
@@ -446,14 +474,104 @@ struct CardTextView: NSViewRepresentable {
 
     // MARK: - Attributed string helpers
 
-    fileprivate static func baseAttributes() -> [NSAttributedString.Key: Any] {
+    fileprivate static func baseAttributes(
+        _ typography: CardTypography = AppearanceSettings.shared.cardTypography
+    ) -> [NSAttributedString.Key: Any] {
         let paragraph = NSMutableParagraphStyle()
         paragraph.lineSpacing = 4
         return [
-            .font: NSFont.systemFont(ofSize: 15),
-            .foregroundColor: NSColor.white.withAlphaComponent(0.88),
+            .font: typography.font,
+            .foregroundColor: typography.color,
             .paragraphStyle: paragraph
         ]
+    }
+
+    /// Всё, что зависит от стиля помимо самого текста: цвет по умолчанию,
+    /// каретка, атрибуты набора и линия разделителя.
+    private static func applyChrome(_ typography: CardTypography, to textView: CardNSTextView) {
+        textView.textColor = typography.color
+        textView.insertionPointColor = typography.color
+        textView.typingAttributes = baseAttributes(typography)
+        textView.dividerLineColor = typography.color.withAlphaComponent(0.22)
+    }
+
+    /// Базовый размер текста (Settings → Appearance → Text Size), при
+    /// котором был заархивирован formattingData — без него при следующем
+    /// открытии нельзя отличить "текст базового размера" от фрагмента,
+    /// увеличенного через Format → Bigger. Живёт только в архиве: restyle
+    /// снимает его сразу после восстановления.
+    fileprivate static let baseFontSizeKey = NSAttributedString.Key("thoughts.baseFontSize")
+
+    /// Переводит текст на шрифт/цвет/размер из typography, сохраняя то, что
+    /// пользователь сделал сам: bold/italic (TextFormattingCommands, ⌘B/⌘I)
+    /// переносятся на новое семейство, фрагменты, увеличенные или
+    /// уменьшенные через Format → Bigger/Smaller, масштабируются
+    /// пропорционально новому базовому размеру, а цвет заменяется только у
+    /// "базовых" фрагментов (см. isBaseColor) — цвет, выставленный через
+    /// Show Colors, остаётся.
+    fileprivate static func restyle(_ storage: NSMutableAttributedString, with typography: CardTypography, previous: CardTypography?) {
+        let fullRange = NSRange(location: 0, length: storage.length)
+        guard fullRange.length > 0 else { return }
+        let manager = NSFontManager.shared
+        let newBaseSize = typography.font.pointSize
+        // Прежний базовый размер: при смене на лету — из предыдущего стиля,
+        // при восстановлении — отметка из архива, у старых архивов — 15pt.
+        let oldBaseSize = previous?.font.pointSize
+            ?? (storage.attribute(baseFontSizeKey, at: 0, effectiveRange: nil) as? NSNumber).map { CGFloat($0.doubleValue) }
+            ?? CardTypography.legacyBaseFontSize
+
+        storage.enumerateAttribute(.font, in: fullRange) { value, range, _ in
+            var font = typography.font
+            if let old = value as? NSFont {
+                let scaledSize = old.pointSize * newBaseSize / max(oldBaseSize, 1)
+                if abs(scaledSize - newBaseSize) > 0.01 {
+                    font = NSFont(descriptor: font.fontDescriptor, size: scaledSize) ?? font
+                }
+                let traits = manager.traits(of: old)
+                if traits.contains(.boldFontMask) {
+                    font = manager.convert(font, toHaveTrait: .boldFontMask)
+                }
+                if traits.contains(.italicFontMask) {
+                    font = manager.convert(font, toHaveTrait: .italicFontMask)
+                }
+            }
+            storage.addAttribute(.font, value: font, range: range)
+        }
+
+        storage.enumerateAttribute(.foregroundColor, in: fullRange) { value, range, _ in
+            guard isBaseColor(value as? NSColor, previous: previous) else { return }
+            storage.addAttribute(.foregroundColor, value: typography.color, range: range)
+        }
+        storage.removeAttribute(baseFontSizeKey, range: fullRange)
+    }
+
+    /// "Базовый" цвет — тот, что пришёл из стиля карточки, а не выбран
+    /// пользователем для конкретного фрагмента: отсутствующий (так
+    /// архивирует archivedFormatting), исходный белый до появления
+    /// кастомизации или цвет предыдущего стиля при смене на лету.
+    private static func isBaseColor(_ color: NSColor?, previous: CardTypography?) -> Bool {
+        guard let color else { return true }
+        if color.isApproximatelyEqual(to: CardTypography.legacyTextColor) { return true }
+        if let previous, color.isApproximatelyEqual(to: previous.color) { return true }
+        return false
+    }
+
+    /// Архив для Card.formattingData без базового цвета — иначе после
+    /// смены цвета в Settings старые карточки при следующем запуске не
+    /// отличили бы "цвет темы на момент правки" от цвета, выбранного
+    /// пользователем для фрагмента. По той же причине в архив кладётся
+    /// базовый размер текста (baseFontSizeKey).
+    fileprivate static func archivedFormatting(of attributed: NSAttributedString, typography: CardTypography) -> Data? {
+        let copy = NSMutableAttributedString(attributedString: attributed)
+        let fullRange = NSRange(location: 0, length: copy.length)
+        copy.enumerateAttribute(.foregroundColor, in: fullRange) { value, range, _ in
+            guard isBaseColor(value as? NSColor, previous: typography) else { return }
+            copy.removeAttribute(.foregroundColor, range: range)
+        }
+        if fullRange.length > 0 {
+            copy.addAttribute(baseFontSizeKey, value: NSNumber(value: Double(typography.font.pointSize)), range: fullRange)
+        }
+        return try? NSKeyedArchiver.archivedData(withRootObject: copy, requiringSecureCoding: true)
     }
 
     /// U+FFFC в исходной String — это ровно то место, куда NSTextView сам
@@ -461,9 +579,9 @@ struct CardTextView: NSViewRepresentable {
     /// Поскольку в карточке используется только один тип attachment (разделитель),
     /// каждое такое вхождение детерминированно восстанавливается обратно
     /// без необходимости хранить AttributedString отдельно.
-    fileprivate static func buildAttributedString(from text: String) -> NSAttributedString {
+    fileprivate static func buildAttributedString(from text: String, typography: CardTypography) -> NSAttributedString {
         let result = NSMutableAttributedString()
-        let base = baseAttributes()
+        let base = baseAttributes(typography)
 
         for character in text {
             if character == dividerPlaceholder {
@@ -492,6 +610,8 @@ struct CardTextView: NSViewRepresentable {
     final class Coordinator: NSObject, NSTextViewDelegate {
         var parent: CardTextView
         var didRequestFocus = false
+        /// Стиль, которым сейчас нарисован текст — см. updateNSView.
+        var lastTypography: CardTypography?
 
         init(_ parent: CardTextView) {
             self.parent = parent
@@ -650,9 +770,9 @@ struct CardTextView: NSViewRepresentable {
             replaceDashPrefixWithBulletIfNeeded(in: textView)
 
             parent.text = textView.string
-            parent.formattingData = try? NSKeyedArchiver.archivedData(
-                withRootObject: textView.attributedString(),
-                requiringSecureCoding: true
+            parent.formattingData = CardTextView.archivedFormatting(
+                of: textView.attributedString(),
+                typography: lastTypography ?? AppearanceSettings.shared.cardTypography
             )
             parent.onTextChange()
         }
@@ -669,7 +789,7 @@ struct CardTextView: NSViewRepresentable {
         }
 
         // Гарантирует, что вновь введённый текст остаётся в базовом стиле
-        // карточки (15pt, line spacing 4), даже если курсор стоит сразу
+        // карточки (шрифт/размер из Settings, line spacing 4), даже если курсор стоит сразу
         // после разделителя-attachment.
         private func applyTypingAttributes(to textView: NSTextView) {
             textView.typingAttributes = CardTextView.baseAttributes()

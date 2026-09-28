@@ -127,7 +127,8 @@ struct CardView: View {
                         }
                     },
                     onAIAction: handleAIAction,
-                    onEscape: isInFocusMode ? onRequestExitFocus : nil
+                    onEscape: isInFocusMode ? onRequestExitFocus : nil,
+                    typography: viewModel.appearanceSettings.cardTypography
                 )
                 .opacity(isFocusTransitioning ? 0 : 1)
                 // Асимметрично и намеренно: прячем мгновенно (иначе текст

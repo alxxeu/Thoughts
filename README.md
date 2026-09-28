@@ -15,7 +15,15 @@ open canvas, exactly where they make sense to you.
 - **Space Lock** — protect an entire Space with a passcode and Touch ID
 - **Multiple Spaces** — separate boards for different parts of your life, switch instantly with ⌥1–9
 - **Spotlight integration** — search your cards' text from anywhere on your Mac
+- **Quick Capture** — a global shortcut (⌃⌥⌘N by default, customizable) opens a floating panel over any app; type, press Return, and the card lands in your active Space
+- **Customization** — pick the card font and text color, and add a subtle background pattern to the canvas
 - **Liquid Glass** on macOS 26, with a graceful fallback look on macOS 14–25
+
+## Plugins
+
+Community plugins — fonts, colors, canvas patterns, themes, AI actions and
+card templates — are being designed. See the draft spec in
+[docs/plugins.md](docs/plugins.md); feedback is welcome.
 
 ## Privacy
 

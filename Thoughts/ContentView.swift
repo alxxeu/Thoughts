@@ -176,6 +176,9 @@ struct ContentView: View {
     @State private var thoughtsWindow: NSWindow?
     @State private var chromeReapplyObservers: [NSObjectProtocol] = []
     @State private var isDesktopOverlayActivationPendingFullScreenExit = false
+    /// Только хоткеи Desktop Overlay — снимаются при его выключении, не
+    /// трогая глобальный хоткей Quick Capture (см. GlobalHotKeyManager).
+    @State private var overlayHotKeyTokens: [HotKeyToken] = []
 
     var body: some View {
         Group {
@@ -376,6 +379,15 @@ struct ContentView: View {
     private var unlockedSpaceContent: some View {
         GeometryReader { proxy in
             ZStack(alignment: .topLeading) {
+                // Паттерн фона — здесь, а не в фоне окна (ThoughtsApp):
+                // так он сам исчезает под Space Lock и в Desktop mode, где
+                // unlockedSpaceContent не рендерится вовсе.
+                CanvasPatternView(
+                    pattern: viewModel.appearanceSettings.canvasPattern,
+                    opacity: viewModel.appearanceSettings.patternOpacity
+                )
+                .frame(width: proxy.size.width, height: proxy.size.height)
+
                 Color.clear
                     .contentShape(Rectangle())
                     .gesture(canvasDragGesture(in: proxy.size))
@@ -555,6 +567,7 @@ struct ContentView: View {
             .onChange(of: proxy.size) { _, newValue in
                 isWindowResizing = true
                 canvasSize = newValue
+                viewModel.lastCanvasSize = newValue
 
                 resizeDebounceTask?.cancel()
                 resizeDebounceTask = Task {
@@ -565,6 +578,7 @@ struct ContentView: View {
             }
             .onAppear {
                 canvasSize = proxy.size
+                viewModel.lastCanvasSize = proxy.size
             }
         }
         .background(Color.clear)
@@ -1061,7 +1075,7 @@ struct ContentView: View {
             registerDesktopOverlayHotKeys()
         } else {
             isDesktopOverlayActivationPendingFullScreenExit = false
-            GlobalHotKeyManager.shared.unregisterAll()
+            unregisterDesktopOverlayHotKeys()
             window.level = .normal
             window.collectionBehavior = []
             window.hasShadow = true
@@ -1085,24 +1099,35 @@ struct ContentView: View {
     /// Modifiers, который для той же клавиши на русской раскладке вернул бы
     /// не "1"–"9"/"d").
     private func registerDesktopOverlayHotKeys() {
-        GlobalHotKeyManager.shared.unregisterAll()
+        unregisterDesktopOverlayHotKeys()
         let optionMask = UInt32(optionKey)
+        var tokens: [HotKeyToken] = []
 
-        GlobalHotKeyManager.shared.register(keyCode: 2 /* kVK_ANSI_D */, modifiers: optionMask) {
+        if case .success(let token) = GlobalHotKeyManager.shared.register(keyCode: 2 /* kVK_ANSI_D */, modifiers: optionMask, action: {
             // Иначе зажатое ⌥D (авто-повтор клавиши) непрерывно шлёт один
             // и тот же вход в Desktop mode заново.
             guard !viewModel.desktopOverlay.isDesktopModeActive else { return }
             viewModel.desktopOverlay.isDesktopModeActive = true
+        }) {
+            tokens.append(token)
         }
 
         let digitKeyCodes: [UInt32] = [18, 19, 20, 21, 23, 22, 26, 28, 25] // kVK_ANSI_1...9
         for (index, keyCode) in digitKeyCodes.enumerated() {
             let slot = index + 1
-            GlobalHotKeyManager.shared.register(keyCode: keyCode, modifiers: optionMask) {
+            if case .success(let token) = GlobalHotKeyManager.shared.register(keyCode: keyCode, modifiers: optionMask, action: {
                 viewModel.desktopOverlay.isDesktopModeActive = false
                 NotificationCenter.default.post(name: .switchWorkspace, object: slot)
+            }) {
+                tokens.append(token)
             }
         }
+        overlayHotKeyTokens = tokens
+    }
+
+    private func unregisterDesktopOverlayHotKeys() {
+        GlobalHotKeyManager.shared.unregister(overlayHotKeyTokens)
+        overlayHotKeyTokens = []
     }
 
     private func canvasDragGesture(in canvasSize: CGSize) -> some Gesture {
