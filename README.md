@@ -16,7 +16,9 @@ open canvas, exactly where they make sense to you.
 - **Multiple Spaces** — separate boards for different parts of your life, switch instantly with ⌥1–9
 - **Spotlight integration** — search your cards' text from anywhere on your Mac
 - **Quick Capture** — a global shortcut (⌃⌥⌘N by default, customizable) opens a floating panel over any app; type, press Return, and the card lands in your active Space
-- **Customization** — pick the card font and text color, and add a subtle background pattern to the canvas
+- **Customization** — pick the card font, text size and color, and add a subtle background pattern to the canvas
+- **iCloud sync** — optional, end-to-end encrypted sync of your Spaces and cards between your Macs
+- **Backup & export** — full backups (optionally password-protected) and a readable Markdown export
 - **Liquid Glass** on macOS 26, with a graceful fallback look on macOS 14–25
 
 ## Plugins
@@ -28,9 +30,10 @@ card templates — are being designed. See the draft spec in
 ## Privacy
 
 All data is stored locally in the app's own sandboxed container on your
-Mac. Thoughts makes no network requests with your card content — there
-is no account, no server, and no cloud sync. The source code in this
-repository is published so anyone can verify that for themselves.
+Mac. There is no account and no server: the developer never receives your
+content. Optional iCloud sync stores your Spaces and cards in *your own*
+iCloud account, end-to-end encrypted. The source code in this repository
+is published so anyone can verify that for themselves.
 
 ## Requirements
 
