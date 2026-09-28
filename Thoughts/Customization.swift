@@ -93,16 +93,14 @@ struct TextColorOption: Identifiable, Hashable {
     static let defaultID = "builtin.default"
     private static let customPrefix = "custom:"
 
-    /// Только светлые тона — фон карточки тёмный в обеих темах (см.
-    /// CardSurfaceStyle), тёмный текст на нём был бы нечитаем.
+    /// Базовый набор: белый по умолчанию, янтарный и два тёмных. Тёмные
+    /// на тёмной поверхности карточки (см. CardSurfaceStyle) читаются
+    /// хуже — выбор за пользователем, остальное через ColorPicker.
     static let builtIn: [TextColorOption] = [
-        TextColorOption(id: defaultID, title: "Default", color: CardTypography.legacyTextColor),
-        preset("builtin.warm", "Warm", 0xF3E3C3),
+        TextColorOption(id: defaultID, title: "White", color: CardTypography.legacyTextColor),
         preset("builtin.amber", "Amber", 0xF7D58A),
-        preset("builtin.rose", "Rose", 0xF5C6D0),
-        preset("builtin.lavender", "Lavender", 0xD6CCF5),
-        preset("builtin.sky", "Sky", 0xBCD9F5),
-        preset("builtin.mint", "Mint", 0xBFEBD6)
+        preset("builtin.darkBlue", "Dark Blue", 0x1E3A8A),
+        preset("builtin.black", "Black", 0x000000)
     ]
 
     private static func preset(_ id: String, _ title: String, _ rgb: Int) -> TextColorOption {

@@ -155,8 +155,9 @@ Per extension point:
   PDF) and `tileSize`. Patterns are always drawn in the adaptive `.primary`
   color at the user's chosen intensity, so a pattern image works as a mask:
   only its alpha channel is used.
-- **textColors.hex**: `#RRGGBB`. Cards always have a dark surface, so colors
-  whose contrast against it is below WCAG AA (4.5:1) are rejected on install.
+- **textColors.hex**: `#RRGGBB`. Cards always have a dark surface, so
+  Settings shows a low-contrast hint for colors below WCAG AA (4.5:1)
+  against it. Dark colors are allowed; the built-in set has some too.
 - **aiActions.result**: `replace` rewrites the card, `append` adds below it, and
   `newCard` puts the answer on a new card. The `prompt` becomes the system
   prompt, and the app appends its standard output rules (no preamble, plain
