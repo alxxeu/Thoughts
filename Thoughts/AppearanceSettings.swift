@@ -25,6 +25,7 @@ final class AppearanceSettings {
     private static let colorSchemeKey = "appearance.colorScheme"
     private static let cardFontKey = "appearance.cardFont"
     private static let textColorKey = "appearance.textColor"
+    private static let textSizeKey = "appearance.textSize"
     private static let canvasPatternKey = "appearance.canvasPattern"
     private static let patternOpacityKey = "appearance.patternOpacity"
 
@@ -39,6 +40,13 @@ final class AppearanceSettings {
     var cardFontID: String {
         didSet {
             UserDefaults.standard.set(cardFontID, forKey: Self.cardFontKey)
+            updateTypography()
+        }
+    }
+
+    var textSize: CardTextSize {
+        didSet {
+            UserDefaults.standard.set(textSize.rawValue, forKey: Self.textSizeKey)
             updateTypography()
         }
     }
@@ -80,27 +88,29 @@ final class AppearanceSettings {
         }
         let fontID = defaults.string(forKey: Self.cardFontKey) ?? CardFontOption.defaultID
         let colorID = defaults.string(forKey: Self.textColorKey) ?? TextColorOption.defaultID
+        let size = defaults.string(forKey: Self.textSizeKey).flatMap(CardTextSize.init(rawValue:)) ?? .defaultValue
         cardFontID = fontID
         textColorID = colorID
+        textSize = size
         canvasPatternID = defaults.string(forKey: Self.canvasPatternKey) ?? CanvasPattern.defaultID
         if defaults.object(forKey: Self.patternOpacityKey) != nil {
             patternOpacity = defaults.double(forKey: Self.patternOpacityKey)
         } else {
             patternOpacity = 0.12
         }
-        cardTypography = Self.makeTypography(fontID: fontID, colorID: colorID)
+        cardTypography = Self.makeTypography(fontID: fontID, colorID: colorID, size: size)
     }
 
     private func updateTypography() {
-        let typography = Self.makeTypography(fontID: cardFontID, colorID: textColorID)
+        let typography = Self.makeTypography(fontID: cardFontID, colorID: textColorID, size: textSize)
         if typography != cardTypography {
             cardTypography = typography
         }
     }
 
-    private static func makeTypography(fontID: String, colorID: String) -> CardTypography {
+    private static func makeTypography(fontID: String, colorID: String, size: CardTextSize) -> CardTypography {
         CardTypography(
-            font: CardFontOption.resolve(fontID).font(),
+            font: CardFontOption.resolve(fontID).font(size: size.pointSize),
             color: TextColorOption.resolve(colorID).color
         )
     }

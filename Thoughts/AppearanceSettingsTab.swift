@@ -47,6 +47,16 @@ struct AppearanceSettingsTab: View {
                     }
                 }
 
+                Picker("Text Size", selection: Binding(
+                    get: { settings.textSize },
+                    set: { settings.textSize = $0 }
+                )) {
+                    ForEach(CardTextSize.allCases) { size in
+                        Text(size.title).tag(size)
+                    }
+                }
+                .pickerStyle(.segmented)
+
                 LabeledContent("Text Color") {
                     HStack(spacing: 8) {
                         ForEach(TextColorOption.builtIn) { option in
@@ -115,7 +125,7 @@ struct AppearanceSettingsTab: View {
             .frame(width: 240, alignment: .topLeading)
             .background(CardSurfaceBackground())
         }
-        .frame(height: 150)
+        .frame(height: 170)
         .clipped()
     }
 

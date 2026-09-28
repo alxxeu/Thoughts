@@ -14,7 +14,10 @@ struct CardTypography: Equatable {
     let font: NSFont
     let color: NSColor
 
-    static let baseFontSize: CGFloat = 15
+    /// Размер до появления настройки размера текста — им набраны все
+    /// старые formattingData без отметки базового размера (см.
+    /// CardTextView.baseFontSizeKey).
+    static let legacyBaseFontSize: CGFloat = 15
 
     /// Цвет текста до появления кастомизации — им же заархивированы все
     /// старые formattingData, поэтому он всегда считается "базовым" (см.
@@ -36,7 +39,7 @@ struct CardFontOption: Identifiable, Hashable {
     let title: String
     let source: CardFontSource
 
-    func font(size: CGFloat = CardTypography.baseFontSize) -> NSFont {
+    func font(size: CGFloat) -> NSFont {
         switch source {
         case .system(let design):
             let base = NSFont.systemFont(ofSize: size)
@@ -80,6 +83,37 @@ struct CardFontOption: Identifiable, Hashable {
             }
         }
         return builtIn[0]
+    }
+}
+
+// MARK: - Размер текста
+
+/// Базовый размер текста карточек. Относительные размеры внутри карточки
+/// (Format → Bigger/Smaller) масштабируются вместе с ним — см.
+/// CardTextView.restyle.
+enum CardTextSize: String, CaseIterable, Identifiable {
+    case small, medium, large, extraLarge
+
+    static let defaultValue: CardTextSize = .medium
+
+    var id: String { rawValue }
+
+    var pointSize: CGFloat {
+        switch self {
+        case .small: return 13
+        case .medium: return CardTypography.legacyBaseFontSize
+        case .large: return 18
+        case .extraLarge: return 22
+        }
+    }
+
+    var title: String {
+        switch self {
+        case .small: return "Small"
+        case .medium: return "Medium"
+        case .large: return "Large"
+        case .extraLarge: return "Extra Large"
+        }
     }
 }
 
