@@ -54,6 +54,10 @@ final class BoardViewModel {
 
     private let store = BoardStore.shared
     private var saveTask: Task<Void, Never>?
+    /// См. BoardChangeTracker. Не наблюдается: это служебное состояние, не UI.
+    @ObservationIgnored private var changeTracker: BoardChangeTracker!
+    /// Изменения после каждого сохранения — сюда подписывается синк с iCloud.
+    @ObservationIgnored var onLocalChanges: ((BoardChangeSet) -> Void)?
 
     static let cardSizeStep: CGFloat = 60
     /// Зазор между стыкующимися карточками — тот же, что использует
@@ -83,8 +87,29 @@ final class BoardViewModel {
     init() {
         let loaded = store.load()
         workspaces = loaded.workspaces
-        cardsByWorkspace = loaded.cardsByWorkspace
+        cardsByWorkspace = Self.normalizedZOrder(loaded.cardsByWorkspace)
+        changeTracker = BoardChangeTracker(workspaces: workspaces, cardsByWorkspace: cardsByWorkspace)
         reindexSpotlight()
+    }
+
+    /// Z-порядок держится на Card.raisedAt (см. комментарий там). У карточек,
+    /// сохранённых до его появления, raisedAt неизвестен — выдаём им
+    /// возрастающие "старые" значения по нынешнему порядку в массиве, чтобы
+    /// ничего визуально не переставилось, и сортируем.
+    static func normalizedZOrder(_ cardsByWorkspace: [Int: [Card]]) -> [Int: [Card]] {
+        cardsByWorkspace.mapValues { cards in
+            for (index, card) in cards.enumerated() where card.raisedAt == Card.unknownDate {
+                card.raisedAt = Card.unknownDate.addingTimeInterval(Double(index + 1))
+            }
+            return sortedByZOrder(cards)
+        }
+    }
+
+    static func sortedByZOrder(_ cards: [Card]) -> [Card] {
+        // enumerated — стабильная сортировка при равных raisedAt.
+        cards.enumerated()
+            .sorted { ($0.element.raisedAt, $0.offset) < ($1.element.raisedAt, $1.offset) }
+            .map(\.element)
     }
 
     static func snap(_ value: CGFloat) -> CGFloat {
@@ -493,16 +518,14 @@ final class BoardViewModel {
         // на каждый тик клика/драга не должны гонять лишнюю мутацию массива
         // с broadcast на весь ForEach, если z-порядок и так не меняется.
         guard let index = cards.firstIndex(where: { $0.id == card.id }), index != cards.count - 1 else { return }
+        card.raisedAt = Date()
         var current = cards
         current.append(current.remove(at: index))
         cards = current
     }
 
     func saveImmediately() {
-        saveTask?.cancel()
-        saveTask = nil
-        store.save(workspaces: workspaces, cardsByWorkspace: cardsByWorkspace)
-        reindexSpotlight()
+        persist(reindex: true)
     }
 
     /// Для чистого перемещения/ресайза карточки (drag-end/resize-end) —
@@ -510,9 +533,7 @@ final class BoardViewModel {
     /// не может стать неактуальным и полную переиндексацию всех Spaces
     /// запускать не нужно.
     func saveGeometry() {
-        saveTask?.cancel()
-        saveTask = nil
-        store.save(workspaces: workspaces, cardsByWorkspace: cardsByWorkspace)
+        persist(reindex: false)
     }
 
     func scheduleDebouncedSave() {
@@ -520,8 +541,31 @@ final class BoardViewModel {
         saveTask = Task { [weak self] in
             try? await Task.sleep(nanoseconds: 450_000_000)
             guard !Task.isCancelled, let self else { return }
-            self.store.save(workspaces: self.workspaces, cardsByWorkspace: self.cardsByWorkspace)
-            self.reindexSpotlight()
+            self.persist(reindex: true)
+        }
+    }
+
+    /// Единственная точка записи доски на диск. Перед записью трекер
+    /// проставляет *ModifiedAt изменившимся карточкам/Spaces, после —
+    /// изменения уходят подписчику (синку с iCloud).
+    private func persist(reindex: Bool) {
+        saveTask?.cancel()
+        saveTask = nil
+
+        var stampedWorkspaces = workspaces
+        let changes = changeTracker.stamp(workspaces: &stampedWorkspaces, cardsByWorkspace: cardsByWorkspace)
+        // Присваиваем, только если Space реально изменился: иначе каждое
+        // сохранение дёргало бы всех наблюдателей workspaces (меню Spaces).
+        if !changes.savedWorkspaces.isEmpty {
+            workspaces = stampedWorkspaces
+        }
+
+        store.save(workspaces: workspaces, cardsByWorkspace: cardsByWorkspace)
+        if reindex {
+            reindexSpotlight()
+        }
+        if !changes.isEmpty {
+            onLocalChanges?(changes)
         }
     }
 

@@ -9,12 +9,16 @@ struct Workspace: Identifiable, Codable, Equatable {
     /// сессии" — оно хранится отдельно в BoardViewModel и никогда не
     /// сохраняется на диск.
     var isProtected: Bool
+    /// Последнее изменение имени/защиты — для слияния с другими Mac и
+    /// бэкапом (см. BoardMerger). Ставит BoardChangeTracker при сохранении.
+    var modifiedAt: Date
 
-    init(id: UUID = .init(), slot: Int, name: String, isProtected: Bool = false) {
+    init(id: UUID = .init(), slot: Int, name: String, isProtected: Bool = false, modifiedAt: Date = Card.unknownDate) {
         self.id = id
         self.slot = slot
         self.name = name
         self.isProtected = isProtected
+        self.modifiedAt = modifiedAt
     }
 
     /// Единственный источник фоллбек-имени "Space N" — до этого было
@@ -24,7 +28,7 @@ struct Workspace: Identifiable, Codable, Equatable {
     }
 
     enum CodingKeys: String, CodingKey {
-        case id, slot, name, isProtected
+        case id, slot, name, isProtected, modifiedAt
     }
 
     init(from decoder: Decoder) throws {
@@ -36,6 +40,7 @@ struct Workspace: Identifiable, Codable, Equatable {
         // поля вообще, и без явного fallback декодирование всей структуры
         // упало бы, стерев все существующие Spaces и карточки.
         isProtected = try container.decodeIfPresent(Bool.self, forKey: .isProtected) ?? false
+        modifiedAt = try container.decodeIfPresent(Date.self, forKey: .modifiedAt) ?? Card.unknownDate
     }
 
     func encode(to encoder: Encoder) throws {
@@ -44,5 +49,6 @@ struct Workspace: Identifiable, Codable, Equatable {
         try container.encode(slot, forKey: .slot)
         try container.encode(name, forKey: .name)
         try container.encode(isProtected, forKey: .isProtected)
+        try container.encode(modifiedAt, forKey: .modifiedAt)
     }
 }
