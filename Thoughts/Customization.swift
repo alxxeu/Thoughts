@@ -107,7 +107,18 @@ enum CardTextSize: String, CaseIterable, Identifiable {
         }
     }
 
+    /// Короткая подпись для сегментов в Settings.
     var title: String {
+        switch self {
+        case .small: return "S"
+        case .medium: return "M"
+        case .large: return "L"
+        case .extraLarge: return "XL"
+        }
+    }
+
+    /// Полное название — для VoiceOver и подсказки при наведении.
+    var accessibilityName: String {
         switch self {
         case .small: return "Small"
         case .medium: return "Medium"

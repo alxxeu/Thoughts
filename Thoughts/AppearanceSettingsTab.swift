@@ -52,7 +52,10 @@ struct AppearanceSettingsTab: View {
                     set: { settings.textSize = $0 }
                 )) {
                     ForEach(CardTextSize.allCases) { size in
-                        Text(size.title).tag(size)
+                        Text(size.title)
+                            .accessibilityLabel(size.accessibilityName)
+                            .help(size.accessibilityName)
+                            .tag(size)
                     }
                 }
                 .pickerStyle(.segmented)
