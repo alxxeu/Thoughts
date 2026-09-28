@@ -85,6 +85,13 @@ final class AISettings {
         }
     }
 
+    /// Перечитать наличие ключей — после того как синк с iCloud принёс
+    /// ключи с другого Mac (см. KeychainSync).
+    func refreshKeyState() {
+        hasOpenAIKey = AIKeyStore.hasKey(for: .openAI)
+        hasAnthropicKey = AIKeyStore.hasKey(for: .anthropic)
+    }
+
     func apiKey(for provider: AIProviderKind) -> String? {
         AIKeyStore.key(for: provider)
     }

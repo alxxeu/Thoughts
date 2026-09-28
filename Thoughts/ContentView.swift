@@ -307,6 +307,11 @@ struct ContentView: View {
                 isDesktopModeActive: viewModel.desktopOverlay.isDesktopModeActive
             )
         }
+        // Синк с iCloud откладывает удалённые правки текста этой карточки,
+        // пока в ней курсор (см. BoardViewModel.editingCardID).
+        .onChange(of: textFocusedCardID) { _, id in
+            viewModel.editingCardID = id
+        }
         .onChange(of: viewModel.desktopOverlay.isEnabled) { _, isEnabled in
             applyDesktopOverlayWindowState(isEnabled: isEnabled, isDesktopModeActive: viewModel.desktopOverlay.isDesktopModeActive)
         }

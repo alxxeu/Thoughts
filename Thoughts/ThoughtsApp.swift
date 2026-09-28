@@ -191,6 +191,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         NSApp.windows.first?.acceptsMouseMovedEvents = true
         if let viewModel {
             QuickCaptureController.shared.start(viewModel: viewModel)
+            CloudSyncEngine.shared.start(viewModel: viewModel)
         }
         interactionMonitor = NSEvent.addLocalMonitorForEvents(
             matching: [

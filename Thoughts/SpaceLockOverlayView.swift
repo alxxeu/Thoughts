@@ -8,6 +8,7 @@ import SwiftUI
 /// Space заблокирован, разблокировать можно только кодом или Touch ID.
 struct SpaceLockOverlayView: View {
     var viewModel: BoardViewModel
+    @State private var isShowingNewPasscode = false
 
     var body: some View {
         ZStack {
@@ -26,7 +27,15 @@ struct SpaceLockOverlayView: View {
                     .foregroundStyle(.white.opacity(0.85))
                     .shadow(color: .black.opacity(0.5), radius: 4)
 
-                passcodeEntry
+                // Раз в пару секунд — passcode может доехать через iCloud
+                // Keychain, пока экран открыт (см. waitingForPasscode).
+                TimelineView(.periodic(from: .now, by: 3)) { _ in
+                    if PasscodeStore.hasPasscode {
+                        passcodeEntry
+                    } else {
+                        waitingForPasscode
+                    }
+                }
 
                 if viewModel.securitySettings.isTouchIDEnabled {
                     touchIDButton
@@ -34,6 +43,36 @@ struct SpaceLockOverlayView: View {
             }
         }
         .contentShape(Rectangle())
+        .sheet(isPresented: $isShowingNewPasscode) {
+            PasscodeSetupView(isPresented: $isShowingNewPasscode) { didSetPasscode in
+                if didSetPasscode {
+                    viewModel.securitySettings.isPasscodeEnabled = true
+                }
+            }
+        }
+    }
+
+    // MARK: - Passcode not on this Mac yet
+
+    /// Fail-closed: защищённый Space пришёл через iCloud раньше своего
+    /// passcode (или iCloud Keychain выключен). Space остаётся закрытым;
+    /// задать новый код можно только подтвердив, что это владелец Mac.
+    private var waitingForPasscode: some View {
+        VStack(spacing: 10) {
+            Text("Waiting for your Space Lock passcode from iCloud Keychain\u{2026}")
+                .font(.system(size: 12))
+                .foregroundStyle(.white.opacity(0.7))
+                .multilineTextAlignment(.center)
+            Button("Set New Passcode\u{2026}") {
+                viewModel.authenticateWithTouchID(reason: "set a new Space Lock passcode") { success in
+                    if success { isShowingNewPasscode = true }
+                }
+            }
+            .buttonStyle(.plain)
+            .font(.system(size: 12, weight: .semibold))
+            .foregroundStyle(.white.opacity(0.85))
+        }
+        .frame(maxWidth: 280)
     }
 
     // MARK: - Passcode

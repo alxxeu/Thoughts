@@ -8,8 +8,14 @@ import Security
 enum AIKeyStore {
     private static let service = "com.alxeu.Thoughts.aikeys"
 
+    /// При включённом синке с iCloud ключи ещё и в iCloud Keychain (см.
+    /// SyncableKeychainItem) — заданный на одном Mac ключ работает на всех.
+    static func item(for provider: AIProviderKind) -> SyncableKeychainItem {
+        SyncableKeychainItem(service: service, account: provider.rawValue)
+    }
+
     static func key(for provider: AIProviderKind) -> String? {
-        read(account: provider.rawValue)
+        item(for: provider).read()
     }
 
     static func hasKey(for provider: AIProviderKind) -> Bool {
@@ -21,39 +27,11 @@ enum AIKeyStore {
     @discardableResult
     static func setKey(_ value: String, for provider: AIProviderKind) -> Bool {
         guard !value.isEmpty else { return remove(for: provider) }
-
-        let query = baseQuery(account: provider.rawValue)
-        SecItemDelete(query as CFDictionary)
-
-        var newItem = query
-        newItem[kSecValueData as String] = Data(value.utf8)
-        newItem[kSecAttrAccessible as String] = kSecAttrAccessibleAfterFirstUnlockThisDeviceOnly
-        let status = SecItemAdd(newItem as CFDictionary, nil)
-        return status == errSecSuccess
+        return item(for: provider).write(value)
     }
 
     @discardableResult
     static func remove(for provider: AIProviderKind) -> Bool {
-        let status = SecItemDelete(baseQuery(account: provider.rawValue) as CFDictionary)
-        return status == errSecSuccess || status == errSecItemNotFound
-    }
-
-    private static func baseQuery(account: String) -> [String: Any] {
-        [
-            kSecClass as String: kSecClassGenericPassword,
-            kSecAttrService as String: service,
-            kSecAttrAccount as String: account
-        ]
-    }
-
-    private static func read(account: String) -> String? {
-        var query = baseQuery(account: account)
-        query[kSecReturnData as String] = true
-        query[kSecMatchLimit as String] = kSecMatchLimitOne
-
-        var item: CFTypeRef?
-        let status = SecItemCopyMatching(query as CFDictionary, &item)
-        guard status == errSecSuccess, let data = item as? Data else { return nil }
-        return String(data: data, encoding: .utf8)
+        item(for: provider).remove()
     }
 }

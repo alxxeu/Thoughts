@@ -18,7 +18,7 @@ enum BackupCoordinator {
     static func exportBackup(viewModel: BoardViewModel) {
         guard !viewModel.isActiveSpaceLocked else { return }
         let snapshot = viewModel.makeSnapshot()
-        let locked = snapshot.lockedSummary(passcodeEnabled: viewModel.securitySettings.isPasscodeEnabled)
+        let locked = snapshot.lockedSummary(passcodeEnabled: viewModel.isSpaceLockEnforced)
 
         guard !locked.isEmpty else {
             // Без заблокированного — пароль по желанию, галочкой в окне сохранения.
@@ -125,7 +125,8 @@ enum BackupCoordinator {
 
         // Fail-closed: защищённые Spaces без passcode на этом Mac открылись
         // бы кому угодно — сначала пусть будет задан код.
-        if snapshot.hasProtectedSpacesWithCards && !viewModel.securitySettings.isPasscodeEnabled {
+        if snapshot.hasProtectedSpacesWithCards,
+           !viewModel.securitySettings.isPasscodeEnabled || !PasscodeStore.hasPasscode {
             let alert = NSAlert()
             alert.alertStyle = .warning
             alert.messageText = "Set up Space Lock first"
@@ -200,7 +201,7 @@ enum BackupCoordinator {
     static func exportMarkdown(viewModel: BoardViewModel) {
         guard !viewModel.isActiveSpaceLocked else { return }
         let snapshot = viewModel.makeSnapshot()
-        let passcodeEnabled = viewModel.securitySettings.isPasscodeEnabled
+        let passcodeEnabled = viewModel.isSpaceLockEnforced
         let locked = snapshot.lockedSummary(passcodeEnabled: passcodeEnabled)
 
         guard !locked.isEmpty else {

@@ -384,6 +384,7 @@ struct CardTextView: NSViewRepresentable {
         Self.restyle(restored, with: typography, previous: nil)
         textView.textStorage?.setAttributedString(restored)
         context.coordinator.lastTypography = typography
+        context.coordinator.knownFormattingData = formattingData
 
         scrollView.documentView = textView
         return scrollView
@@ -440,11 +441,26 @@ struct CardTextView: NSViewRepresentable {
         // Требование 6: обновляем содержимое NSTextView только если оно
         // реально разошлось с привязкой — иначе получаем бесконечный цикл
         // (textDidChange -> $text = ... -> updateNSView -> setAttributedString -> ...).
-        if textView.string != text {
+        //
+        // Текст или форматирование поменялись снаружи (AI-действие, импорт
+        // бэкапа, правка с другого Mac через iCloud) — восстанавливаем
+        // вместе с форматированием, если архив подходит к новому тексту.
+        // knownFormattingData отличает внешнюю смену форматирования от
+        // собственной правки, уже отражённой в textView.
+        if textView.string != text || formattingData != context.coordinator.knownFormattingData {
             let selectedRanges = textView.selectedRanges
-            let attributed = Self.buildAttributedString(from: text, typography: typography)
+            let attributed = NSMutableAttributedString(
+                attributedString: Self.restoredAttributedString(text: text, formattingData: formattingData, typography: typography)
+            )
+            Self.restyle(attributed, with: typography, previous: nil)
             textView.textStorage?.setAttributedString(attributed)
-            textView.selectedRanges = selectedRanges
+            let length = (textView.string as NSString).length
+            textView.selectedRanges = selectedRanges.map { value in
+                let range = value.rangeValue
+                let location = min(range.location, length)
+                return NSValue(range: NSRange(location: location, length: min(range.length, length - location)))
+            }
+            context.coordinator.knownFormattingData = formattingData
         }
 
         // Синхронный переход фокуса, срабатывающий только один раз на реальное
@@ -612,6 +628,8 @@ struct CardTextView: NSViewRepresentable {
         var didRequestFocus = false
         /// Стиль, которым сейчас нарисован текст — см. updateNSView.
         var lastTypography: CardTypography?
+        /// formattingData, которое уже отражено в textView — см. updateNSView.
+        var knownFormattingData: Data?
 
         init(_ parent: CardTextView) {
             self.parent = parent
@@ -770,10 +788,12 @@ struct CardTextView: NSViewRepresentable {
             replaceDashPrefixWithBulletIfNeeded(in: textView)
 
             parent.text = textView.string
-            parent.formattingData = CardTextView.archivedFormatting(
+            let archived = CardTextView.archivedFormatting(
                 of: textView.attributedString(),
                 typography: lastTypography ?? AppearanceSettings.shared.cardTypography
             )
+            knownFormattingData = archived
+            parent.formattingData = archived
             parent.onTextChange()
         }
 

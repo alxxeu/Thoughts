@@ -38,9 +38,17 @@ final class BoardViewModel {
     var aiHighlightedCardIDs: Set<UUID> = []
 
     var isActiveSpaceLocked: Bool {
-        securitySettings.isPasscodeEnabled
+        isSpaceLockEnforced
             && (activeWorkspace?.isProtected ?? false)
             && !unlockedProtectedSlots.contains(activeSlot)
+    }
+
+    /// Работает ли Space Lock на этом Mac. С синком iCloud — всегда: защищённый
+    /// Space мог прийти с другого Mac раньше, чем его passcode доехал через
+    /// iCloud Keychain (или на этом Mac passcode вообще не включали), и он
+    /// не должен открыться ни на мгновение без проверки (fail-closed).
+    var isSpaceLockEnforced: Bool {
+        securitySettings.isPasscodeEnabled || CloudSyncSettings.shared.isEnabled
     }
 
     var cards: [Card] {
@@ -594,6 +602,128 @@ final class BoardViewModel {
             return updated
         }
         cardsByWorkspace = newCards.mapValues { Self.sortedByZOrder($0) }
+    }
+
+    // MARK: - Remote changes (iCloud)
+
+    /// Карточка, в которой сейчас текстовый курсор (выставляет ContentView).
+    /// Удалённая правка её текста откладывается до ухода фокуса — иначе
+    /// текст менялся бы прямо под курсором.
+    var editingCardID: UUID? {
+        didSet {
+            guard let previous = oldValue, previous != editingCardID,
+                  let deferred = deferredRemoteContent.removeValue(forKey: previous) else { return }
+            applyRemote(cards: [deferred], deletedCardIDs: [], workspaces: [])
+        }
+    }
+    @ObservationIgnored private var deferredRemoteContent: [UUID: CardRecord] = [:]
+
+    /// Пусто ли на этом Mac — для первого включения синка: пустую доску
+    /// можно просто заполнить из iCloud, ничего не спрашивая.
+    var isBoardEmpty: Bool {
+        cardsByWorkspace.values.allSatisfy(\.isEmpty)
+            && workspaces.allSatisfy { $0.name == Workspace.defaultName(forSlot: $0.slot) && !$0.isProtected }
+    }
+
+    /// Правки, пришедшие из iCloud. Каждая карточка сливается с локальной
+    /// по группам полей (BoardMerger) — локальные несинхронизированные
+    /// правки не теряются. Результат сохраняется на диск, но не считается
+    /// локальным изменением (трекер принимает его как уже синхронизированный),
+    /// иначе он тут же ушёл бы обратно в iCloud.
+    func applyRemote(cards incoming: [CardRecord], deletedCardIDs: Set<UUID>, workspaces incomingWorkspaces: [WorkspaceRecord]) {
+        guard !incoming.isEmpty || !deletedCardIDs.isEmpty || !incomingWorkspaces.isEmpty else { return }
+        // Сначала — несохранённые локальные правки (отложенное сохранение
+        // текста): они должны получить свои *ModifiedAt и уйти в очередь
+        // до слияния, а не потеряться под удалённой версией.
+        flushPendingSave()
+
+        var located: [UUID: (card: Card, slot: Int)] = [:]
+        for (slot, cards) in cardsByWorkspace {
+            for card in cards { located[card.id] = (card, slot) }
+        }
+
+        var accepted: [(card: Card, slot: Int)] = []
+        var touchedSlots = Set<Int>()
+
+        for remote in incoming {
+            guard let (card, slot) = located[remote.id] else {
+                let card = remote.makeCard()
+                cardsByWorkspace[remote.workspaceSlot, default: []].append(card)
+                touchedSlots.insert(remote.workspaceSlot)
+                accepted.append((card, remote.workspaceSlot))
+                continue
+            }
+
+            let local = CardRecord(card, slot: slot)
+            var merged = BoardMerger.merge(local, remote)
+            if card.id == editingCardID,
+               merged.text != local.text || merged.formattingData != local.formattingData {
+                deferredRemoteContent[card.id] = remote
+                merged.text = local.text
+                merged.formattingData = local.formattingData
+                merged.contentModifiedAt = local.contentModifiedAt
+            }
+
+            if merged != local {
+                merged.apply(to: card)
+                if merged.workspaceSlot != slot {
+                    cardsByWorkspace[slot]?.removeAll { $0.id == card.id }
+                    cardsByWorkspace[merged.workspaceSlot, default: []].append(card)
+                    touchedSlots.insert(slot)
+                }
+                touchedSlots.insert(merged.workspaceSlot)
+            }
+            accepted.append((card, merged.workspaceSlot))
+        }
+
+        for id in deletedCardIDs {
+            guard let (_, slot) = located[id] else { continue }
+            cardsByWorkspace[slot]?.removeAll { $0.id == id }
+            aiHighlightedCardIDs.remove(id)
+            deferredRemoteContent[id] = nil
+        }
+
+        var acceptedWorkspaces: [Workspace] = []
+        if !incomingWorkspaces.isEmpty {
+            var updated = workspaces
+            for remote in incomingWorkspaces {
+                guard let index = updated.firstIndex(where: { $0.slot == remote.slot }) else { continue }
+                let merged = BoardMerger.merge(WorkspaceRecord(updated[index]), remote, keepProtection: false)
+                updated[index].name = merged.name
+                updated[index].isProtected = merged.isProtected
+                updated[index].modifiedAt = merged.modifiedAt
+                acceptedWorkspaces.append(updated[index])
+            }
+            if updated != workspaces {
+                workspaces = updated
+            }
+        }
+
+        for slot in touchedSlots {
+            cardsByWorkspace[slot] = Self.sortedByZOrder(cardsByWorkspace[slot] ?? [])
+        }
+
+        store.save(workspaces: workspaces, cardsByWorkspace: cardsByWorkspace)
+        reindexSpotlight()
+        changeTracker.accept(cards: accepted, deletedCards: deletedCardIDs, workspaces: acceptedWorkspaces)
+    }
+
+    /// "Use iCloud" при первом включении синка: доска становится ровно
+    /// такой, как в iCloud, и считается уже синхронизированной.
+    func replaceWithRemote(_ snapshot: BoardSnapshot) {
+        saveTask?.cancel()
+        saveTask = nil
+        deferredRemoteContent = [:]
+        replaceBoard(with: snapshot)
+        store.save(workspaces: workspaces, cardsByWorkspace: cardsByWorkspace)
+        reindexSpotlight()
+        changeTracker.rebaseline(workspaces: workspaces, cardsByWorkspace: cardsByWorkspace)
+    }
+
+    /// Досохраняет отложенное (debounced) сохранение прямо сейчас.
+    func flushPendingSave() {
+        guard saveTask != nil else { return }
+        persist(reindex: true)
     }
 
     /// Единственная точка записи доски на диск. Перед записью трекер
