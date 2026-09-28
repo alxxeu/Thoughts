@@ -75,6 +75,19 @@ struct ThoughtsApp: App {
                     QuickCaptureController.shared.show()
                 }
                 Divider()
+                Button("Export Backup…") {
+                    BackupCoordinator.exportBackup(viewModel: viewModel)
+                }
+                .disabled(viewModel.isActiveSpaceLocked)
+                Button("Import Backup…") {
+                    BackupCoordinator.importBackup(viewModel: viewModel)
+                }
+                .disabled(viewModel.isActiveSpaceLocked)
+                Button("Export as Markdown…") {
+                    BackupCoordinator.exportMarkdown(viewModel: viewModel)
+                }
+                .disabled(viewModel.isActiveSpaceLocked)
+                Divider()
                 Button("Clear Space…") {
                     NotificationCenter.default.post(name: .requestClearSpace, object: nil)
                 }

@@ -66,6 +66,22 @@ struct SettingsView: View {
                         }
 
                         Section {
+                            SettingsRowButton(title: "Export Backup\u{2026}") {
+                                BackupCoordinator.exportBackup(viewModel: viewModel)
+                            }
+                            SettingsRowButton(title: "Import Backup\u{2026}") {
+                                BackupCoordinator.importBackup(viewModel: viewModel)
+                            }
+                            SettingsRowButton(title: "Export as Markdown\u{2026}") {
+                                BackupCoordinator.exportMarkdown(viewModel: viewModel)
+                            }
+                        } header: {
+                            Text("Backup")
+                        } footer: {
+                            Text("A backup contains all your Spaces and cards and can be protected with a password. Markdown is a readable copy for other apps.")
+                        }
+
+                        Section {
                             SettingsRowButton(title: "Replay Onboarding") {
                                 NotificationCenter.default.post(name: .replayOnboarding, object: nil)
                             }

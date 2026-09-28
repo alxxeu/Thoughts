@@ -68,7 +68,7 @@ struct SpaceLockOverlayView: View {
     }
 
     private func triggerTouchID() {
-        viewModel.authenticateWithTouchID { success in
+        viewModel.authenticateWithTouchID(reason: "unlock this Space") { success in
             if success {
                 viewModel.unlockActiveSpace()
             }

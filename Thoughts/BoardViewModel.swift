@@ -545,6 +545,57 @@ final class BoardViewModel {
         }
     }
 
+    // MARK: - Snapshot (бэкап, импорт, синк)
+
+    func makeSnapshot() -> BoardSnapshot {
+        BoardSnapshot(
+            workspaces: workspaces.map { WorkspaceRecord($0) },
+            cards: cardsByWorkspace.flatMap { slot, cards in cards.map { CardRecord($0, slot: slot) } }
+        )
+    }
+
+    /// Импорт бэкапа: `replacing` — доска становится ровно такой, как в
+    /// бэкапе; иначе бэкап сливается с текущими данными (BoardMerger).
+    /// Перед вызовом нужна страховочная копия (AutomaticBackups) — это
+    /// делает BackupCoordinator.
+    func applyImported(_ snapshot: BoardSnapshot, replacing: Bool) {
+        let result = replacing ? snapshot : BoardMerger.merge(local: makeSnapshot(), incoming: snapshot)
+        replaceBoard(with: result)
+        saveImmediately()
+    }
+
+    /// Пересобирает доску из снимка. Карточки с уже существующими ID
+    /// обновляются на месте — их CardView не пересоздаются, открытый
+    /// редактор не теряет состояние.
+    private func replaceBoard(with snapshot: BoardSnapshot) {
+        let existingCards = Dictionary(
+            cardsByWorkspace.values.flatMap { $0 }.map { ($0.id, $0) },
+            uniquingKeysWith: { first, _ in first }
+        )
+        var newCards: [Int: [Card]] = [:]
+        for record in snapshot.cards {
+            let card: Card
+            if let existing = existingCards[record.id] {
+                record.apply(to: existing)
+                card = existing
+            } else {
+                card = record.makeCard()
+            }
+            newCards[record.workspaceSlot, default: []].append(card)
+        }
+
+        let recordsBySlot = Dictionary(snapshot.workspaces.map { ($0.slot, $0) }, uniquingKeysWith: { first, _ in first })
+        workspaces = workspaces.map { workspace in
+            guard let record = recordsBySlot[workspace.slot] else { return workspace }
+            var updated = workspace
+            updated.name = record.name
+            updated.isProtected = record.isProtected
+            updated.modifiedAt = record.modifiedAt
+            return updated
+        }
+        cardsByWorkspace = newCards.mapValues { Self.sortedByZOrder($0) }
+    }
+
     /// Единственная точка записи доски на диск. Перед записью трекер
     /// проставляет *ModifiedAt изменившимся карточкам/Spaces, после —
     /// изменения уходят подписчику (синку с iCloud).
@@ -611,13 +662,14 @@ final class BoardViewModel {
         }
     }
 
-    func authenticateWithTouchID(completion: @escaping (Bool) -> Void) {
+    /// - Parameter reason: дописывается системой к "Thoughts wants to …" в
+    ///   диалоге Touch ID/пароля Mac — поэтому с маленькой буквы и без точки.
+    func authenticateWithTouchID(reason: String = "unlock this card", completion: @escaping (Bool) -> Void) {
         let context = LAContext()
         var error: NSError?
         
         if context.canEvaluatePolicy(.deviceOwnerAuthenticationWithBiometrics, error: &error) ||
            context.canEvaluatePolicy(.deviceOwnerAuthentication, error: &error) {
-            let reason = "Разблокировать карточку"
             context.evaluatePolicy(.deviceOwnerAuthentication, localizedReason: reason) { success, _ in
                 DispatchQueue.main.async {
                     completion(success)
