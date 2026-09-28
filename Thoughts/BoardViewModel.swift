@@ -199,6 +199,58 @@ final class BoardViewModel {
         return card
     }
 
+    /// Последний известный размер канвы (обновляет ContentView) — нужен
+    /// Quick Capture, который добавляет карточку, пока само окно может быть
+    /// скрыто/свёрнуто. Не наблюдается: ни одна View от него не зависит.
+    @ObservationIgnored var lastCanvasSize: CGSize = .zero
+
+    static let quickCaptureCardSize = CGSize(width: snap(224), height: snap(164))
+
+    /// Карточка из панели Quick Capture — в первое свободное место
+    /// активного Space. Пишет и в заблокированный Space: панель только
+    /// добавляет, ничего из его содержимого не показывая.
+    @discardableResult
+    func addQuickCaptureCard(text: String) -> Card {
+        let size = Self.quickCaptureCardSize
+        let topInset = desktopOverlay.isEnabled ? Self.desktopOverlayTopInset : Self.topCreationLimit
+        let canvasSize = lastCanvasSize == .zero
+            ? (NSScreen.main?.visibleFrame.size ?? CGSize(width: 900, height: 600))
+            : lastCanvasSize
+        let origin = Self.firstFreeOrigin(size: size, among: cards, canvasSize: canvasSize, topInset: topInset)
+        let card = addCard(at: origin, size: size)
+        card.text = text
+        saveImmediately()
+        return card
+    }
+
+    /// Обходит канву рядами сверху-вниз, слева-направо с шагом
+    /// cardSizeStep и возвращает первое место, где карточка не касается
+    /// соседних ближе, чем на cardGap. Если места нет — каскадом от центра.
+    static func firstFreeOrigin(size: CGSize, among cards: [Card], canvasSize: CGSize, topInset: CGFloat) -> CGPoint {
+        let pad = canvasSidePadding
+        let occupied = cards.map { CGRect(origin: $0.position, size: $0.size).insetBy(dx: -cardGap, dy: -cardGap) }
+
+        var y = topInset
+        while y + size.height <= canvasSize.height - pad {
+            var x = pad
+            while x + size.width <= canvasSize.width - pad {
+                let candidate = CGRect(x: x, y: y, width: size.width, height: size.height)
+                if !occupied.contains(where: { $0.intersects(candidate) }) {
+                    return candidate.origin
+                }
+                x += cardSizeStep
+            }
+            y += cardSizeStep
+        }
+
+        let cascade = CGFloat(cards.count % 8) * 20
+        let centered = CGPoint(
+            x: (canvasSize.width - size.width) / 2 + cascade,
+            y: (canvasSize.height - size.height) / 2 + cascade
+        )
+        return clampedPosition(centered, size: size, canvasSize: canvasSize, topInset: topInset)
+    }
+
     func deleteCard(_ card: Card) {
         cards.removeAll { $0.id == card.id }
         saveImmediately()

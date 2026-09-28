@@ -1,11 +1,18 @@
 import Carbon.HIToolbox
 import AppKit
 
-/// Глобальные хоткеты для Desktop Overlay (⌥D, ⌥1–9) — должны срабатывать
-/// независимо от того, какое приложение сейчас активно: клик по иконке на
-/// столе в Desktop mode делает активным Finder, а не Thoughts, и обычные
-/// SwiftUI .keyboardShortcut/CommandMenu (шorткаты уровня меню приложения)
-/// в этот момент вообще не получают событие — оно достаётся Finder.
+/// Идентификатор зарегистрированного хоткея — по нему владелец снимает
+/// только свои хоткеи (см. unregister), не трогая чужие.
+typealias HotKeyToken = UInt32
+
+/// Глобальные хоткеты — должны срабатывать независимо от того, какое
+/// приложение сейчас активно. Сейчас у них два независимых владельца:
+/// Desktop Overlay (⌥D, ⌥1–9: клик по иконке на столе в Desktop mode делает
+/// активным Finder, а не Thoughts, и обычные SwiftUI .keyboardShortcut/
+/// CommandMenu в этот момент вообще не получают событие — оно достаётся
+/// Finder) и Quick Capture (см. QuickCapturePanel.swift). Поэтому каждый
+/// владелец снимает только свои токены — выключение Desktop Overlay не
+/// должно заодно отключать Quick Capture.
 ///
 /// Carbon RegisterEventHotKey, а не NSEvent.addGlobalMonitorForEvents:
 /// последний тоже сработал бы независимо от фокуса, но требует разрешение
@@ -17,42 +24,60 @@ import AppKit
 final class GlobalHotKeyManager {
     static let shared = GlobalHotKeyManager()
 
-    private var hotKeyRefs: [EventHotKeyRef] = []
+    enum RegistrationError: Error {
+        /// Комбинацию уже занял другой процесс (или этот же).
+        case alreadyInUse
+        case failed(OSStatus)
+    }
+
+    private var hotKeyRefs: [HotKeyToken: EventHotKeyRef] = [:]
     private var eventHandler: EventHandlerRef?
-    private var handlers: [UInt32: () -> Void] = [:]
-    private var nextID: UInt32 = 1
+    private var handlers: [HotKeyToken: () -> Void] = [:]
+    private var nextID: HotKeyToken = 1
 
     private static let signature: OSType = 0x54484F55 // "THOU"
 
     private init() {}
 
-    func register(keyCode: UInt32, modifiers: UInt32, action: @escaping () -> Void) {
+    /// Виртуальные keyCode — физические позиции клавиш на ANSI-клавиатуре,
+    /// не зависят от активной раскладки; modifiers — Carbon-маска
+    /// (optionKey, controlKey и т.п.).
+    @discardableResult
+    func register(keyCode: UInt32, modifiers: UInt32, action: @escaping () -> Void) -> Result<HotKeyToken, RegistrationError> {
         if eventHandler == nil {
             installEventHandler()
         }
 
         let id = nextID
         nextID += 1
-        handlers[id] = action
 
         let hotKeyID = EventHotKeyID(signature: Self.signature, id: id)
         var ref: EventHotKeyRef?
         let status = RegisterEventHotKey(keyCode, modifiers, hotKeyID, GetApplicationEventTarget(), 0, &ref)
-        if status == noErr, let ref {
-            hotKeyRefs.append(ref)
+        guard status == noErr, let ref else {
+            removeEventHandlerIfUnused()
+            return .failure(status == OSStatus(eventHotKeyExistsErr) ? .alreadyInUse : .failed(status))
         }
+
+        hotKeyRefs[id] = ref
+        handlers[id] = action
+        return .success(id)
     }
 
-    func unregisterAll() {
-        for ref in hotKeyRefs {
-            UnregisterEventHotKey(ref)
+    func unregister(_ tokens: [HotKeyToken]) {
+        for token in tokens {
+            if let ref = hotKeyRefs.removeValue(forKey: token) {
+                UnregisterEventHotKey(ref)
+            }
+            handlers.removeValue(forKey: token)
         }
-        hotKeyRefs.removeAll()
-        handlers.removeAll()
-        if let eventHandler {
-            RemoveEventHandler(eventHandler)
-        }
-        eventHandler = nil
+        removeEventHandlerIfUnused()
+    }
+
+    private func removeEventHandlerIfUnused() {
+        guard hotKeyRefs.isEmpty, let eventHandler else { return }
+        RemoveEventHandler(eventHandler)
+        self.eventHandler = nil
     }
 
     private func installEventHandler() {
