@@ -376,6 +376,15 @@ struct ContentView: View {
     private var unlockedSpaceContent: some View {
         GeometryReader { proxy in
             ZStack(alignment: .topLeading) {
+                // Паттерн фона — здесь, а не в фоне окна (ThoughtsApp):
+                // так он сам исчезает под Space Lock и в Desktop mode, где
+                // unlockedSpaceContent не рендерится вовсе.
+                CanvasPatternView(
+                    pattern: viewModel.appearanceSettings.canvasPattern,
+                    opacity: viewModel.appearanceSettings.patternOpacity
+                )
+                .frame(width: proxy.size.width, height: proxy.size.height)
+
                 Color.clear
                     .contentShape(Rectangle())
                     .gesture(canvasDragGesture(in: proxy.size))

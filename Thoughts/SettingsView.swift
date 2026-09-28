@@ -38,7 +38,7 @@ struct SettingsView: View {
                 // не существует, пока активный Space заблокирован — так же,
                 // как карточки не существуют под SpaceLockOverlayView.
                 lockedPlaceholder
-                    .frame(width: 460, height: 420)
+                    .frame(width: 460, height: 480)
             } else {
                 TabView {
                     Form {
@@ -78,25 +78,10 @@ struct SettingsView: View {
                         Label("General", systemImage: "gearshape")
                     }
 
-                    Form {
-                        Section {
-                            Picker("Theme", selection: Binding(
-                                get: { viewModel.appearanceSettings.colorScheme },
-                                set: { viewModel.appearanceSettings.colorScheme = $0 }
-                            )) {
-                                ForEach(AppColorScheme.allCases) { scheme in
-                                    Text(scheme.title).tag(scheme)
-                                }
-                            }
-                            .pickerStyle(.segmented)
-                        } footer: {
-                            Text("Auto follows your Mac's system appearance.")
+                    AppearanceSettingsTab(settings: viewModel.appearanceSettings)
+                        .tabItem {
+                            Label("Appearance", systemImage: "paintbrush")
                         }
-                    }
-                    .formStyle(.grouped)
-                    .tabItem {
-                        Label("Appearance", systemImage: "paintbrush")
-                    }
 
                     SecuritySettingsTab(viewModel: viewModel)
                         .tabItem {
@@ -145,7 +130,7 @@ struct SettingsView: View {
                         Label("About", systemImage: "info.circle")
                     }
                 }
-                .frame(width: 460, height: 420)
+                .frame(width: 460, height: 480)
             }
         }
     }
