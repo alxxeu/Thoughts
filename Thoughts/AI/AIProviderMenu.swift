@@ -38,8 +38,15 @@ struct AIProviderMenu: View {
                 SettingsNavigation.shared.open(.ai)
             }
         } label: {
-            Text(Self.shortName(for: settings.selectedProvider))
-                .font(.system(size: 11, weight: .medium))
+            // Своя стрелка, а не системный menuIndicator: тот не слушает
+            // foregroundStyle и в светлой теме становился чёрным на тёмной
+            // панели. .button + .plain рисуют подпись как есть, целиком.
+            HStack(spacing: 4) {
+                Text(Self.shortName(for: settings.selectedProvider))
+                    .font(.system(size: 11, weight: .medium))
+                Image(systemName: "chevron.down")
+                    .font(.system(size: 8, weight: .bold))
+            }
             .foregroundStyle(style == .onDark ? AnyShapeStyle(Color.white.opacity(0.7)) : AnyShapeStyle(.secondary))
             .padding(.horizontal, 8)
             .padding(.vertical, 4)
@@ -48,8 +55,9 @@ struct AIProviderMenu: View {
             )
             .contentShape(Capsule())
         }
-        .menuStyle(.borderlessButton)
-        .menuIndicator(.visible)
+        .menuStyle(.button)
+        .buttonStyle(.plain)
+        .menuIndicator(.hidden)
         .fixedSize()
         .help("AI provider")
     }

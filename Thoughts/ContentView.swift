@@ -106,6 +106,8 @@ private struct WindowAccessor: NSViewRepresentable {
 struct ContentView: View {
     var viewModel: BoardViewModel
     @Environment(\.colorScheme) private var colorScheme
+    /// Отдаётся в SettingsNavigation — см. комментарий там.
+    @Environment(\.openSettings) private var openSettings
     @State private var creationStart: CGPoint?
     @State private var draftFrame: CGRect?
     @State private var placementPreview: CGRect?
@@ -241,6 +243,9 @@ struct ContentView: View {
         // тает одним пятном".
         .animation(.easeOut(duration: 0.1), value: viewModel.activeSlot)
         .animation(.easeOut(duration: 0.25), value: onboardingViewModel.isActive)
+        .onAppear {
+            SettingsNavigation.shared.openSettingsAction = openSettings
+        }
         .background(
             WindowAccessor { window in
                 guard thoughtsWindow == nil else { return }
