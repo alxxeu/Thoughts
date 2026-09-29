@@ -48,7 +48,6 @@ private final class CardNSTextView: NSTextView {
     // держится I-beam-курсор чуть ниже, так что это единственный
     // надёжный сигнал смены фокуса.
     var onFirstResponderChange: ((Bool) -> Void)?
-    var onAIAction: ((AITextAction, String) -> Void)?
     /// Непустой только когда карточка в Focus Mode — см. cancelOperation ниже.
     var onEscape: (() -> Void)?
 
@@ -200,38 +199,61 @@ private final class CardNSTextView: NSTextView {
         return result
     }
 
-    /// Добавляет AI-подменю к стандартному контекстному меню
-    /// NSTextView (Cut/Copy/Paste/Spelling…), а не заменяет его. Действует
-    /// на весь текст карточки, а не только на selection — точечная замена
-    /// части текста потребовала бы аккуратного маппинга NSRange обратно в
-    /// String (с учётом DividerAttachment), это отдельная задача на потом.
+    /// Выделение до правого клика: сам правый клик по тексту выделяет слово
+    /// под курсором, и без этого "Ask AI" почти всегда спрашивал бы про одно
+    /// слово. Не было своего выделения — вопрос про всю карточку.
+    private var selectionBeforeContextMenu: NSRange?
+    private var contextMenuPoint: NSPoint = .zero
+
+    override func rightMouseDown(with event: NSEvent) {
+        selectionBeforeContextMenu = selectedRange()
+        super.rightMouseDown(with: event)
+    }
+
+    /// Пункт "Ask AI" — сразу под системным "Ask Siri" (macOS 27+), а где
+    /// его нет — первым пунктом с разделителем. Стандартное меню
+    /// NSTextView (Cut/Copy/Paste/Spelling…) при этом не трогается.
     override func menu(for event: NSEvent) -> NSMenu? {
-        guard let menu = super.menu(for: event) else { return nil }
-        guard onAIAction != nil else { return menu }
-
-        let aiMenuItem = NSMenuItem(title: "AI", action: nil, keyEquivalent: "")
-        let submenu = NSMenu(title: "AI")
-        for action in AITextAction.allCases {
-            let item = NSMenuItem(
-                title: action.title,
-                action: #selector(handleAIMenuItem(_:)),
-                keyEquivalent: ""
-            )
-            item.target = self
-            item.image = NSImage(systemSymbolName: action.systemImage, accessibilityDescription: nil)
-            item.representedObject = action
-            submenu.addItem(item)
+        if selectionBeforeContextMenu == nil {
+            selectionBeforeContextMenu = selectedRange()
         }
-        aiMenuItem.submenu = submenu
+        contextMenuPoint = convert(event.locationInWindow, from: nil)
+        guard let menu = super.menu(for: event) else { return nil }
 
-        menu.addItem(.separator())
-        menu.addItem(aiMenuItem)
+        let item = NSMenuItem(title: "Ask AI", action: #selector(askAI(_:)), keyEquivalent: "")
+        item.target = self
+        item.image = NSImage(systemSymbolName: "sparkle", accessibilityDescription: nil)
+
+        // "Siri" — имя бренда, в локализациях не переводится. Сразу под Ask
+        // Siri macOS 27 не рисует иконку пункта — так и задумано, не
+        // переставляем.
+        if let siriIndex = menu.items.firstIndex(where: { $0.title.contains("Siri") }) {
+            menu.insertItem(item, at: siriIndex + 1)
+        } else {
+            menu.insertItem(item, at: 0)
+            menu.insertItem(.separator(), at: 1)
+        }
         return menu
     }
 
-    @objc private func handleAIMenuItem(_ sender: NSMenuItem) {
-        guard let action = sender.representedObject as? AITextAction else { return }
-        onAIAction?(action, string)
+    @objc private func askAI(_ sender: NSMenuItem) {
+        let before = selectionBeforeContextMenu ?? NSRange(location: 0, length: 0)
+        selectionBeforeContextMenu = nil
+        let range = before.length > 0 ? before : NSRange(location: 0, length: 0)
+        AskAIPopoverController.show(for: self, range: range, anchor: anchorRect(for: range))
+    }
+
+    /// Куда привязать popover: к видимой части выделения, иначе — к месту
+    /// правого клика.
+    private func anchorRect(for range: NSRange) -> NSRect {
+        let clickRect = NSRect(x: contextMenuPoint.x, y: contextMenuPoint.y, width: 1, height: 1)
+        guard range.length > 0, let layoutManager, let textContainer else { return clickRect }
+        let glyphRange = layoutManager.glyphRange(forCharacterRange: range, actualCharacterRange: nil)
+        var rect = layoutManager.boundingRect(forGlyphRange: glyphRange, in: textContainer)
+        rect.origin.x += textContainerOrigin.x
+        rect.origin.y += textContainerOrigin.y
+        let visible = rect.intersection(visibleRect)
+        return visible.isEmpty ? clickRect : visible
     }
 
     private static func clampSelectionRange(_ range: NSRange, in textView: NSTextView) -> NSRange {
@@ -319,10 +341,6 @@ struct CardTextView: NSViewRepresentable {
     var cardSize: CGSize
     var onTextChange: () -> Void
     var onFocusChange: (Bool) -> Void
-    /// Пункт AI-подменю контекстного меню карточки был выбран — второй
-    /// параметр это весь текст карточки на момент клика (см. комментарий
-    /// у CardNSTextView.menu(for:) про то, почему не берём только selection).
-    var onAIAction: (AITextAction, String) -> Void
     /// Escape внутри текста. nil — обычное поведение NSTextView.
     var onEscape: (() -> Void)?
     /// Шрифт/цвет из Settings → Appearance. Параметр, а не чтение
@@ -348,9 +366,6 @@ struct CardTextView: NSViewRepresentable {
         textView.delegate = context.coordinator
         textView.onFirstResponderChange = { [weak coordinator = context.coordinator] focused in
             coordinator?.handleFirstResponderChange(focused)
-        }
-        textView.onAIAction = { [weak coordinator = context.coordinator] action, text in
-            coordinator?.parent.onAIAction(action, text)
         }
         textView.onEscape = onEscape
         textView.drawsBackground = false
@@ -384,6 +399,7 @@ struct CardTextView: NSViewRepresentable {
         Self.restyle(restored, with: typography, previous: nil)
         textView.textStorage?.setAttributedString(restored)
         context.coordinator.lastTypography = typography
+        context.coordinator.knownFormattingData = formattingData
 
         scrollView.documentView = textView
         return scrollView
@@ -440,11 +456,26 @@ struct CardTextView: NSViewRepresentable {
         // Требование 6: обновляем содержимое NSTextView только если оно
         // реально разошлось с привязкой — иначе получаем бесконечный цикл
         // (textDidChange -> $text = ... -> updateNSView -> setAttributedString -> ...).
-        if textView.string != text {
+        //
+        // Текст или форматирование поменялись снаружи (AI-действие, импорт
+        // бэкапа, правка с другого Mac через iCloud) — восстанавливаем
+        // вместе с форматированием, если архив подходит к новому тексту.
+        // knownFormattingData отличает внешнюю смену форматирования от
+        // собственной правки, уже отражённой в textView.
+        if textView.string != text || formattingData != context.coordinator.knownFormattingData {
             let selectedRanges = textView.selectedRanges
-            let attributed = Self.buildAttributedString(from: text, typography: typography)
+            let attributed = NSMutableAttributedString(
+                attributedString: Self.restoredAttributedString(text: text, formattingData: formattingData, typography: typography)
+            )
+            Self.restyle(attributed, with: typography, previous: nil)
             textView.textStorage?.setAttributedString(attributed)
-            textView.selectedRanges = selectedRanges
+            let length = (textView.string as NSString).length
+            textView.selectedRanges = selectedRanges.map { value in
+                let range = value.rangeValue
+                let location = min(range.location, length)
+                return NSValue(range: NSRange(location: location, length: min(range.length, length - location)))
+            }
+            context.coordinator.knownFormattingData = formattingData
         }
 
         // Синхронный переход фокуса, срабатывающий только один раз на реальное
@@ -612,6 +643,8 @@ struct CardTextView: NSViewRepresentable {
         var didRequestFocus = false
         /// Стиль, которым сейчас нарисован текст — см. updateNSView.
         var lastTypography: CardTypography?
+        /// formattingData, которое уже отражено в textView — см. updateNSView.
+        var knownFormattingData: Data?
 
         init(_ parent: CardTextView) {
             self.parent = parent
@@ -770,10 +803,12 @@ struct CardTextView: NSViewRepresentable {
             replaceDashPrefixWithBulletIfNeeded(in: textView)
 
             parent.text = textView.string
-            parent.formattingData = CardTextView.archivedFormatting(
+            let archived = CardTextView.archivedFormatting(
                 of: textView.attributedString(),
                 typography: lastTypography ?? AppearanceSettings.shared.cardTypography
             )
+            knownFormattingData = archived
+            parent.formattingData = archived
             parent.onTextChange()
         }
 

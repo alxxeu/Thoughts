@@ -106,6 +106,8 @@ private struct WindowAccessor: NSViewRepresentable {
 struct ContentView: View {
     var viewModel: BoardViewModel
     @Environment(\.colorScheme) private var colorScheme
+    /// Отдаётся в SettingsNavigation — см. комментарий там.
+    @Environment(\.openSettings) private var openSettings
     @State private var creationStart: CGPoint?
     @State private var draftFrame: CGRect?
     @State private var placementPreview: CGRect?
@@ -134,9 +136,8 @@ struct ContentView: View {
     @State private var focusTransitionCardID: UUID?
     @State private var focusTransitionTask: Task<Void, Never>?
 
-    // AI для всего Space — Ask AI (+ Summarize внутри его
-    // панели) под pill с названием. См. Thoughts/AI. Результат — новая
-    // карточка на канве.
+    // AI для всего Space — Ask AI под pill с названием. См. Thoughts/AI.
+    // Результат — новая карточка на канве.
     @State private var isAskingSpaceAI = false
     @State private var spaceAIQuestion = ""
     @State private var isSpaceAIBusy = false
@@ -242,6 +243,9 @@ struct ContentView: View {
         // тает одним пятном".
         .animation(.easeOut(duration: 0.1), value: viewModel.activeSlot)
         .animation(.easeOut(duration: 0.25), value: onboardingViewModel.isActive)
+        .onAppear {
+            SettingsNavigation.shared.openSettingsAction = openSettings
+        }
         .background(
             WindowAccessor { window in
                 guard thoughtsWindow == nil else { return }
@@ -306,6 +310,11 @@ struct ContentView: View {
                 isEnabled: true,
                 isDesktopModeActive: viewModel.desktopOverlay.isDesktopModeActive
             )
+        }
+        // Синк с iCloud откладывает удалённые правки текста этой карточки,
+        // пока в ней курсор (см. BoardViewModel.editingCardID).
+        .onChange(of: textFocusedCardID) { _, id in
+            viewModel.editingCardID = id
         }
         .onChange(of: viewModel.desktopOverlay.isEnabled) { _, isEnabled in
             applyDesktopOverlayWindowState(isEnabled: isEnabled, isDesktopModeActive: viewModel.desktopOverlay.isDesktopModeActive)
@@ -776,10 +785,41 @@ struct ContentView: View {
     /// Раскрывается/закрывается через insertion/removal (не морфинг pill'а
     /// — sparkle теперь просто иконка в кластере рядом с названием, см.
     /// .overlay(alignment: .top) в body), с масштабом от верхнего края и
-    /// пружиной на входе. Summarize/Extract — иконки в левом нижнем углу
-    /// того же поля, а не отдельная строка кнопок под ним; подсказки —
-    /// тот же toolbarTooltip/setToolbarHover, что у верхнего кластера.
+    /// пружиной на входе. В левом нижнем углу поля — выбор провайдера
+    /// (AIProviderMenu), как во всех панелях Ask AI; если выбранный
+    /// недоступен, вместо поля — AIUnavailableNotice.
     private var askAIPanel: some View {
+        Group {
+            if viewModel.aiSettings.hasKey(for: viewModel.aiSettings.selectedProvider) {
+                spaceAIPrompt
+            } else {
+                AIUnavailableNotice(showsProviderMenu: true)
+                    .frame(height: 130)
+            }
+        }
+        .padding(6)
+        .frame(width: 300)
+        .background(
+            CardSurfaceBackground(
+                cornerRadius: 16,
+                usesGlassEffect: false,
+                tintOpacity: 0.15,
+                materialStyle: .thickMaterial,
+                lightMaterialStyle: .ultraThinMaterial,
+                lightTintOpacity: 0.2
+            )
+        )
+        .transition(
+            .asymmetric(
+                insertion: .scale(scale: 0.5, anchor: .top).combined(with: .opacity)
+                    .animation(spaceAISpring),
+                removal: .scale(scale: 0.5, anchor: .top).combined(with: .opacity)
+                    .animation(.easeIn(duration: 0.15))
+            )
+        )
+    }
+
+    private var spaceAIPrompt: some View {
         AIPromptTextView(text: $spaceAIQuestion, shouldFocus: isAskingSpaceAI) {
             askSpaceAI()
         }
@@ -805,31 +845,7 @@ struct ContentView: View {
         }
         .overlay(alignment: .bottomLeading) {
             HStack(spacing: 12) {
-                Button {
-                    dismissToolbarTooltip()
-                    summarizeSpace()
-                } label: {
-                    Image(systemName: "sparkles")
-                }
-                .buttonStyle(.plain)
-                .foregroundStyle(Color.white.opacity(hoveredToolbarLabel == "Summarize" ? 1 : 0.85))
-                .font(.system(size: 14))
-                .disabled(isSpaceAIBusy || spaceAIContextText().isEmpty)
-                .onHover { setToolbarHover($0, "Summarize") }
-                .overlay(alignment: .top) { toolbarTooltip("Summarize") }
-
-                Button {
-                    dismissToolbarTooltip()
-                    extractActionItems()
-                } label: {
-                    Image(systemName: "sparkle.text.clipboard")
-                }
-                .buttonStyle(.plain)
-                .foregroundStyle(Color.white.opacity(hoveredToolbarLabel == "Extract" ? 1 : 0.85))
-                .font(.system(size: 14))
-                .disabled(isSpaceAIBusy || spaceAIContextText().isEmpty)
-                .onHover { setToolbarHover($0, "Extract") }
-                .overlay(alignment: .top) { toolbarTooltip("Extract") }
+                AIProviderMenu()
 
                 if isSpaceAIBusy {
                     ProgressView()
@@ -851,26 +867,6 @@ struct ContentView: View {
             .disabled(isSpaceAIBusy || spaceAIQuestion.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
             .padding(5)
         }
-        .padding(6)
-        .frame(width: 300)
-        .background(
-            CardSurfaceBackground(
-                cornerRadius: 16,
-                usesGlassEffect: false,
-                tintOpacity: 0.15,
-                materialStyle: .thickMaterial,
-                lightMaterialStyle: .ultraThinMaterial,
-                lightTintOpacity: 0.2
-            )
-        )
-        .transition(
-            .asymmetric(
-                insertion: .scale(scale: 0.5, anchor: .top).combined(with: .opacity)
-                    .animation(spaceAISpring),
-                removal: .scale(scale: 0.5, anchor: .top).combined(with: .opacity)
-                    .animation(.easeIn(duration: 0.15))
-            )
-        )
     }
 
     private func spaceAIContextText() -> String {
@@ -878,56 +874,6 @@ struct ContentView: View {
             .filter { $0.privacyMode == .none && !$0.text.isEmpty }
             .map(\.text)
             .joined(separator: "\n---\n")
-    }
-
-    private func summarizeSpace() {
-        let context = spaceAIContextText()
-        guard !context.isEmpty, !isSpaceAIBusy else { return }
-        isSpaceAIBusy = true
-        Task {
-            do {
-                let service = try AITextServiceFactory.makeActiveService()
-                let result = try await service.generate(
-                    systemPrompt: AISpaceAction.summarizeSystemPrompt,
-                    userText: context
-                )
-                await MainActor.run {
-                    insertAIResultCard(result)
-                    withAnimation(spaceAISpring) { isAskingSpaceAI = false }
-                    isSpaceAIBusy = false
-                }
-            } catch {
-                await MainActor.run {
-                    spaceAIErrorMessage = error.localizedDescription
-                    isSpaceAIBusy = false
-                }
-            }
-        }
-    }
-
-    private func extractActionItems() {
-        let context = spaceAIContextText()
-        guard !context.isEmpty, !isSpaceAIBusy else { return }
-        isSpaceAIBusy = true
-        Task {
-            do {
-                let service = try AITextServiceFactory.makeActiveService()
-                let result = try await service.generate(
-                    systemPrompt: AISpaceAction.extractActionItemsSystemPrompt,
-                    userText: context
-                )
-                await MainActor.run {
-                    insertAIResultCard(result)
-                    withAnimation(spaceAISpring) { isAskingSpaceAI = false }
-                    isSpaceAIBusy = false
-                }
-            } catch {
-                await MainActor.run {
-                    spaceAIErrorMessage = error.localizedDescription
-                    isSpaceAIBusy = false
-                }
-            }
-        }
     }
 
     private func askSpaceAI() {

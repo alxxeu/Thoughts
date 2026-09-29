@@ -38,9 +38,17 @@ final class BoardViewModel {
     var aiHighlightedCardIDs: Set<UUID> = []
 
     var isActiveSpaceLocked: Bool {
-        securitySettings.isPasscodeEnabled
+        isSpaceLockEnforced
             && (activeWorkspace?.isProtected ?? false)
             && !unlockedProtectedSlots.contains(activeSlot)
+    }
+
+    /// Работает ли Space Lock на этом Mac. С синком iCloud — всегда: защищённый
+    /// Space мог прийти с другого Mac раньше, чем его passcode доехал через
+    /// iCloud Keychain (или на этом Mac passcode вообще не включали), и он
+    /// не должен открыться ни на мгновение без проверки (fail-closed).
+    var isSpaceLockEnforced: Bool {
+        securitySettings.isPasscodeEnabled || CloudSyncSettings.shared.isEnabled
     }
 
     var cards: [Card] {
@@ -54,6 +62,10 @@ final class BoardViewModel {
 
     private let store = BoardStore.shared
     private var saveTask: Task<Void, Never>?
+    /// См. BoardChangeTracker. Не наблюдается: это служебное состояние, не UI.
+    @ObservationIgnored private var changeTracker: BoardChangeTracker!
+    /// Изменения после каждого сохранения — сюда подписывается синк с iCloud.
+    @ObservationIgnored var onLocalChanges: ((BoardChangeSet) -> Void)?
 
     static let cardSizeStep: CGFloat = 60
     /// Зазор между стыкующимися карточками — тот же, что использует
@@ -83,8 +95,29 @@ final class BoardViewModel {
     init() {
         let loaded = store.load()
         workspaces = loaded.workspaces
-        cardsByWorkspace = loaded.cardsByWorkspace
+        cardsByWorkspace = Self.normalizedZOrder(loaded.cardsByWorkspace)
+        changeTracker = BoardChangeTracker(workspaces: workspaces, cardsByWorkspace: cardsByWorkspace)
         reindexSpotlight()
+    }
+
+    /// Z-порядок держится на Card.raisedAt (см. комментарий там). У карточек,
+    /// сохранённых до его появления, raisedAt неизвестен — выдаём им
+    /// возрастающие "старые" значения по нынешнему порядку в массиве, чтобы
+    /// ничего визуально не переставилось, и сортируем.
+    static func normalizedZOrder(_ cardsByWorkspace: [Int: [Card]]) -> [Int: [Card]] {
+        cardsByWorkspace.mapValues { cards in
+            for (index, card) in cards.enumerated() where card.raisedAt == Card.unknownDate {
+                card.raisedAt = Card.unknownDate.addingTimeInterval(Double(index + 1))
+            }
+            return sortedByZOrder(cards)
+        }
+    }
+
+    static func sortedByZOrder(_ cards: [Card]) -> [Card] {
+        // enumerated — стабильная сортировка при равных raisedAt.
+        cards.enumerated()
+            .sorted { ($0.element.raisedAt, $0.offset) < ($1.element.raisedAt, $1.offset) }
+            .map(\.element)
     }
 
     static func snap(_ value: CGFloat) -> CGFloat {
@@ -493,16 +526,14 @@ final class BoardViewModel {
         // на каждый тик клика/драга не должны гонять лишнюю мутацию массива
         // с broadcast на весь ForEach, если z-порядок и так не меняется.
         guard let index = cards.firstIndex(where: { $0.id == card.id }), index != cards.count - 1 else { return }
+        card.raisedAt = Date()
         var current = cards
         current.append(current.remove(at: index))
         cards = current
     }
 
     func saveImmediately() {
-        saveTask?.cancel()
-        saveTask = nil
-        store.save(workspaces: workspaces, cardsByWorkspace: cardsByWorkspace)
-        reindexSpotlight()
+        persist(reindex: true)
     }
 
     /// Для чистого перемещения/ресайза карточки (drag-end/resize-end) —
@@ -510,9 +541,7 @@ final class BoardViewModel {
     /// не может стать неактуальным и полную переиндексацию всех Spaces
     /// запускать не нужно.
     func saveGeometry() {
-        saveTask?.cancel()
-        saveTask = nil
-        store.save(workspaces: workspaces, cardsByWorkspace: cardsByWorkspace)
+        persist(reindex: false)
     }
 
     func scheduleDebouncedSave() {
@@ -520,8 +549,204 @@ final class BoardViewModel {
         saveTask = Task { [weak self] in
             try? await Task.sleep(nanoseconds: 450_000_000)
             guard !Task.isCancelled, let self else { return }
-            self.store.save(workspaces: self.workspaces, cardsByWorkspace: self.cardsByWorkspace)
-            self.reindexSpotlight()
+            self.persist(reindex: true)
+        }
+    }
+
+    // MARK: - Snapshot (бэкап, импорт, синк)
+
+    func makeSnapshot() -> BoardSnapshot {
+        BoardSnapshot(
+            workspaces: workspaces.map { WorkspaceRecord($0) },
+            cards: cardsByWorkspace.flatMap { slot, cards in cards.map { CardRecord($0, slot: slot) } }
+        )
+    }
+
+    /// Импорт бэкапа: `replacing` — доска становится ровно такой, как в
+    /// бэкапе; иначе бэкап сливается с текущими данными (BoardMerger).
+    /// Перед вызовом нужна страховочная копия (AutomaticBackups) — это
+    /// делает BackupCoordinator.
+    func applyImported(_ snapshot: BoardSnapshot, replacing: Bool) {
+        let result = replacing ? snapshot : BoardMerger.merge(local: makeSnapshot(), incoming: snapshot)
+        replaceBoard(with: result)
+        saveImmediately()
+    }
+
+    /// Пересобирает доску из снимка. Карточки с уже существующими ID
+    /// обновляются на месте — их CardView не пересоздаются, открытый
+    /// редактор не теряет состояние.
+    private func replaceBoard(with snapshot: BoardSnapshot) {
+        let existingCards = Dictionary(
+            cardsByWorkspace.values.flatMap { $0 }.map { ($0.id, $0) },
+            uniquingKeysWith: { first, _ in first }
+        )
+        var newCards: [Int: [Card]] = [:]
+        for record in snapshot.cards {
+            let card: Card
+            if let existing = existingCards[record.id] {
+                record.apply(to: existing)
+                card = existing
+            } else {
+                card = record.makeCard()
+            }
+            newCards[record.workspaceSlot, default: []].append(card)
+        }
+
+        let recordsBySlot = Dictionary(snapshot.workspaces.map { ($0.slot, $0) }, uniquingKeysWith: { first, _ in first })
+        workspaces = workspaces.map { workspace in
+            guard let record = recordsBySlot[workspace.slot] else { return workspace }
+            var updated = workspace
+            updated.name = record.name
+            updated.isProtected = record.isProtected
+            updated.modifiedAt = record.modifiedAt
+            return updated
+        }
+        cardsByWorkspace = newCards.mapValues { Self.sortedByZOrder($0) }
+    }
+
+    // MARK: - Remote changes (iCloud)
+
+    /// Карточка, в которой сейчас текстовый курсор (выставляет ContentView).
+    /// Удалённая правка её текста откладывается до ухода фокуса — иначе
+    /// текст менялся бы прямо под курсором.
+    var editingCardID: UUID? {
+        didSet {
+            guard let previous = oldValue, previous != editingCardID,
+                  let deferred = deferredRemoteContent.removeValue(forKey: previous) else { return }
+            applyRemote(cards: [deferred], deletedCardIDs: [], workspaces: [])
+        }
+    }
+    @ObservationIgnored private var deferredRemoteContent: [UUID: CardRecord] = [:]
+
+    /// Пусто ли на этом Mac — для первого включения синка: пустую доску
+    /// можно просто заполнить из iCloud, ничего не спрашивая.
+    var isBoardEmpty: Bool {
+        cardsByWorkspace.values.allSatisfy(\.isEmpty)
+            && workspaces.allSatisfy { $0.name == Workspace.defaultName(forSlot: $0.slot) && !$0.isProtected }
+    }
+
+    /// Правки, пришедшие из iCloud. Каждая карточка сливается с локальной
+    /// по группам полей (BoardMerger) — локальные несинхронизированные
+    /// правки не теряются. Результат сохраняется на диск, но не считается
+    /// локальным изменением (трекер принимает его как уже синхронизированный),
+    /// иначе он тут же ушёл бы обратно в iCloud.
+    func applyRemote(cards incoming: [CardRecord], deletedCardIDs: Set<UUID>, workspaces incomingWorkspaces: [WorkspaceRecord]) {
+        guard !incoming.isEmpty || !deletedCardIDs.isEmpty || !incomingWorkspaces.isEmpty else { return }
+        // Сначала — несохранённые локальные правки (отложенное сохранение
+        // текста): они должны получить свои *ModifiedAt и уйти в очередь
+        // до слияния, а не потеряться под удалённой версией.
+        flushPendingSave()
+
+        var located: [UUID: (card: Card, slot: Int)] = [:]
+        for (slot, cards) in cardsByWorkspace {
+            for card in cards { located[card.id] = (card, slot) }
+        }
+
+        var accepted: [(card: Card, slot: Int)] = []
+        var touchedSlots = Set<Int>()
+
+        for remote in incoming {
+            guard let (card, slot) = located[remote.id] else {
+                let card = remote.makeCard()
+                cardsByWorkspace[remote.workspaceSlot, default: []].append(card)
+                touchedSlots.insert(remote.workspaceSlot)
+                accepted.append((card, remote.workspaceSlot))
+                continue
+            }
+
+            let local = CardRecord(card, slot: slot)
+            var merged = BoardMerger.merge(local, remote)
+            if card.id == editingCardID,
+               merged.text != local.text || merged.formattingData != local.formattingData {
+                deferredRemoteContent[card.id] = remote
+                merged.text = local.text
+                merged.formattingData = local.formattingData
+                merged.contentModifiedAt = local.contentModifiedAt
+            }
+
+            if merged != local {
+                merged.apply(to: card)
+                if merged.workspaceSlot != slot {
+                    cardsByWorkspace[slot]?.removeAll { $0.id == card.id }
+                    cardsByWorkspace[merged.workspaceSlot, default: []].append(card)
+                    touchedSlots.insert(slot)
+                }
+                touchedSlots.insert(merged.workspaceSlot)
+            }
+            accepted.append((card, merged.workspaceSlot))
+        }
+
+        for id in deletedCardIDs {
+            guard let (_, slot) = located[id] else { continue }
+            cardsByWorkspace[slot]?.removeAll { $0.id == id }
+            aiHighlightedCardIDs.remove(id)
+            deferredRemoteContent[id] = nil
+        }
+
+        var acceptedWorkspaces: [Workspace] = []
+        if !incomingWorkspaces.isEmpty {
+            var updated = workspaces
+            for remote in incomingWorkspaces {
+                guard let index = updated.firstIndex(where: { $0.slot == remote.slot }) else { continue }
+                let merged = BoardMerger.merge(WorkspaceRecord(updated[index]), remote, keepProtection: false)
+                updated[index].name = merged.name
+                updated[index].isProtected = merged.isProtected
+                updated[index].modifiedAt = merged.modifiedAt
+                acceptedWorkspaces.append(updated[index])
+            }
+            if updated != workspaces {
+                workspaces = updated
+            }
+        }
+
+        for slot in touchedSlots {
+            cardsByWorkspace[slot] = Self.sortedByZOrder(cardsByWorkspace[slot] ?? [])
+        }
+
+        store.save(workspaces: workspaces, cardsByWorkspace: cardsByWorkspace)
+        reindexSpotlight()
+        changeTracker.accept(cards: accepted, deletedCards: deletedCardIDs, workspaces: acceptedWorkspaces)
+    }
+
+    /// "Use iCloud" при первом включении синка: доска становится ровно
+    /// такой, как в iCloud, и считается уже синхронизированной.
+    func replaceWithRemote(_ snapshot: BoardSnapshot) {
+        saveTask?.cancel()
+        saveTask = nil
+        deferredRemoteContent = [:]
+        replaceBoard(with: snapshot)
+        store.save(workspaces: workspaces, cardsByWorkspace: cardsByWorkspace)
+        reindexSpotlight()
+        changeTracker.rebaseline(workspaces: workspaces, cardsByWorkspace: cardsByWorkspace)
+    }
+
+    /// Досохраняет отложенное (debounced) сохранение прямо сейчас.
+    func flushPendingSave() {
+        guard saveTask != nil else { return }
+        persist(reindex: true)
+    }
+
+    /// Единственная точка записи доски на диск. Перед записью трекер
+    /// проставляет *ModifiedAt изменившимся карточкам/Spaces, после —
+    /// изменения уходят подписчику (синку с iCloud).
+    private func persist(reindex: Bool) {
+        saveTask?.cancel()
+        saveTask = nil
+
+        var stampedWorkspaces = workspaces
+        let changes = changeTracker.stamp(workspaces: &stampedWorkspaces, cardsByWorkspace: cardsByWorkspace)
+        // Присваиваем, только если Space реально изменился: иначе каждое
+        // сохранение дёргало бы всех наблюдателей workspaces (меню Spaces).
+        if !changes.savedWorkspaces.isEmpty {
+            workspaces = stampedWorkspaces
+        }
+
+        store.save(workspaces: workspaces, cardsByWorkspace: cardsByWorkspace)
+        if reindex {
+            reindexSpotlight()
+        }
+        if !changes.isEmpty {
+            onLocalChanges?(changes)
         }
     }
 
@@ -567,13 +792,14 @@ final class BoardViewModel {
         }
     }
 
-    func authenticateWithTouchID(completion: @escaping (Bool) -> Void) {
+    /// - Parameter reason: дописывается системой к "Thoughts wants to …" в
+    ///   диалоге Touch ID/пароля Mac — поэтому с маленькой буквы и без точки.
+    func authenticateWithTouchID(reason: String = "unlock this card", completion: @escaping (Bool) -> Void) {
         let context = LAContext()
         var error: NSError?
         
         if context.canEvaluatePolicy(.deviceOwnerAuthenticationWithBiometrics, error: &error) ||
            context.canEvaluatePolicy(.deviceOwnerAuthentication, error: &error) {
-            let reason = "Разблокировать карточку"
             context.evaluatePolicy(.deviceOwnerAuthentication, localizedReason: reason) { success, _ in
                 DispatchQueue.main.async {
                     completion(success)

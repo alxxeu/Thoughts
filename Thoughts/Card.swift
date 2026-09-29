@@ -45,16 +45,40 @@ final class Card: Identifiable, Codable {
     /// такая карточка навсегда помечена маленькой иконкой sparkle. См. CardView.
     var isAIGenerated: Bool = false
 
+    // MARK: Синк и бэкап
+
+    /// Время последнего изменения каждой группы полей — по ним сливаются
+    /// правки с разных Mac и из бэкапа (побеждает более новая группа, см.
+    /// BoardMerger). Ставит их BoardChangeTracker при сохранении, а не
+    /// точки мутаций по коду. У старых карточек без этих полей —
+    /// Card.unknownDate, то есть "старше любой реальной правки".
+    /// content — text + formattingData.
+    var contentModifiedAt: Date = Card.unknownDate
+    /// geometry — position, size, raisedAt.
+    var geometryModifiedAt: Date = Card.unknownDate
+    /// meta — Space карточки, tagColor, privacyMode, isAIGenerated.
+    var metaModifiedAt: Date = Card.unknownDate
+    /// Z-порядок: карточка с более поздним raisedAt рисуется выше. Раньше
+    /// порядок держался только позицией в массиве Space — при синке это
+    /// сдвигало бы индексы у всех карточек от одного подъёма одной.
+    var raisedAt: Date = Card.unknownDate
+
+    /// "Неизвестно когда" для данных, сохранённых до появления этих полей.
+    static let unknownDate = Date(timeIntervalSince1970: 0)
+
     init(id: UUID = .init(), position: CGPoint, size: CGSize, text: String = "", tagColor: CardTagColor? = nil) {
         self.id = id
         self.position = position
         self.size = size
         self.text = text
         self.tagColor = tagColor
+        // Новая карточка появляется поверх остальных.
+        self.raisedAt = Date()
     }
 
     enum CodingKeys: String, CodingKey {
         case id, position, size, text, formattingData, tagColor, privacyMode, isAIGenerated
+        case contentModifiedAt, geometryModifiedAt, metaModifiedAt, raisedAt
     }
 
     required init(from decoder: Decoder) throws {
@@ -78,6 +102,10 @@ final class Card: Identifiable, Codable {
 
         formattingData = try container.decodeIfPresent(Data.self, forKey: .formattingData)
         isAIGenerated = try container.decodeIfPresent(Bool.self, forKey: .isAIGenerated) ?? false
+        contentModifiedAt = try container.decodeIfPresent(Date.self, forKey: .contentModifiedAt) ?? Card.unknownDate
+        geometryModifiedAt = try container.decodeIfPresent(Date.self, forKey: .geometryModifiedAt) ?? Card.unknownDate
+        metaModifiedAt = try container.decodeIfPresent(Date.self, forKey: .metaModifiedAt) ?? Card.unknownDate
+        raisedAt = try container.decodeIfPresent(Date.self, forKey: .raisedAt) ?? Card.unknownDate
     }
 
     func encode(to encoder: Encoder) throws {
@@ -90,5 +118,9 @@ final class Card: Identifiable, Codable {
         try container.encodeIfPresent(tagColor, forKey: .tagColor)
         try container.encode(privacyMode, forKey: .privacyMode)
         try container.encode(isAIGenerated, forKey: .isAIGenerated)
+        try container.encode(contentModifiedAt, forKey: .contentModifiedAt)
+        try container.encode(geometryModifiedAt, forKey: .geometryModifiedAt)
+        try container.encode(metaModifiedAt, forKey: .metaModifiedAt)
+        try container.encode(raisedAt, forKey: .raisedAt)
     }
 }

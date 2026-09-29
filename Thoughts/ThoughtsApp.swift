@@ -75,6 +75,19 @@ struct ThoughtsApp: App {
                     QuickCaptureController.shared.show()
                 }
                 Divider()
+                Button("Export Backup…") {
+                    BackupCoordinator.exportBackup(viewModel: viewModel)
+                }
+                .disabled(viewModel.isActiveSpaceLocked)
+                Button("Import Backup…") {
+                    BackupCoordinator.importBackup(viewModel: viewModel)
+                }
+                .disabled(viewModel.isActiveSpaceLocked)
+                Button("Export as Markdown…") {
+                    BackupCoordinator.exportMarkdown(viewModel: viewModel)
+                }
+                .disabled(viewModel.isActiveSpaceLocked)
+                Divider()
                 Button("Clear Space…") {
                     NotificationCenter.default.post(name: .requestClearSpace, object: nil)
                 }
@@ -95,16 +108,6 @@ struct ThoughtsApp: App {
                 }
                 .keyboardShortcut("f", modifiers: .command)
                 .disabled(viewModel.isActiveSpaceLocked || viewModel.desktopOverlay.isDesktopModeActive)
-
-                // Однонаправленный вход в Desktop mode — не toggle: повторное
-                // ⌥D, уже находясь в этом режиме, не делает ничего. Выход —
-                // только через выбор любого Space в CommandMenu ниже.
-                Button("Show Desktop") {
-                    guard !viewModel.desktopOverlay.isDesktopModeActive else { return }
-                    viewModel.desktopOverlay.isDesktopModeActive = true
-                }
-                .keyboardShortcut("d", modifiers: .option)
-                .disabled(!viewModel.desktopOverlay.isEnabled)
             }
             // Системный пункт "Settings…" (со своей иконкой в App-меню)
             // оставлен как есть — не переопределяем .appSettings отдельной
@@ -131,6 +134,20 @@ struct ThoughtsApp: App {
                 }
             }
             CommandMenu("Spaces") {
+                // Однонаправленный вход в Desktop mode — не toggle: повторное
+                // ⌥D, уже находясь в этом режиме, не делает ничего. Выход —
+                // выбор любого Space ниже. Живёт здесь, рядом со Spaces, а не
+                // в View: это тоже "куда смотреть" — на карточки или на стол.
+                // Есть смысл только в Desktop Overlay, в обычном окне неактивен.
+                Button("Show Desktop") {
+                    guard !viewModel.desktopOverlay.isDesktopModeActive else { return }
+                    viewModel.desktopOverlay.isDesktopModeActive = true
+                }
+                .keyboardShortcut("d", modifiers: .option)
+                .disabled(!viewModel.desktopOverlay.isEnabled)
+
+                Divider()
+
                 ForEach(viewModel.workspaces) { workspace in
                     Button(workspace.name) {
                         // Выбор любого Space — единственный способ выйти из
@@ -178,6 +195,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         NSApp.windows.first?.acceptsMouseMovedEvents = true
         if let viewModel {
             QuickCaptureController.shared.start(viewModel: viewModel)
+            CloudSyncEngine.shared.start(viewModel: viewModel)
         }
         interactionMonitor = NSEvent.addLocalMonitorForEvents(
             matching: [

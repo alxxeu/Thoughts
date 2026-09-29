@@ -165,7 +165,7 @@ struct SecuritySettingsTab: View {
                 // Включение требует реально пройти Touch ID прямо сейчас —
                 // иначе можно было бы включить галку "на будущее", ни разу
                 // не подтвердив, что Touch ID вообще настроен и работает.
-                viewModel.authenticateWithTouchID { success in
+                viewModel.authenticateWithTouchID(reason: "turn on Touch ID for Space Lock") { success in
                     if success {
                         settings.isTouchIDEnabled = true
                     }
@@ -178,7 +178,7 @@ struct SecuritySettingsTab: View {
     /// Passcode / unprotect a Space) — раньше каждый сам оборачивал
     /// authenticateWithTouchID в одинаковый "if success { ... }".
     private func authenticateWithTouchIDThen(_ action: @escaping () -> Void) {
-        viewModel.authenticateWithTouchID { success in
+        viewModel.authenticateWithTouchID(reason: "change Space Lock settings") { success in
             if success { action() }
         }
     }
