@@ -134,9 +134,8 @@ struct ContentView: View {
     @State private var focusTransitionCardID: UUID?
     @State private var focusTransitionTask: Task<Void, Never>?
 
-    // AI для всего Space — Ask AI (+ Summarize внутри его
-    // панели) под pill с названием. См. Thoughts/AI. Результат — новая
-    // карточка на канве.
+    // AI для всего Space — Ask AI под pill с названием. См. Thoughts/AI.
+    // Результат — новая карточка на канве.
     @State private var isAskingSpaceAI = false
     @State private var spaceAIQuestion = ""
     @State private var isSpaceAIBusy = false
@@ -781,10 +780,8 @@ struct ContentView: View {
     /// Раскрывается/закрывается через insertion/removal (не морфинг pill'а
     /// — sparkle теперь просто иконка в кластере рядом с названием, см.
     /// .overlay(alignment: .top) в body), с масштабом от верхнего края и
-    /// пружиной на входе. Summarize/Extract — иконки в левом нижнем углу
-    /// того же поля, а не отдельная строка кнопок под ним; подсказки —
-    /// тот же toolbarTooltip/setToolbarHover, что у верхнего кластера.
-    /// Рядом с ними — выбор провайдера (AIProviderMenu); если выбранный
+    /// пружиной на входе. В левом нижнем углу поля — выбор провайдера
+    /// (AIProviderMenu), как во всех панелях Ask AI; если выбранный
     /// недоступен, вместо поля — AIUnavailableNotice.
     private var askAIPanel: some View {
         Group {
@@ -843,32 +840,6 @@ struct ContentView: View {
         }
         .overlay(alignment: .bottomLeading) {
             HStack(spacing: 12) {
-                Button {
-                    dismissToolbarTooltip()
-                    summarizeSpace()
-                } label: {
-                    Image(systemName: "sparkles")
-                }
-                .buttonStyle(.plain)
-                .foregroundStyle(Color.white.opacity(hoveredToolbarLabel == "Summarize" ? 1 : 0.85))
-                .font(.system(size: 14))
-                .disabled(isSpaceAIBusy || spaceAIContextText().isEmpty)
-                .onHover { setToolbarHover($0, "Summarize") }
-                .overlay(alignment: .top) { toolbarTooltip("Summarize") }
-
-                Button {
-                    dismissToolbarTooltip()
-                    extractActionItems()
-                } label: {
-                    Image(systemName: "sparkle.text.clipboard")
-                }
-                .buttonStyle(.plain)
-                .foregroundStyle(Color.white.opacity(hoveredToolbarLabel == "Extract" ? 1 : 0.85))
-                .font(.system(size: 14))
-                .disabled(isSpaceAIBusy || spaceAIContextText().isEmpty)
-                .onHover { setToolbarHover($0, "Extract") }
-                .overlay(alignment: .top) { toolbarTooltip("Extract") }
-
                 AIProviderMenu()
 
                 if isSpaceAIBusy {
@@ -898,56 +869,6 @@ struct ContentView: View {
             .filter { $0.privacyMode == .none && !$0.text.isEmpty }
             .map(\.text)
             .joined(separator: "\n---\n")
-    }
-
-    private func summarizeSpace() {
-        let context = spaceAIContextText()
-        guard !context.isEmpty, !isSpaceAIBusy else { return }
-        isSpaceAIBusy = true
-        Task {
-            do {
-                let service = try AITextServiceFactory.makeActiveService()
-                let result = try await service.generate(
-                    systemPrompt: AISpaceAction.summarizeSystemPrompt,
-                    userText: context
-                )
-                await MainActor.run {
-                    insertAIResultCard(result)
-                    withAnimation(spaceAISpring) { isAskingSpaceAI = false }
-                    isSpaceAIBusy = false
-                }
-            } catch {
-                await MainActor.run {
-                    spaceAIErrorMessage = error.localizedDescription
-                    isSpaceAIBusy = false
-                }
-            }
-        }
-    }
-
-    private func extractActionItems() {
-        let context = spaceAIContextText()
-        guard !context.isEmpty, !isSpaceAIBusy else { return }
-        isSpaceAIBusy = true
-        Task {
-            do {
-                let service = try AITextServiceFactory.makeActiveService()
-                let result = try await service.generate(
-                    systemPrompt: AISpaceAction.extractActionItemsSystemPrompt,
-                    userText: context
-                )
-                await MainActor.run {
-                    insertAIResultCard(result)
-                    withAnimation(spaceAISpring) { isAskingSpaceAI = false }
-                    isSpaceAIBusy = false
-                }
-            } catch {
-                await MainActor.run {
-                    spaceAIErrorMessage = error.localizedDescription
-                    isSpaceAIBusy = false
-                }
-            }
-        }
     }
 
     private func askSpaceAI() {

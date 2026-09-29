@@ -149,16 +149,12 @@ private struct AskAIPopoverView: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
-            HStack {
-                Label(model.isAboutSelection ? "About the selection" : "About this card", systemImage: "sparkle")
-                    .font(.system(size: 11, weight: .semibold))
-                    .foregroundStyle(.secondary)
-                Spacer()
-                AIProviderMenu(style: .system)
-            }
+            Label(model.isAboutSelection ? "About the selection" : "About this card", systemImage: "sparkle")
+                .font(.system(size: 11, weight: .semibold))
+                .foregroundStyle(.secondary)
 
             if !settings.hasKey(for: settings.selectedProvider) {
-                AIUnavailableNotice(style: .system)
+                AIUnavailableNotice(style: .system, showsProviderMenu: true)
             } else if let answer = model.answer {
                 answerView(answer)
             } else {
@@ -192,7 +188,9 @@ private struct AskAIPopoverView: View {
             }
             .background(RoundedRectangle(cornerRadius: 8).fill(Color.primary.opacity(0.05)))
 
+            // Выбор провайдера — слева внизу, как во всех панелях Ask AI.
             HStack(spacing: 8) {
+                AIProviderMenu(style: .system)
                 if let error = model.errorMessage {
                     Text(error)
                         .font(.system(size: 11))

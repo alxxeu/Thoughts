@@ -38,12 +38,8 @@ struct AIProviderMenu: View {
                 SettingsNavigation.shared.open(.ai)
             }
         } label: {
-            HStack(spacing: 4) {
-                Image(systemName: Self.symbol(for: settings.selectedProvider))
-                    .font(.system(size: 10))
-                Text(Self.shortName(for: settings.selectedProvider))
-                    .font(.system(size: 11, weight: .medium))
-            }
+            Text(Self.shortName(for: settings.selectedProvider))
+                .font(.system(size: 11, weight: .medium))
             .foregroundStyle(style == .onDark ? AnyShapeStyle(Color.white.opacity(0.7)) : AnyShapeStyle(.secondary))
             .padding(.horizontal, 8)
             .padding(.vertical, 4)
@@ -71,15 +67,6 @@ struct AIProviderMenu: View {
         case .appleIntelligence: return "Apple"
         case .openAI: return "ChatGPT"
         case .anthropic: return "Claude"
-        }
-    }
-
-    /// Нейтральные SF Symbols — без чужих логотипов, кроме системного Apple.
-    static func symbol(for provider: AIProviderKind) -> String {
-        switch provider {
-        case .appleIntelligence: return "apple.logo"
-        case .openAI: return "bubble.left"
-        case .anthropic: return "sparkles"
         }
     }
 }
