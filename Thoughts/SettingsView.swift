@@ -27,6 +27,7 @@ struct SettingsView: View {
 
     // Проверяем текущий статус автозапуска в системе при загрузке
     @State private var launchAtLogin: Bool = (SMAppService.mainApp.status == .enabled)
+    @State private var isShowingReleaseNotes = false
 
     var body: some View {
         Group {
@@ -114,6 +115,9 @@ struct SettingsView: View {
                         Section {
                             LabeledContent("Version", value: appVersion)
                             LabeledContent("Author", value: "Aleksei Trofimov")
+                            SettingsRowButton(title: "Release Notes\u{2026}") {
+                                isShowingReleaseNotes = true
+                            }
                         }
 
                         Section {
@@ -138,6 +142,9 @@ struct SettingsView: View {
                         }
                     }
                     .formStyle(.grouped)
+                    .sheet(isPresented: $isShowingReleaseNotes) {
+                        ReleaseNotesView()
+                    }
                     .tabItem {
                         Label("About", systemImage: "info.circle")
                     }
