@@ -6,6 +6,10 @@ Thoughts is a native macOS app built with SwiftUI. Instead of organizing
 notes into folders or lists, you scatter cards freely across an
 open canvas, exactly where they make sense to you.
 
+
+https://github.com/user-attachments/assets/3dead5b6-c2e1-49d7-8cc9-fe3771b8cc8c
+
+
 ## Features
 
 - **Free-form canvas** — click and drag anywhere to create a card, move and resize it freely
