@@ -16,10 +16,17 @@ open canvas, exactly where they make sense to you.
 - **Multiple Spaces** — separate boards for different parts of your life, switch instantly with ⌥1–9
 - **Spotlight integration** — search your cards' text from anywhere on your Mac
 - **Quick Capture** — a global shortcut (⌃⌥⌘N by default, customizable) opens a floating panel over any app; type, press Return, and the card lands in your active Space
+- **Ask AI** — ask about a card, a selection or a whole Space: right-click any text and choose Ask AI, then replace, insert or copy the answer. Works with Apple Intelligence on-device, or ChatGPT and Claude with your own API key
 - **Customization** — pick the card font, text size and color, and add a subtle background pattern to the canvas
 - **iCloud sync** — optional, end-to-end encrypted sync of your Spaces and cards between your Macs
 - **Backup & export** — full backups (optionally password-protected) and a readable Markdown export
 - **Liquid Glass** on macOS 26, with a graceful fallback look on macOS 14–25
+
+## What's new in 1.3
+
+iCloud sync, Quick Capture, backups and Markdown export, Ask AI from the
+right-click menu, and appearance customization. See the
+[release notes](https://github.com/alxxeu/Thoughts/releases/tag/v1.3).
 
 ## Plugins
 
@@ -32,7 +39,10 @@ card templates — are being designed. See the draft spec in
 All data is stored locally in the app's own sandboxed container on your
 Mac. There is no account and no server: the developer never receives your
 content. Optional iCloud sync stores your Spaces and cards in *your own*
-iCloud account, end-to-end encrypted. The source code in this repository
+iCloud account, end-to-end encrypted. Ask AI with Apple Intelligence runs
+on your Mac; with ChatGPT or Claude, the text you ask about goes straight
+from your Mac to that provider using your own API key. Details are in the
+[privacy policy](docs/privacy.html). The source code in this repository
 is published so anyone can verify that for themselves.
 
 ## Requirements
