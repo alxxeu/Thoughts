@@ -784,7 +784,40 @@ struct ContentView: View {
     /// пружиной на входе. Summarize/Extract — иконки в левом нижнем углу
     /// того же поля, а не отдельная строка кнопок под ним; подсказки —
     /// тот же toolbarTooltip/setToolbarHover, что у верхнего кластера.
+    /// Рядом с ними — выбор провайдера (AIProviderMenu); если выбранный
+    /// недоступен, вместо поля — AIUnavailableNotice.
     private var askAIPanel: some View {
+        Group {
+            if viewModel.aiSettings.hasKey(for: viewModel.aiSettings.selectedProvider) {
+                spaceAIPrompt
+            } else {
+                AIUnavailableNotice(showsProviderMenu: true)
+                    .frame(height: 130)
+            }
+        }
+        .padding(6)
+        .frame(width: 300)
+        .background(
+            CardSurfaceBackground(
+                cornerRadius: 16,
+                usesGlassEffect: false,
+                tintOpacity: 0.15,
+                materialStyle: .thickMaterial,
+                lightMaterialStyle: .ultraThinMaterial,
+                lightTintOpacity: 0.2
+            )
+        )
+        .transition(
+            .asymmetric(
+                insertion: .scale(scale: 0.5, anchor: .top).combined(with: .opacity)
+                    .animation(spaceAISpring),
+                removal: .scale(scale: 0.5, anchor: .top).combined(with: .opacity)
+                    .animation(.easeIn(duration: 0.15))
+            )
+        )
+    }
+
+    private var spaceAIPrompt: some View {
         AIPromptTextView(text: $spaceAIQuestion, shouldFocus: isAskingSpaceAI) {
             askSpaceAI()
         }
@@ -836,6 +869,8 @@ struct ContentView: View {
                 .onHover { setToolbarHover($0, "Extract") }
                 .overlay(alignment: .top) { toolbarTooltip("Extract") }
 
+                AIProviderMenu()
+
                 if isSpaceAIBusy {
                     ProgressView()
                         .controlSize(.small)
@@ -856,26 +891,6 @@ struct ContentView: View {
             .disabled(isSpaceAIBusy || spaceAIQuestion.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
             .padding(5)
         }
-        .padding(6)
-        .frame(width: 300)
-        .background(
-            CardSurfaceBackground(
-                cornerRadius: 16,
-                usesGlassEffect: false,
-                tintOpacity: 0.15,
-                materialStyle: .thickMaterial,
-                lightMaterialStyle: .ultraThinMaterial,
-                lightTintOpacity: 0.2
-            )
-        )
-        .transition(
-            .asymmetric(
-                insertion: .scale(scale: 0.5, anchor: .top).combined(with: .opacity)
-                    .animation(spaceAISpring),
-                removal: .scale(scale: 0.5, anchor: .top).combined(with: .opacity)
-                    .animation(.easeIn(duration: 0.15))
-            )
-        )
     }
 
     private func spaceAIContextText() -> String {

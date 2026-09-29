@@ -40,7 +40,10 @@ struct SettingsView: View {
                 lockedPlaceholder
                     .frame(width: 460, height: 480)
             } else {
-                TabView {
+                TabView(selection: Binding(
+                    get: { SettingsNavigation.shared.selectedTab },
+                    set: { SettingsNavigation.shared.selectedTab = $0 }
+                )) {
                     Form {
                         Section {
                             Toggle("Launch at Login", isOn: $launchAtLogin)
@@ -81,26 +84,31 @@ struct SettingsView: View {
                     .tabItem {
                         Label("General", systemImage: "gearshape")
                     }
+                    .tag(SettingsNavigation.Tab.general)
 
                     AppearanceSettingsTab(settings: viewModel.appearanceSettings)
                         .tabItem {
                             Label("Appearance", systemImage: "paintbrush")
                         }
+                        .tag(SettingsNavigation.Tab.appearance)
 
                     SecuritySettingsTab(viewModel: viewModel)
                         .tabItem {
                             Label("Security", systemImage: "lock.shield")
                         }
+                        .tag(SettingsNavigation.Tab.security)
 
                     ShortcutsSettingsTab()
                         .tabItem {
                             Label("Shortcuts", systemImage: "keyboard")
                         }
+                        .tag(SettingsNavigation.Tab.shortcuts)
 
                     AISettingsTab()
                         .tabItem {
                             Label("AI", systemImage: "sparkles")
                         }
+                        .tag(SettingsNavigation.Tab.ai)
 
                     Form {
                         Section {
@@ -133,6 +141,7 @@ struct SettingsView: View {
                     .tabItem {
                         Label("About", systemImage: "info.circle")
                     }
+                    .tag(SettingsNavigation.Tab.about)
                 }
                 .frame(width: 460, height: 480)
             }

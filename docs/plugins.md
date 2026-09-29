@@ -43,7 +43,7 @@ A pack is data only. It *contributes* items to one or more **extension points**:
 | `textColors` | Named card text colors | Settings → Appearance → Text Color |
 | `patterns` | Canvas background patterns: procedural parameters or a tiled image | Settings → Appearance → Background |
 | `themes` | A named bundle of font + text color + pattern (+ intensity) | Settings → Appearance → Theme presets |
-| `aiActions` | Prompt templates | Card context menu → AI, and the Space "Ask AI" panel |
+| `aiActions` | Prompt templates | One-tap suggestions in the Ask AI panels (card context menu, Focus Mode, Space) |
 | `cardTemplates` | Starting text, size and tag for a new card | Quick Capture and a future "New from Template" menu |
 
 ### Tier 2: scripted plugins (future, exploratory)
@@ -241,7 +241,7 @@ restores the user's choice.
 - **Namespacing.** Built-in ids start with `builtin.`. Plugin items are
   `<pluginID>/<itemID>`. Because the separators differ, a plugin can't
   override a built-in.
-- **AI actions** become a second section of the card's AI submenu. They go
+- **AI actions** appear as one-tap suggestions in the Ask AI panels. They go
   through the existing `AITextServiceFactory`, so they respect the provider the
   user selected (Apple Intelligence runs on device, BYOK uses the user's own
   key).

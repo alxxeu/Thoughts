@@ -1,8 +1,8 @@
 import Foundation
 
 /// Системные промпты для AI-действий над всем Space целиком (см.
-/// ContentView.spaceAIControls) — в отличие от AITextAction, здесь на
-/// вход всегда идёт КОЛЛЕКЦИЯ заметок, разделённых "---", а не одна карточка.
+/// ContentView.askAIPanel) — в отличие от AICardPrompt, здесь на вход
+/// всегда идёт КОЛЛЕКЦИЯ заметок, разделённых "---", а не одна карточка.
 enum AISpaceAction {
     static let summarizeSystemPrompt = """
     You summarize a collection of short personal notes into a single, \

@@ -126,7 +126,6 @@ struct CardView: View {
                             viewModel.bringToFront(card)
                         }
                     },
-                    onAIAction: handleAIAction,
                     onEscape: isInFocusMode ? onRequestExitFocus : nil,
                     typography: viewModel.appearanceSettings.cardTypography
                 )
@@ -559,9 +558,8 @@ struct CardView: View {
 
     /// Тот же визуальный язык, что у ContentView.askAIPanel, но скоуп —
     /// ровно эта карточка, и по ширине панель совпадает с ней. Фиксированных
-    /// инструментов здесь нет: Summarize/Rewrite/… остались в контекстном
-    /// меню текста (правый клик → AI), а тут — свободная формулировка,
-    /// подсказанная примером в пустом поле.
+    /// инструментов нет — свободная формулировка, подсказанная примером в
+    /// пустом поле (как и в "Ask AI" из контекстного меню текста).
     private var cardAskAIPanel: some View {
         VStack(alignment: .leading, spacing: 0) {
             if let answer = cardAIAnswer {
@@ -607,6 +605,10 @@ struct CardView: View {
                 )
 
                 cardAIActionBar(for: answer)
+            } else if !viewModel.aiSettings.hasKey(for: viewModel.aiSettings.selectedProvider) {
+                AIUnavailableNotice(showsProviderMenu: true)
+                    .frame(height: 96)
+                    .padding(12)
             } else {
                 AIPromptTextView(text: $cardAIQuestion, shouldFocus: isShowingCardAI) {
                     askCardAI()
@@ -621,6 +623,10 @@ struct CardView: View {
                             .padding(.top, 6)
                             .allowsHitTesting(false)
                     }
+                }
+                .overlay(alignment: .bottomLeading) {
+                    AIProviderMenu()
+                        .padding(4)
                 }
                 .overlay(alignment: .bottomTrailing) {
                     HStack(spacing: 8) {
@@ -913,34 +919,6 @@ struct CardView: View {
         withAnimation(.spring(response: 0.45, dampingFraction: 0.72)) {
             aiPopInOffset = .zero
             aiPopInScale = 1.0
-        }
-    }
-
-    private func handleAIAction(_ action: AITextAction, _ inputText: String) {
-        // Не даём запустить второй запрос поверх ещё не завершённого —
-        // результат первого мог бы перезаписать то, что успел напечатать
-        // пользователь, пока ждал второй.
-        guard !isGeneratingAI, !inputText.isEmpty else { return }
-        isGeneratingAI = true
-        Task {
-            do {
-                let service = try AITextServiceFactory.makeActiveService()
-                let result = try await service.generate(systemPrompt: action.systemPrompt, userText: inputText)
-                await MainActor.run {
-                    if action.appendsResult {
-                        card.text += (card.text.isEmpty ? "" : "\n\n") + result
-                    } else {
-                        card.text = result
-                    }
-                    viewModel.scheduleDebouncedSave()
-                    isGeneratingAI = false
-                }
-            } catch {
-                await MainActor.run {
-                    aiErrorMessage = error.localizedDescription
-                    isGeneratingAI = false
-                }
-            }
         }
     }
 }
