@@ -18,8 +18,12 @@ enum BackupCodec {
     static let maximumFileSize = 200 * 1024 * 1024
 
     static let fileExtension = "thoughtsbackup"
+    /// Тип только по расширению (conforms to public.data), без "conformingTo:
+    /// .json": тип объявлен динамически, и файл на диске система определяет
+    /// именно так. С conformingTo получался другой dyn-идентификатор, и уже
+    /// сохранённые бэкапы были серыми в окне импорта.
     static var contentType: UTType {
-        UTType(filenameExtension: fileExtension, conformingTo: .json) ?? .json
+        UTType(filenameExtension: fileExtension) ?? .data
     }
 
     struct Envelope: Codable {
