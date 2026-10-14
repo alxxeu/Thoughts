@@ -3,7 +3,7 @@ import AppKit
 /// Подмена глифа на уровне вёрстки: `-` маркера списка рисуется как `•`.
 /// Сам текст при этом не меняется — копирование, undo и сохранение работают
 /// с исходным Markdown. (Скрытые символы — не здесь: см. MarkdownRenderer.hiddenKey.)
-final class MarkdownGlyphHider: NSObject, NSLayoutManagerDelegate {
+final class MarkdownBulletGlyphs: NSObject, NSLayoutManagerDelegate {
     func layoutManager(
         _ layoutManager: NSLayoutManager,
         shouldGenerateGlyphs glyphs: UnsafePointer<CGGlyph>,

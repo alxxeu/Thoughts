@@ -32,9 +32,9 @@ private final class CardNSTextView: NSTextView {
         super.setFrameSize(size)
     }
 
-    /// Делегат вёрстки, прячущий служебные символы Markdown. layoutManager
+    /// Делегат вёрстки, рисующий `-` списка как `•`. layoutManager
     /// держит делегата слабо — храним здесь.
-    let glyphHider = MarkdownGlyphHider()
+    let bulletGlyphs = MarkdownBulletGlyphs()
 
     // Вставка — всегда текст как есть: Markdown из Notion, сайтов и
     // md-приложений сразу отрисуется, а чужое форматирование (RTF/HTML)
@@ -427,7 +427,7 @@ struct CardTextView: NSViewRepresentable {
         textView.maxSize = NSSize(width: CGFloat.greatestFiniteMagnitude, height: CGFloat.greatestFiniteMagnitude)
         Self.applyChrome(typography, to: textView)
 
-        textView.layoutManager?.delegate = textView.glyphHider
+        textView.layoutManager?.delegate = textView.bulletGlyphs
         textView.string = text
         context.coordinator.lastTypography = typography
         Self.restyle(textView, typography: typography)
