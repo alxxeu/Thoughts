@@ -430,6 +430,9 @@ struct CardTextView: NSViewRepresentable {
         Self.applyChrome(typography, to: textView)
 
         textView.layoutManager?.delegate = textView.bulletGlyphs
+        // Вёрстка только видимой части: при смене Space длинные карточки
+        // иначе верстались целиком все сразу.
+        textView.layoutManager?.allowsNonContiguousLayout = true
         textView.string = text
         context.coordinator.lastTypography = typography
         Self.restyle(textView, typography: typography)
@@ -552,7 +555,8 @@ struct CardTextView: NSViewRepresentable {
         }
         /// Что было раскрыто при последней перекраске по движению курсора —
         /// см. MarkdownRenderer.revealedRanges.
-        var lastRevealed: [NSRange]?
+        /// Вне фокуса ничего не раскрыто — новая карточка уже раскрашена так.
+        var lastRevealed: [NSRange]? = []
         private var typography: CardTypography { lastTypography ?? AppearanceSettings.shared.cardTypography }
 
         init(_ parent: CardTextView) {
@@ -721,6 +725,8 @@ struct CardTextView: NSViewRepresentable {
         func textViewDidChangeSelection(_ notification: Notification) {
             guard let textView = notification.object as? NSTextView else { return }
             let isFocused = textView.window?.firstResponder === textView
+            // Без фокуса выделение меняет только установка текста — разбирать нечего.
+            guard isFocused || lastRevealed != [] else { return }
             let revealed = MarkdownRenderer.revealedRanges(in: textView.string, selection: isFocused ? textView.selectedRange() : nil)
             guard revealed != lastRevealed else { return }
             lastRevealed = revealed
@@ -739,7 +745,7 @@ struct CardTextView: NSViewRepresentable {
                 // Вне фокуса все служебные символы скрыты.
                 if let textView = self.textView {
                     CardTextView.restyle(textView, typography: self.typography)
-                    self.lastRevealed = nil
+                    self.lastRevealed = focused ? nil : []
                 }
             }
         }

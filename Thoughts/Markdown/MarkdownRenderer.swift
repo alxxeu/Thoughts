@@ -184,7 +184,7 @@ enum MarkdownRenderer {
 
         // Голые адреса — тоже ссылки. Автоопределение NSTextView выключено:
         // полная перекраска выше стирала бы его атрибуты.
-        if let detector = try? NSDataDetector(types: NSTextCheckingResult.CheckingType.link.rawValue) {
+        if let detector = linkDetector {
             for match in detector.matches(in: storage.string, range: full) {
                 guard let url = match.url,
                       !(linkedRanges + codeRanges).contains(where: { NSIntersectionRange($0, match.range).length > 0 }),
@@ -201,6 +201,7 @@ enum MarkdownRenderer {
     }
 
     private static let hiddenFont = NSFont.systemFont(ofSize: 0.1)
+    private static let linkDetector = try? NSDataDetector(types: NSTextCheckingResult.CheckingType.link.rawValue)
 
     /// Что раскрыто при таком положении курсора — строки, блоки кода и
     /// фрагменты, которых он касается (те же правила, что в style). Пока ответ
