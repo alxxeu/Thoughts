@@ -207,6 +207,33 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             self?.viewModel?.recordInteraction()
             return event
         }
+        if let unreadable = BoardStore.shared.unreadableFileURL {
+            showUnreadableBoardAlert(unreadable)
+        }
+    }
+
+    /// Текст сохраняется с задержкой (scheduleDebouncedSave) — без этого
+    /// последние слова перед ⌘Q/выходом из системы терялись бы.
+    func applicationWillTerminate(_ notification: Notification) {
+        viewModel?.flushPendingSave()
+    }
+
+    private func showUnreadableBoardAlert(_ url: URL) {
+        let alert = NSAlert()
+        alert.alertStyle = .critical
+        alert.messageText = "Thoughts couldn\u{2019}t read your saved cards"
+        if url.lastPathComponent == "board.json" {
+            alert.informativeText = "The file couldn\u{2019}t be moved aside, so Thoughts won\u{2019}t save anything until it\u{2019}s fixed. "
+                + "You can restore a backup with File \u{2192} Import Backup\u{2026}"
+        } else {
+            alert.informativeText = "The unreadable file was kept as \u{201C}\(url.lastPathComponent)\u{201D}. "
+                + "You can restore a backup with File \u{2192} Import Backup\u{2026}"
+        }
+        alert.addButton(withTitle: "OK")
+        alert.addButton(withTitle: "Show in Finder")
+        if alert.runModal() == .alertSecondButtonReturn {
+            NSWorkspace.shared.activateFileViewerSelecting([url])
+        }
     }
 
     func application(
