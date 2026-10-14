@@ -178,7 +178,7 @@ struct CardView: View {
                         .frame(width: 16, height: 16)
                     
                     Circle()
-                        .fill(card.tagColor != nil ? card.tagColor!.color : Color.white.opacity(0.25))
+                        .fill(card.tagColor?.color ?? Color.white.opacity(0.25))
                         .frame(width: 10, height: 10)
                         .scaleEffect(isHoveringTagButton && !isPrivacyLocked ? 1.6 : 1.0)
                 }
@@ -436,67 +436,67 @@ struct CardView: View {
         // фокусе" перехватывается раньше, в CardNSTextView.cancelOperation —
         // NSTextView не пропускает Escape дальше по цепочке сам.
         .onExitCommand(perform: isInFocusMode ? onRequestExitFocus : nil)
-                .onChange(of: card.privacyMode) { _, newMode in
-                    cancelRelock()
-                    if newMode != .none {
-                        withAnimation(.easeInOut(duration: 0.35)) {
-                            isRevealed = false
-                        }
-                    }
-                }
-                // Раскрытая по клику на спойлер/лок карточка остаётся
-                // активной, пока пользователь не кликнет вне неё — на пустой
-                // холст (ClearTextSelection) или на другую карточку
-                // (cardWasClicked с чужим id). Сама блокировка при этом не
-                // мгновенная, а с 5-секундной отсрочкой — успеешь кликнуть
-                // обратно на эту же карточку и блокировка отменится.
-                .onReceive(NotificationCenter.default.publisher(for: .clearTextSelection)) { _ in
-                    if isRevealed {
-                        scheduleRelock()
-                    }
-                }
-                // Уход в другое приложение — тот же 5-секундный отсчёт: успеть
-                // скопировать что-то и вернуться. Возврат с курсором в этой же
-                // карточке — сигнал "я снова здесь", отсчёт отменяется.
-                .onReceive(NotificationCenter.default.publisher(for: NSApplication.didResignActiveNotification)) { _ in
-                    if isRevealed {
-                        scheduleRelock()
-                    }
-                }
-                .onReceive(NotificationCenter.default.publisher(for: NSApplication.didBecomeActiveNotification)) { _ in
-                    if isTextFocused {
-                        cancelRelock()
-                    }
-                }
-                .onReceive(NotificationCenter.default.publisher(for: .cardWasClicked)) { notification in
-                    guard let clickedID = notification.object as? UUID else { return }
-                    if clickedID == card.id {
-                        cancelRelock()
-                    } else if isRevealed {
-                        scheduleRelock()
-                    }
-                }
-                .onReceive(NotificationCenter.default.publisher(for: .highlightCard)) { notification in
-                    guard let targetID = notification.object as? UUID, targetID == card.id else { return }
-                    viewModel.bringToFront(card)
-                    unhighlightTask?.cancel()
-                    withAnimation(.easeInOut(duration: 0.3)) {
-                        isHighlighted = true
-                    }
-                    unhighlightTask = Task {
-                        try? await Task.sleep(for: .seconds(1.6))
-                        guard !Task.isCancelled else { return }
-                        withAnimation(.easeInOut(duration: 0.5)) {
-                            isHighlighted = false
-                        }
-                    }
+        .onChange(of: card.privacyMode) { _, newMode in
+            cancelRelock()
+            if newMode != .none {
+                withAnimation(.easeInOut(duration: 0.35)) {
+                    isRevealed = false
                 }
             }
-    
+        }
+        // Раскрытая по клику на спойлер/лок карточка остаётся
+        // активной, пока пользователь не кликнет вне неё — на пустой
+        // холст (ClearTextSelection) или на другую карточку
+        // (cardWasClicked с чужим id). Сама блокировка при этом не
+        // мгновенная, а с 5-секундной отсрочкой — успеешь кликнуть
+        // обратно на эту же карточку и блокировка отменится.
+        .onReceive(NotificationCenter.default.publisher(for: .clearTextSelection)) { _ in
+            if isRevealed {
+                scheduleRelock()
+            }
+        }
+        // Уход в другое приложение — тот же 5-секундный отсчёт: успеть
+        // скопировать что-то и вернуться. Возврат с курсором в этой же
+        // карточке — сигнал "я снова здесь", отсчёт отменяется.
+        .onReceive(NotificationCenter.default.publisher(for: NSApplication.didResignActiveNotification)) { _ in
+            if isRevealed {
+                scheduleRelock()
+            }
+        }
+        .onReceive(NotificationCenter.default.publisher(for: NSApplication.didBecomeActiveNotification)) { _ in
+            if isTextFocused {
+                cancelRelock()
+            }
+        }
+        .onReceive(NotificationCenter.default.publisher(for: .cardWasClicked)) { notification in
+            guard let clickedID = notification.object as? UUID else { return }
+            if clickedID == card.id {
+                cancelRelock()
+            } else if isRevealed {
+                scheduleRelock()
+            }
+        }
+        .onReceive(NotificationCenter.default.publisher(for: .highlightCard)) { notification in
+            guard let targetID = notification.object as? UUID, targetID == card.id else { return }
+            viewModel.bringToFront(card)
+            unhighlightTask?.cancel()
+            withAnimation(.easeInOut(duration: 0.3)) {
+                isHighlighted = true
+            }
+            unhighlightTask = Task {
+                try? await Task.sleep(for: .seconds(1.6))
+                guard !Task.isCancelled else { return }
+                withAnimation(.easeInOut(duration: 0.5)) {
+                    isHighlighted = false
+                }
+            }
+        }
+    }
+
     // MARK: - Подсказка "Try Cmd+F"
 
     private static let focusTipThreshold = 60
-    /// Втрое дольше исходных 1.5с — не успевали прочитать.
+    /// Достаточно долго, чтобы подсказку успели прочитать.
     private static let focusTipHoldDuration: Double = 4.5
 
     // MARK: - Helper Methods & Gestures
