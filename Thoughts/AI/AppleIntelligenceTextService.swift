@@ -8,19 +8,30 @@ import FoundationModels
 /// AppleIntelligenceAvailability.
 @available(macOS 26.0, *)
 struct AppleIntelligenceTextService: AITextService {
+    static let contextTooLargeMessage = "Apple Intelligence runs on your Mac and can only read about 3,000 words at a time \u{2014} there\u{2019}s more text here than that.\n\nTo ask about bigger Spaces, switch to ChatGPT or Claude with your own API key in Settings \u{2192} AI. Or ask about a single card instead."
+
     func generate(systemPrompt: String, userText: String) async throws -> String {
         let session = LanguageModelSession(instructions: systemPrompt)
         do {
             let response = try await session.respond(to: userText)
             return response.content
-        } catch LanguageModelSession.GenerationError.exceededContextWindowSize {
-            // Окно on-device модели — несколько тысяч токенов: большой Space
-            // целиком в него не влезает.
-            throw AITextServiceError.apiError(
-                "Too much text for Apple Intelligence. Choose ChatGPT or Claude, or ask about a single card."
-            )
         } catch {
-            throw AITextServiceError.apiError(error.localizedDescription)
+            // Окно on-device модели — ~4096 токенов: большой Space целиком
+            // в него не влезает, а системный текст ошибки ничего не объясняет.
+            throw AITextServiceError.apiError(
+                Self.isContextTooLarge(error) ? Self.contextTooLargeMessage : error.localizedDescription
+            )
         }
+    }
+
+    /// macOS 27 бросает LanguageModelError, macOS 26 — устаревший GenerationError.
+    static func isContextTooLarge(_ error: Error) -> Bool {
+        if #available(macOS 27.0, *), case .contextSizeExceeded? = error as? LanguageModelError {
+            return true
+        }
+        if case .exceededContextWindowSize? = error as? LanguageModelSession.GenerationError {
+            return true
+        }
+        return false
     }
 }
