@@ -125,4 +125,12 @@ struct MarkdownStylerTests {
     @Test func plainTextForNewBlocks() {
         #expect(MarkdownStyler.plainText("> quote\n- [ ] a\n- [x] b\n```\n*raw*\n```") == "quote\n\u{2610} a\n\u{2611} b\n\n*raw*\n")
     }
+
+    @Test func linkWithParenthesesInUrl() {
+        let text = "[Swift](https://en.wikipedia.org/wiki/Swift_(language)) rocks"
+        let link = MarkdownStyler.parse(text).flatMap(\.inlines).first { if case .link = $0.style { true } else { false } }
+        #expect(link?.style == .link("https://en.wikipedia.org/wiki/Swift_(language)"))
+        #expect(MarkdownStyler.plainText(text) == "Swift rocks")
+    }
 }
+

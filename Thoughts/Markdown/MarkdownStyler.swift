@@ -304,7 +304,7 @@ enum MarkdownStyler {
         guard let closeBracket = find(closeBracketChar, in: ns, from: start + 1, to: end),
               closeBracket > start + 1,
               closeBracket + 1 < end, ns.character(at: closeBracket + 1) == openParen,
-              let closeParen = find(closeParenChar, in: ns, from: closeBracket + 2, to: end),
+              let closeParen = matchingParen(in: ns, from: closeBracket + 2, to: end),
               closeParen > closeBracket + 2 else { return nil }
         let url = ns.substring(with: NSRange(location: closeBracket + 2, length: closeParen - closeBracket - 2))
         guard !url.contains(" ") else { return nil }
@@ -313,6 +313,24 @@ enum MarkdownStyler {
             NSRange(location: closeBracket, length: closeParen - closeBracket + 1),
             url
         )
+    }
+
+    /// Закрывающая скобка адреса с учётом парных внутри: у
+    /// `wiki/Swift_(language)` адрес не обрывается на первой `)`.
+    private static func matchingParen(in ns: NSString, from: Int, to end: Int) -> Int? {
+        var depth = 0
+        var i = from
+        while i < end {
+            switch ns.character(at: i) {
+            case openParen: depth += 1
+            case closeParenChar:
+                if depth == 0 { return i }
+                depth -= 1
+            default: break
+            }
+            i += 1
+        }
+        return nil
     }
 
     private static func find(_ char: unichar, in ns: NSString, from: Int, to end: Int) -> Int? {
