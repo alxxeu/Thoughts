@@ -65,7 +65,7 @@ struct SettingsView: View {
                                 Label("Runs best on macOS 26 or later.", systemImage: "checkmark.seal.fill")
                                     .font(.caption)
                                     .foregroundStyle(.green)
-                                Text("Keeps Thoughts sitting just above your Desktop icons instead of a normal window. Press \u{2325}D to show the Desktop; switch to any Space (\u{2325}1\u{2013}9) to come back. From any other app, use \u{2303}\u{2325}D and \u{2303}\u{2325}1\u{2013}9.")
+                                Text("Keeps Thoughts sitting just above your Desktop icons instead of a normal window. Press \u{2325}D in any app to show the Desktop; switch to any Space (\u{2325}1\u{2013}9) to come back. From any other app, use \u{2303}\u{2325}1\u{2013}9.")
                             }
                         }
 

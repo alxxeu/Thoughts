@@ -2,7 +2,7 @@ import AppKit
 import Carbon.HIToolbox
 
 /// Окно Thoughts в режиме Desktop Overlay: уровень над иконками стола,
-/// безрамочный фрейм во весь экран, глобальные хоткеи ⌃⌥D/⌃⌥1–9 — и
+/// безрамочный фрейм во весь экран, глобальные хоткеи ⌥D/⌃⌥D/⌃⌥1–9 — и
 /// возврат обычного окна при выключении. Чистый AppKit, состояние берёт из
 /// DesktopOverlaySettings; ContentView только отдаёт окно и зовёт apply().
 final class DesktopOverlayWindowController {
@@ -140,26 +140,27 @@ final class DesktopOverlayWindowController {
         window.ignoresMouseEvents = isEnabled && isDesktopModeActive
     }
 
-    /// ⌃⌥D как глобальный хоткей (см. GlobalHotKeyManager) — должен
-    /// срабатывать, даже когда активное приложение не Thoughts, а Finder
-    /// (ровно так и есть в Desktop mode после клика по иконке на столе).
-    /// С ⌃, а не голым ⌥, как в меню: глобальный ⌥D забирал бы клавишу
-    /// у всех приложений. ⌃⌥1–9 (выход из Desktop mode) — глобальные
-    /// всегда, см. AppDelegate.registerSpaceHotKeys.
+    /// ⌥D и запасной ⌃⌥D как глобальные хоткеи (см. GlobalHotKeyManager) —
+    /// должны срабатывать, даже когда активное приложение не Thoughts, а
+    /// Finder (ровно так и есть в Desktop mode после клика по иконке на
+    /// столе). Цена: пока Overlay включён, ⌥D (∂) занят во всех приложениях.
+    /// ⌃⌥1–9 (выход из Desktop mode) — глобальные всегда, см.
+    /// AppDelegate.registerSpaceHotKeys.
     private func registerHotKeys() {
         // Вызывается и на каждую смену фокуса окна — регистрируем один раз.
         guard hotKeyTokens.isEmpty else { return }
-        let modifiers = UInt32(controlKey | optionKey)
         let settings = settings
         var tokens: [HotKeyToken] = []
 
-        if case .success(let token) = GlobalHotKeyManager.shared.register(keyCode: 2 /* kVK_ANSI_D */, modifiers: modifiers, action: {
-            // Иначе зажатое ⌃⌥D (авто-повтор клавиши) непрерывно шлёт один
-            // и тот же вход в Desktop mode заново.
-            guard !settings.isDesktopModeActive else { return }
-            settings.isDesktopModeActive = true
-        }) {
-            tokens.append(token)
+        for modifiers in [optionKey, controlKey | optionKey] {
+            if case .success(let token) = GlobalHotKeyManager.shared.register(keyCode: 2 /* kVK_ANSI_D */, modifiers: UInt32(modifiers), action: {
+                // Иначе зажатое ⌥D (авто-повтор клавиши) непрерывно шлёт один
+                // и тот же вход в Desktop mode заново.
+                guard !settings.isDesktopModeActive else { return }
+                settings.isDesktopModeActive = true
+            }) {
+                tokens.append(token)
+            }
         }
         hotKeyTokens = tokens
     }

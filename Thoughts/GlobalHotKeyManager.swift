@@ -6,7 +6,7 @@ import AppKit
 typealias HotKeyToken = UInt32
 
 /// Глобальные хоткеты — должны срабатывать независимо от того, какое
-/// приложение сейчас активно. Владельцы: Desktop Overlay (⌃⌥D: клик по
+/// приложение сейчас активно. Владельцы: Desktop Overlay (⌥D/⌃⌥D: клик по
 /// иконке на столе в Desktop mode делает активным Finder, а не Thoughts, и
 /// обычные SwiftUI .keyboardShortcut/CommandMenu в этот момент вообще не
 /// получают событие — оно достаётся Finder), переключение Spaces ⌃⌥1–9

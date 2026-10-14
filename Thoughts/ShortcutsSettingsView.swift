@@ -30,7 +30,7 @@ private let shortcuts: [ShortcutInfo] = [
     ),
     ShortcutInfo(
         title: "Show Desktop",
-        subtitle: "Enter Desktop Overlay mode, showing your desktop icons.",
+        subtitle: "Enter Desktop Overlay mode, showing your desktop icons. Works from any app.",
         symbol: "\u{2325}D"
     ),
     ShortcutInfo(
@@ -40,7 +40,7 @@ private let shortcuts: [ShortcutInfo] = [
     ),
     ShortcutInfo(
         title: "Show Desktop from Any App",
-        subtitle: "While Desktop Overlay is on.",
+        subtitle: "Same as \u{2325}D, in case another app uses it.",
         symbol: "\u{2303}\u{2325}D"
     ),
     ShortcutInfo(
