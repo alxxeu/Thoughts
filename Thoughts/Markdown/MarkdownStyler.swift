@@ -7,7 +7,7 @@ import Foundation
 ///
 /// Набор синтаксиса — как в Bear 2: `# ## ###`, `**жирный**`, `*курсив*`,
 /// `~~зачёркнутый~~`, `~подчёркнутый~`, `==выделение==`, `` `код` ``,
-/// `[текст](url)`, `- ` и `1. ` списки, `- [ ] ` чек-листы, `> ` цитаты,
+/// `[текст](url)`, `- ` и `1. ` списки, `[] `/`[x] ` чек-листы (и `- [ ] `), `> ` цитаты,
 /// блоки кода ```` ``` ````, `--`…`----------` разделитель, `\*` экранирование.
 /// shortcut: свой упрощённый разбор, не полный CommonMark (нет `_`, таблиц,
 /// вложенных списков) — расширять вместе с редактором.
@@ -46,10 +46,12 @@ enum MarkdownStyler {
         var spans: [NSRange] = []
         /// У строк блока кода (и его ```) — весь блок, от ``` до ```.
         var codeBlock: NSRange?
+        /// У строк цитаты — вся цитата: соседние строки `> ` — один блок.
+        var quoteBlock: NSRange?
 
         static func == (lhs: Paragraph, rhs: Paragraph) -> Bool {
             lhs.range == rhs.range && lhs.block == rhs.block && lhs.blockMarker == rhs.blockMarker
-                && lhs.markers == rhs.markers && lhs.spans == rhs.spans && lhs.codeBlock == rhs.codeBlock
+                && lhs.markers == rhs.markers && lhs.spans == rhs.spans && lhs.codeBlock == rhs.codeBlock && lhs.quoteBlock == rhs.quoteBlock
                 && lhs.inlines.map(\.range) == rhs.inlines.map(\.range)
                 && lhs.inlines.map(\.style) == rhs.inlines.map(\.style)
         }
@@ -81,6 +83,17 @@ enum MarkdownStyler {
         } while location < ns.length
         // Незакрытый блок кода тянется до конца текста.
         if let start = openFence { closeCodeBlock(&result, from: start) }
+
+        // Соседние строки цитаты — один блок (одна подложка и полоса).
+        var index = 0
+        while index < result.count {
+            guard result[index].block == .quote else { index += 1; continue }
+            var end = index
+            while end + 1 < result.count, result[end + 1].block == .quote { end += 1 }
+            let block = NSRange(location: result[index].range.location, length: NSMaxRange(result[end].range) - result[index].range.location)
+            for i in index...end { result[i].quoteBlock = block }
+            index = end + 1
+        }
         if ns.length > 0, text.hasSuffix("\n") {
             result.append(Paragraph(range: NSRange(location: ns.length, length: 0), block: .paragraph, blockMarker: nil, inlines: [], markers: []))
         }
@@ -121,11 +134,13 @@ enum MarkdownStyler {
             block = .heading(length - 1)
             blockMarker = NSRange(location: range.location, length: length)
             bodyStart += length
-        } else if line.range(of: #"^- \[[ xX]\] "#, options: .regularExpression) != nil {
-            let done = line.dropFirst(3).first != " "
-            block = .task(done: done)
-            blockMarker = NSRange(location: range.location, length: 6)
-            bodyStart += 6
+        } else if let match = line.range(of: Self.taskPattern, options: .regularExpression) {
+            // `[] `, `[ ] `, `[x] ` — и `- [ ] ` из Notion и GitHub.
+            let marker = line[match]
+            let length = (String(marker) as NSString).length
+            block = .task(done: marker.contains("x") || marker.contains("X"))
+            blockMarker = NSRange(location: range.location, length: length)
+            bodyStart += length
         } else if line.hasPrefix("> ") || line == ">" {
             let length = min(2, (line as NSString).length)
             block = .quote
@@ -173,6 +188,9 @@ enum MarkdownStyler {
             }
         }.joined(separator: "\n")
     }
+
+    /// Маркер пункта чек-листа в начале строки.
+    static let taskPattern = #"^(- )?\[[ xX]?\] "#
 
     /// Символы, которые в обычном тексте нужно экранировать, чтобы они не стали разметкой.
     static let specialCharacters: Set<Character> = ["\\", "*", "~", "=", "`", "[", "]", "#"]

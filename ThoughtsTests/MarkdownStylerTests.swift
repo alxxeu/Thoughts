@@ -88,11 +88,18 @@ struct MarkdownStylerTests {
     }
 
     @Test func quotesAndTasks() {
-        let paragraphs = MarkdownStyler.parse("> said **this**\n>\n- [ ] todo\n- [x] done\n- [ ]no space")
-        #expect(paragraphs.map(\.block) == [.quote, .quote, .task(done: false), .task(done: true), .bullet])
+        let paragraphs = MarkdownStyler.parse("> said **this**\n>\n- [ ] todo\n- [x] done\n- [ ]no space\n[] a\n[x] b\n[ ] c\n- [] d")
+        #expect(paragraphs.map(\.block) == [.quote, .quote, .task(done: false), .task(done: true), .bullet,
+                                            .task(done: false), .task(done: true), .task(done: false), .task(done: false)])
         #expect(paragraphs[0].blockMarker == NSRange(location: 0, length: 2))
         #expect(paragraphs[1].blockMarker?.length == 1)
         #expect(paragraphs[2].blockMarker?.length == 6)
+        #expect(paragraphs[5].blockMarker?.length == 3)
+        #expect(paragraphs[6].blockMarker?.length == 4)
+        // Соседние строки цитаты — один блок.
+        #expect(paragraphs[0].quoteBlock == paragraphs[1].quoteBlock)
+        #expect(paragraphs[0].quoteBlock == NSRange(location: 0, length: 17))
+        #expect(paragraphs[2].quoteBlock == nil)
         // Внутри цитаты разметка работает.
         #expect(styled("> said **this**", .bold) == ["this"])
     }

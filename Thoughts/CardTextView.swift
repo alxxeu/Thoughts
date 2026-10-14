@@ -68,36 +68,67 @@ private final class CardNSTextView: NSTextView {
         onEscape()
     }
 
-    /// Под текстом: подложка блоков кода и черта слева у цитат.
+    /// Поля блоков (код, цитата): прямоугольник на всю ширину по строкам
+    /// блока, включая их отступы сверху и снизу.
+    private func blockBoxes(_ key: NSAttributedString.Key) -> [(range: NSRange, rect: NSRect)] {
+        guard let layoutManager, let textContainer, let textStorage, textStorage.length > 0 else { return [] }
+        var boxes: [(NSRange, NSRect)] = []
+        var seen = Set<Int>()
+        textStorage.enumerateAttribute(key, in: NSRange(location: 0, length: textStorage.length)) { value, _, _ in
+            guard let block = (value as? NSValue)?.rangeValue, seen.insert(block.location).inserted else { return }
+            var rect = NSRect.null
+            let glyphs = layoutManager.glyphRange(forCharacterRange: block, actualCharacterRange: nil)
+            layoutManager.enumerateLineFragments(forGlyphRange: glyphs) { lineRect, _, _, _, _ in
+                rect = rect.union(lineRect)
+            }
+            guard !rect.isNull else { return }
+            rect.origin.x = textContainerOrigin.x - 6
+            rect.size.width = textContainer.size.width + 12
+            rect.origin.y += textContainerOrigin.y
+            boxes.append((block, rect))
+        }
+        return boxes
+    }
+
+    /// Под текстом: подложка блоков кода, поле цитаты с полосой слева.
     override func drawBackground(in rect: NSRect) {
         super.drawBackground(in: rect)
-        guard let layoutManager, let textContainer, let textStorage else { return }
-        let origin = textContainerOrigin
-        let fullRange = NSRange(location: 0, length: textStorage.length)
 
-        var drawnBlocks = Set<Int>()
-        textStorage.enumerateAttribute(MarkdownRenderer.codeBlockKey, in: fullRange) { value, _, _ in
-            guard let block = (value as? NSValue)?.rangeValue, drawnBlocks.insert(block.location).inserted else { return }
-            let glyphs = layoutManager.glyphRange(forCharacterRange: block, actualCharacterRange: nil)
-            var box = layoutManager.boundingRect(forGlyphRange: glyphs, in: textContainer)
-            box.origin.x = origin.x - 6
-            box.size.width = textContainer.size.width + 12
-            box.origin.y += origin.y - 2
-            box.size.height += 4
+        for (_, box) in blockBoxes(MarkdownRenderer.codeBlockKey) {
             dividerLineColor.withAlphaComponent(0.08).setFill()
             NSBezierPath(roundedRect: box, xRadius: 6, yRadius: 6).fill()
         }
 
-        textStorage.enumerateAttribute(MarkdownRenderer.quoteKey, in: fullRange) { value, range, _ in
-            guard value != nil else { return }
-            let glyphs = layoutManager.glyphRange(forCharacterRange: range, actualCharacterRange: nil)
-            layoutManager.enumerateLineFragments(forGlyphRange: glyphs) { lineRect, _, _, _, _ in
-                let bar = NSRect(x: origin.x + 2, y: origin.y + lineRect.minY, width: 2.5, height: lineRect.height)
-                self.dividerLineColor.withAlphaComponent(0.9).setFill()
-                NSBezierPath(roundedRect: bar, xRadius: 1.25, yRadius: 1.25).fill()
-            }
+        let accent = NSColor.controlAccentColor
+        for (_, box) in blockBoxes(MarkdownRenderer.quoteKey) {
+            let shape = NSBezierPath(roundedRect: box, xRadius: 6, yRadius: 6)
+            accent.withAlphaComponent(0.14).setFill()
+            shape.fill()
+            // Сплошная полоса по левому краю — внутри скругления поля.
+            NSGraphicsContext.saveGraphicsState()
+            shape.addClip()
+            accent.setFill()
+            NSRect(x: box.minX, y: box.minY, width: 3, height: box.height).fill()
+            NSGraphicsContext.restoreGraphicsState()
         }
     }
+
+    /// Иконка SF Symbols одного цвета.
+    private func drawSymbol(_ name: String, color: NSColor, in rect: NSRect) {
+        let config = NSImage.SymbolConfiguration(pointSize: rect.height, weight: .medium)
+            .applying(NSImage.SymbolConfiguration(paletteColors: [color]))
+        NSImage(systemSymbolName: name, accessibilityDescription: nil)?
+            .withSymbolConfiguration(config)?
+            .draw(in: rect)
+    }
+
+    /// Кнопка/значок в правом верхнем углу поля блока.
+    private func cornerIconRect(in box: NSRect) -> NSRect {
+        NSRect(x: box.maxX - 20, y: box.minY + 6, width: 12, height: 12)
+    }
+
+    /// Блок кода, только что скопированный кнопкой, — на секунду галочка.
+    private var copiedBlockLocation: Int?
 
     /// Рисует линии разделителей `---` поверх текста (строки отмечены
     /// MarkdownRenderer.dividerKey) и для каждой берёт СВЕЖИЙ line fragment
@@ -126,7 +157,7 @@ private final class CardNSTextView: NSTextView {
             path.stroke()
         }
 
-        // Квадратики чек-листов — поверх прозрачных `[ ]`.
+        // Квадратики чек-листов — слева, на отступе строки.
         textStorage.enumerateAttribute(MarkdownRenderer.taskBoxKey, in: fullRange) { value, range, _ in
             guard let done = value as? Bool, let box = taskBoxRect(for: range) else { return }
             let color = textColor ?? .white
@@ -151,27 +182,53 @@ private final class CardNSTextView: NSTextView {
                 path.stroke()
             }
         }
+
+        // Значки в углу полей: « у цитаты, копирование у кода.
+        for (_, box) in blockBoxes(MarkdownRenderer.quoteKey) {
+            drawSymbol("quote.closing", color: .controlAccentColor, in: cornerIconRect(in: box))
+        }
+        for (block, box) in blockBoxes(MarkdownRenderer.codeBlockKey) {
+            let copied = copiedBlockLocation == block.location
+            drawSymbol(copied ? "checkmark" : "clipboard", color: dividerLineColor.withAlphaComponent(0.9), in: cornerIconRect(in: box))
+        }
     }
 
-    /// Квадрат чек-листа на месте `[ ]` — по высоте строки шрифта, по центру.
+    /// Квадрат чек-листа на отступе строки, по центру строчных букв.
     private func taskBoxRect(for range: NSRange) -> NSRect? {
-        guard let layoutManager, let textContainer else { return nil }
-        let glyphs = layoutManager.glyphRange(forCharacterRange: range, actualCharacterRange: nil)
-        guard glyphs.length > 0 else { return nil }
-        let rect = layoutManager.boundingRect(forGlyphRange: glyphs, in: textContainer)
-        let font = textStorage?.attribute(.font, at: range.location, effectiveRange: nil) as? NSFont
-        let side = ((font?.capHeight ?? 10) * 1.35).rounded()
-        return NSRect(
-            x: textContainerOrigin.x + rect.minX + 1,
-            y: textContainerOrigin.y + rect.midY - side / 2,
-            width: side,
-            height: side
-        )
+        guard let layoutManager, let textStorage, range.location < textStorage.length else { return nil }
+        let glyph = layoutManager.glyphIndexForCharacter(at: range.location)
+        let line = layoutManager.lineFragmentRect(forGlyphAt: glyph, effectiveRange: nil)
+        let baseline = layoutManager.location(forGlyphAt: glyph).y
+        let font = textStorage.attribute(.font, at: range.location, effectiveRange: nil) as? NSFont ?? .systemFont(ofSize: 15)
+        let side = (font.capHeight * 1.35).rounded()
+        let centerY = textContainerOrigin.y + line.minY + baseline - font.xHeight / 2
+        return NSRect(x: textContainerOrigin.x + 1, y: centerY - side / 2, width: side, height: side)
     }
 
-    /// Клик по квадратику отмечает пункт: `[ ]` ↔ `[x]`, с ⌘Z.
+    /// Текст блока кода без строк ```.
+    private func codeContent(of block: NSRange) -> String {
+        var lines = (string as NSString).substring(with: block).components(separatedBy: "\n")
+        if lines.first?.trimmingCharacters(in: .whitespaces).hasPrefix("```") == true { lines.removeFirst() }
+        if lines.count > 0, lines.last?.trimmingCharacters(in: .whitespaces).hasPrefix("```") == true { lines.removeLast() }
+        return lines.joined(separator: "\n")
+    }
+
+    /// Клик по квадратику отмечает пункт (`[]` ↔ `[x]`, с ⌘Z); клик по
+    /// значку в углу блока кода копирует его текст.
     override func mouseDown(with event: NSEvent) {
         let point = convert(event.locationInWindow, from: nil)
+        if let (block, _) = blockBoxes(MarkdownRenderer.codeBlockKey).first(where: { cornerIconRect(in: $0.rect).insetBy(dx: -4, dy: -4).contains(point) }) {
+            NSPasteboard.general.clearContents()
+            NSPasteboard.general.setString(codeContent(of: block), forType: .string)
+            copiedBlockLocation = block.location
+            needsDisplay = true
+            DispatchQueue.main.asyncAfter(deadline: .now() + 1.2) { [weak self] in
+                guard self?.copiedBlockLocation == block.location else { return }
+                self?.copiedBlockLocation = nil
+                self?.needsDisplay = true
+            }
+            return
+        }
         if let textStorage, textStorage.length > 0 {
             var hit: NSRange?
             textStorage.enumerateAttribute(MarkdownRenderer.taskBoxKey, in: NSRange(location: 0, length: textStorage.length)) { value, range, stop in
@@ -179,12 +236,17 @@ private final class CardNSTextView: NSTextView {
                 hit = range
                 stop.pointee = true
             }
-            if let box = hit {
-                let mark = NSRange(location: box.location + 1, length: 1)
-                let isDone = (string as NSString).substring(with: mark) != " "
-                let replacement = isDone ? " " : "x"
-                if shouldChangeText(in: mark, replacementString: replacement) {
-                    textStorage.replaceCharacters(in: mark, with: replacement)
+            if let space = hit {
+                // Содержимое скобок перед пробелом: `[]`/`[ ]` ↔ `[x]`.
+                let ns = string as NSString
+                let close = space.location - 1
+                var open = close - 1
+                while open > 0, ns.character(at: open) != 0x5B { open -= 1 } // "["
+                let inside = NSRange(location: open + 1, length: close - open - 1)
+                let isDone = ns.substring(with: inside).lowercased() == "x"
+                let replacement = isDone ? "" : "x"
+                if shouldChangeText(in: inside, replacementString: replacement) {
+                    textStorage.replaceCharacters(in: inside, with: replacement)
                     didChangeText()
                 }
                 return
@@ -367,12 +429,12 @@ private final class CardNSTextView: NSTextView {
     enum ListPrefix {
         case bullet
         case numbered(Int)
-        case task
+        case task(length: Int)
         case quote
 
         var length: Int {
             switch self {
-            case .task: return 6 // "- [ ] "
+            case .task(let length): return length // "[] ", "[x] ", "- [ ] "
             case .quote: return 2 // "> "
             case .bullet: return 2 // "- "
             case .numbered(let n): return "\(n). ".count
@@ -383,7 +445,7 @@ private final class CardNSTextView: NSTextView {
         var nextMarker: String {
             switch self {
             case .bullet: return "- "
-            case .task: return "- [ ] "
+            case .task: return "[] "
             case .quote: return "> "
             case .numbered(let n): return "\(n + 1). "
             }
@@ -391,16 +453,16 @@ private final class CardNSTextView: NSTextView {
     }
 
     /// "- " -> маркированный список, "1. "/"12. " и т.п. -> нумерованный,
-    /// "- [ ] " -> чек-лист, "> " -> цитата.
+    /// "[] "/"[x] "/"- [ ] " -> чек-лист, "> " -> цитата.
     /// Отдельной "активации" для чисел не нужно — "1. " уже выглядит как
     /// корректный маркер, распознаётся здесь же в момент нажатия Enter.
     static func detectListPrefix(in ns: NSString, lineRange: NSRange) -> ListPrefix? {
         guard lineRange.length >= 2 else { return nil }
         let line = ns.substring(with: lineRange)
 
-        // Новый пункт чек-листа — всегда пустой `[ ]`, даже после отмеченного.
-        if line.range(of: #"^- \[[ xX]\] "#, options: .regularExpression) != nil {
-            return .task
+        // Новый пункт чек-листа — всегда пустой `[] `, даже после отмеченного.
+        if let match = line.range(of: MarkdownStyler.taskPattern, options: .regularExpression) {
+            return .task(length: (String(line[match]) as NSString).length)
         }
         if line.hasPrefix("> ") {
             return .quote

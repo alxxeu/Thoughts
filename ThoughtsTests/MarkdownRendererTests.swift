@@ -87,12 +87,13 @@ struct MarkdownRendererTests {
         let quote = styled("> q")
         #expect(quote.attribute(MarkdownRenderer.quoteKey, at: 2, effectiveRange: nil) != nil)
 
-        // Чек-лист: `- ` скрыт всегда, `[ ]` — квадратик, выполненный — зачёркнут.
-        let task = NSMutableAttributedString(string: "- [x] done")
-        MarkdownRenderer.style(task, typography: typography, selection: NSRange(location: 8, length: 0))
+        // Чек-лист: `[x]` скрыт, пробел за ним несёт квадратик, выполненный — зачёркнут.
+        let task = NSMutableAttributedString(string: "[x] done")
+        MarkdownRenderer.style(task, typography: typography, selection: NSRange(location: 6, length: 0))
         #expect(task.attribute(MarkdownRenderer.hiddenKey, at: 0, effectiveRange: nil) != nil)
+        #expect(task.attribute(MarkdownRenderer.hiddenKey, at: 3, effectiveRange: nil) == nil)
         #expect(task.attribute(MarkdownRenderer.taskBoxKey, at: 3, effectiveRange: nil) as? Bool == true)
-        #expect(task.attribute(.strikethroughStyle, at: 7, effectiveRange: nil) != nil)
+        #expect(task.attribute(.strikethroughStyle, at: 5, effectiveRange: nil) != nil)
 
         // Блок кода: моноширинный, ``` прозрачны без курсора, ссылки внутри не ставятся.
         let code = styled("```\nhttps://x.com **b**\n```")
