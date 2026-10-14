@@ -16,10 +16,8 @@ enum RecordMapping {
     static let cardType = "Card"
     static let workspaceType = "Workspace"
     private static let workspacePrefix = "workspace-"
-    static let schemaVersion: Int64 = 1
-
-    /// Лимит записи CloudKit — 1 МБ; с запасом под остальные поля.
-    static let maxFormattingDataSize = 800_000
+    /// 2 — текст карточки в Markdown (см. MarkdownMigration).
+    static let schemaVersion: Int64 = 2
 
     // MARK: - IDs
 
@@ -54,14 +52,10 @@ enum RecordMapping {
         values["schemaVersion"] = schemaVersion
         values["workspaceSlot"] = Int64(card.workspaceSlot)
         values["text"] = card.text
-        if let data = card.formattingData, data.count <= maxFormattingDataSize {
-            values["formattingData"] = data
-        } else {
-            if card.formattingData != nil {
-                print("iCloud sync: formatting of card \(card.id) is too large, sending plain text only")
-            }
-            values["formattingData"] = nil
-        }
+        values["textFormat"] = Int64(MarkdownMigration.markdownFormat)
+        // Старое поле форматирования больше не пишется — затираем его у
+        // записей, созданных старыми версиями.
+        values["formattingData"] = nil
         values["x"] = card.x
         values["y"] = card.y
         values["width"] = card.width
@@ -81,16 +75,20 @@ enum RecordMapping {
               case .card(let id) = target(of: record.recordID) else { return nil }
         let values = record.encryptedValues
         guard let slot = values["workspaceSlot"] as? Int64, (1...9).contains(slot),
-              let text = values["text"] as? String,
+              let rawText = values["text"] as? String,
               let x = values["x"] as? Double, let y = values["y"] as? Double,
               let width = values["width"] as? Double, let height = values["height"] as? Double else {
             return nil
         }
+        // Запись со старой версии приложения — переводим в Markdown.
+        let format = (values["textFormat"] as? Int64).map(Int.init) ?? MarkdownMigration.legacyFormat
+        let text = format < MarkdownMigration.markdownFormat
+            ? MarkdownMigration.markdown(text: rawText, formattingData: values["formattingData"] as? Data)
+            : rawText
         return CardRecord(
             id: id,
             workspaceSlot: Int(slot),
             text: text,
-            formattingData: values["formattingData"] as? Data,
             x: x,
             y: y,
             width: width,

@@ -33,6 +33,9 @@ final class BoardStore {
     func load() -> (workspaces: [Workspace], cardsByWorkspace: [Int: [Card]]) {
         if let data = try? Data(contentsOf: fileURL) {
             if let decoded = try? JSONDecoder().decode(BoardData.self, from: data) {
+                if decoded.cardsByWorkspace.values.joined().contains(where: \.wasMigratedToMarkdown) {
+                    keepCopyBeforeMarkdownMigration(data)
+                }
                 var workspaces = decoded.workspaces
                 for slot in 1...9 where !workspaces.contains(where: { $0.slot == slot }) {
                     workspaces.append(Workspace(slot: slot, name: Workspace.defaultName(forSlot: slot)))
@@ -70,6 +73,23 @@ final class BoardStore {
             try encoded.write(to: fileURL, options: .atomic)
         } catch {
             reportSaveError(error)
+        }
+    }
+
+    /// Карточки старого формата при чтении уже переведены в Markdown (см.
+    /// Card.init(from:)). Исходный файл — с архивами форматирования —
+    /// сохраняется как есть: вернуть всё можно, просто переименовав копию.
+    private func keepCopyBeforeMarkdownMigration(_ original: Data) {
+        let formatter = DateFormatter()
+        formatter.locale = Locale(identifier: "en_US_POSIX")
+        formatter.dateFormat = "yyyy-MM-dd-HHmmss"
+        let folder = fileURL.deletingLastPathComponent().appendingPathComponent("Backups", isDirectory: true)
+        let copy = folder.appendingPathComponent("before-markdown-\(formatter.string(from: Date())).json")
+        do {
+            try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+            try original.write(to: copy, options: .atomic)
+        } catch {
+            print("Couldn't keep a copy of board.json before the Markdown migration: \(error)")
         }
     }
 

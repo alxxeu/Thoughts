@@ -57,8 +57,7 @@ nonisolated enum SpotlightIndexer {
         // приватности, которую пользователь явно включил.
         guard card.privacyMode == .none else { return nil }
 
-        let content = card.text
-            .replacingOccurrences(of: "\u{FFFC}", with: "\n") // плейсхолдер разделителя
+        let content = MarkdownStyler.plainText(card.text)
             .trimmingCharacters(in: .whitespacesAndNewlines)
         guard !content.isEmpty else { return nil }
 

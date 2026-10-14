@@ -106,7 +106,7 @@ struct CardView: View {
             if !isPrivacyLocked {
                 CardTextView(
                     text: $card.text,
-                    formattingData: $card.formattingData,
+                    formattingData: .constant(nil), // временно: редактор переводится на Markdown в этапе 3
                     isFocused: $isTextFocused,
                     cardSize: effectiveSize,
                     onTextChange: {

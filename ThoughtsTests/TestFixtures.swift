@@ -15,7 +15,6 @@ func makeCardRecord(
         id: id,
         workspaceSlot: slot,
         text: text,
-        formattingData: nil,
         x: x,
         y: 60,
         width: width,

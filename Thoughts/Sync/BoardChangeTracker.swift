@@ -114,7 +114,6 @@ final class BoardChangeTracker {
     private static func fingerprint(_ card: Card, slot: Int) -> CardFingerprint {
         var content = Hasher()
         content.combine(card.text)
-        content.combine(card.formattingData)
 
         var geometry = Hasher()
         geometry.combine(card.position.x)

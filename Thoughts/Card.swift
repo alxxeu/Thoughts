@@ -29,14 +29,10 @@ final class Card: Identifiable, Codable {
     let id: UUID
     var position: CGPoint
     var size: CGSize
+    /// Markdown — единственный формат текста: хранится, синхронизируется и
+    /// редактируется как есть (см. MarkdownStyler). Карточки старого формата
+    /// переводятся при чтении (см. MarkdownMigration).
     var text: String = ""
-    /// Форматирование (bold и т.п.) — сериализованный NSAttributedString
-    /// (см. CardTextView), параллельно с обычным text. text остаётся
-    /// источником истины для поиска/AI/Spotlight; formattingData только
-    /// восстанавливает визуальный стиль в редакторе и отбрасывается, если
-    /// не совпадает с text (см. CardTextView.makeNSView) — например, после
-    /// AI-действия, которое заменило text целиком plain-строкой.
-    var formattingData: Data? = nil
     var tagColor: CardTagColor? = nil
     var privacyMode: CardPrivacyMode = .none
     /// true для карточек, созданных Ask AI/Summarize/Extract — в
@@ -52,7 +48,7 @@ final class Card: Identifiable, Codable {
     /// BoardMerger). Ставит их BoardChangeTracker при сохранении, а не
     /// точки мутаций по коду. У старых карточек без этих полей —
     /// Card.unknownDate, то есть "старше любой реальной правки".
-    /// content — text + formattingData.
+    /// content — text.
     var contentModifiedAt: Date = Card.unknownDate
     /// geometry — position, size, raisedAt.
     var geometryModifiedAt: Date = Card.unknownDate
@@ -66,6 +62,10 @@ final class Card: Identifiable, Codable {
     /// "Неизвестно когда" для данных, сохранённых до появления этих полей.
     static let unknownDate = Date(timeIntervalSince1970: 0)
 
+    /// Карточка пришла с диска в старом формате и при чтении переведена в
+    /// Markdown — BoardStore сохраняет копию исходного файла. Не сохраняется.
+    @ObservationIgnored private(set) var wasMigratedToMarkdown = false
+
     init(id: UUID = .init(), position: CGPoint, size: CGSize, text: String = "", tagColor: CardTagColor? = nil) {
         self.id = id
         self.position = position
@@ -77,7 +77,7 @@ final class Card: Identifiable, Codable {
     }
 
     enum CodingKeys: String, CodingKey {
-        case id, position, size, text, formattingData, tagColor, privacyMode, isAIGenerated
+        case id, position, size, text, textFormat, formattingData, tagColor, privacyMode, isAIGenerated
         case contentModifiedAt, geometryModifiedAt, metaModifiedAt, raisedAt
     }
 
@@ -100,7 +100,12 @@ final class Card: Identifiable, Codable {
             text = ""
         }
 
-        formattingData = try container.decodeIfPresent(Data.self, forKey: .formattingData)
+        let textFormat = try container.decodeIfPresent(Int.self, forKey: .textFormat) ?? MarkdownMigration.legacyFormat
+        if textFormat < MarkdownMigration.markdownFormat {
+            let formattingData = try container.decodeIfPresent(Data.self, forKey: .formattingData)
+            text = MarkdownMigration.markdown(text: text, formattingData: formattingData)
+            wasMigratedToMarkdown = true
+        }
         isAIGenerated = try container.decodeIfPresent(Bool.self, forKey: .isAIGenerated) ?? false
         contentModifiedAt = try container.decodeIfPresent(Date.self, forKey: .contentModifiedAt) ?? Card.unknownDate
         geometryModifiedAt = try container.decodeIfPresent(Date.self, forKey: .geometryModifiedAt) ?? Card.unknownDate
@@ -114,7 +119,7 @@ final class Card: Identifiable, Codable {
         try container.encode(position, forKey: .position)
         try container.encode(size, forKey: .size)
         try container.encode(text, forKey: .text)
-        try container.encodeIfPresent(formattingData, forKey: .formattingData)
+        try container.encode(MarkdownMigration.markdownFormat, forKey: .textFormat)
         try container.encodeIfPresent(tagColor, forKey: .tagColor)
         try container.encode(privacyMode, forKey: .privacyMode)
         try container.encode(isAIGenerated, forKey: .isAIGenerated)

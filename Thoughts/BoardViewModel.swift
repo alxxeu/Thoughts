@@ -659,10 +659,9 @@ final class BoardViewModel {
             let local = CardRecord(card, slot: slot)
             var merged = BoardMerger.merge(local, remote)
             if card.id == editingCardID,
-               merged.text != local.text || merged.formattingData != local.formattingData {
+               merged.text != local.text {
                 deferredRemoteContent[card.id] = remote
                 merged.text = local.text
-                merged.formattingData = local.formattingData
                 merged.contentModifiedAt = local.contentModifiedAt
             }
 
