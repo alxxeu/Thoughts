@@ -69,7 +69,7 @@ struct SettingsView: View {
                             }
                         }
 
-                        ICloudSyncSection()
+                        ICloudSyncSection(viewModel: viewModel)
 
                         BackupSection(viewModel: viewModel)
 

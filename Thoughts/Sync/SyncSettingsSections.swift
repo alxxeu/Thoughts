@@ -4,6 +4,7 @@ import AppKit
 /// Settings → General → iCloud: тумблер синка, статус, Sync Now и удаление
 /// данных из iCloud. Сам синк — CloudSyncEngine.
 struct ICloudSyncSection: View {
+    var viewModel: BoardViewModel
     private let settings = CloudSyncSettings.shared
     @State private var isWorking = false
 
@@ -67,13 +68,15 @@ struct ICloudSyncSection: View {
     }
 
     private func setEnabled(_ enabled: Bool) {
-        isWorking = true
-        Task {
-            if enabled {
-                await CloudSyncEngine.shared.enable()
-            } else {
+        guard enabled else {
+            confirmOwnerIfLocksDependOnSync(reason: "turn off iCloud sync") {
                 CloudSyncEngine.shared.disable()
             }
+            return
+        }
+        isWorking = true
+        Task {
+            await CloudSyncEngine.shared.enable()
             isWorking = false
         }
     }
@@ -88,10 +91,26 @@ struct ICloudSyncSection: View {
         alert.buttons.first?.hasDestructiveAction = true
         guard alert.runModal() == .alertFirstButtonReturn else { return }
 
-        isWorking = true
-        Task {
-            _ = await CloudSyncEngine.shared.deleteCloudData()
-            isWorking = false
+        confirmOwnerIfLocksDependOnSync(reason: "delete your Thoughts from iCloud") {
+            isWorking = true
+            Task {
+                _ = await CloudSyncEngine.shared.deleteCloudData()
+                isWorking = false
+            }
+        }
+    }
+
+    /// Без passcode на этом Mac Space Lock держится только синком (см.
+    /// BoardViewModel.isSpaceLockEnforced) — выключение синка открыло бы
+    /// защищённые Spaces, поэтому сначала подтверждаем, что это владелец.
+    private func confirmOwnerIfLocksDependOnSync(reason: String, then action: @escaping () -> Void) {
+        guard viewModel.workspaces.contains(where: \.isProtected),
+              !viewModel.securitySettings.isPasscodeEnabled else {
+            action()
+            return
+        }
+        viewModel.authenticateWithTouchID(reason: reason) { success in
+            if success { action() }
         }
     }
 }
