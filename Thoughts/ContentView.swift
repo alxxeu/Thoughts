@@ -1037,19 +1037,21 @@ struct ContentView: View {
         window.ignoresMouseEvents = isEnabled && isDesktopModeActive
     }
 
-    /// ⌥D и ⌥1–9 как глобальные хоткеты (см. GlobalHotKeyManager) — должны
+    /// ⌃⌥D и ⌃⌥1–9 как глобальные хоткеты (см. GlobalHotKeyManager) — должны
     /// срабатывать, даже когда активное приложение не Thoughts, а Finder
     /// (ровно так и есть в Desktop mode после клика по иконке на столе).
     /// Виртуальные keyCode — физические позиции клавиш на ANSI-клавиатуре,
     /// не зависят от активной раскладки (в отличие от charactersIgnoring-
     /// Modifiers, который для той же клавиши на русской раскладке вернул бы
     /// не "1"–"9"/"d").
+    /// С ⌃, а не голым ⌥, как в меню: глобальный ⌥+цифра забирал эти клавиши
+    /// у всех приложений (на немецкой раскладке ⌥5–9 печатают `[ ] | { }`).
     private func registerDesktopOverlayHotKeys() {
         unregisterDesktopOverlayHotKeys()
-        let optionMask = UInt32(optionKey)
+        let modifiers = UInt32(controlKey | optionKey)
         var tokens: [HotKeyToken] = []
 
-        if case .success(let token) = GlobalHotKeyManager.shared.register(keyCode: 2 /* kVK_ANSI_D */, modifiers: optionMask, action: {
+        if case .success(let token) = GlobalHotKeyManager.shared.register(keyCode: 2 /* kVK_ANSI_D */, modifiers: modifiers, action: {
             // Иначе зажатое ⌥D (авто-повтор клавиши) непрерывно шлёт один
             // и тот же вход в Desktop mode заново.
             guard !viewModel.desktopOverlay.isDesktopModeActive else { return }
@@ -1061,7 +1063,7 @@ struct ContentView: View {
         let digitKeyCodes: [UInt32] = [18, 19, 20, 21, 23, 22, 26, 28, 25] // kVK_ANSI_1...9
         for (index, keyCode) in digitKeyCodes.enumerated() {
             let slot = index + 1
-            if case .success(let token) = GlobalHotKeyManager.shared.register(keyCode: keyCode, modifiers: optionMask, action: {
+            if case .success(let token) = GlobalHotKeyManager.shared.register(keyCode: keyCode, modifiers: modifiers, action: {
                 viewModel.desktopOverlay.isDesktopModeActive = false
                 NotificationCenter.default.post(name: .switchWorkspace, object: slot)
             }) {

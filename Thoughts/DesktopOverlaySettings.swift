@@ -18,7 +18,7 @@ final class DesktopOverlaySettings {
         }
     }
 
-    /// Desktop mode — однонаправленное действие (⌥D входит, ⌥1–9 выходит),
+    /// Desktop mode — однонаправленное действие (⌥D/⌃⌥D входит, ⌥1–9/⌃⌥1–9 выходит),
     /// не тумблер. Runtime-only: при каждом запуске приложения стартует
     /// false, даже если isEnabled персистентно true.
     var isDesktopModeActive: Bool = false

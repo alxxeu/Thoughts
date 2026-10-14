@@ -7,7 +7,7 @@ typealias HotKeyToken = UInt32
 
 /// Глобальные хоткеты — должны срабатывать независимо от того, какое
 /// приложение сейчас активно. Сейчас у них два независимых владельца:
-/// Desktop Overlay (⌥D, ⌥1–9: клик по иконке на столе в Desktop mode делает
+/// Desktop Overlay (⌃⌥D, ⌃⌥1–9: клик по иконке на столе в Desktop mode делает
 /// активным Finder, а не Thoughts, и обычные SwiftUI .keyboardShortcut/
 /// CommandMenu в этот момент вообще не получают событие — оно достаётся
 /// Finder) и Quick Capture (см. QuickCapturePanel.swift). Поэтому каждый
