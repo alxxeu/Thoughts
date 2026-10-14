@@ -20,6 +20,9 @@ private final class CardNSTextView: NSTextView {
     // переключается в светлый в Light Mode, так что линии поверх него
     // должны следовать за текстом, а не за темой.
     var dividerLineColor = CardTypography.legacyTextColor.withAlphaComponent(0.22)
+    /// Делегат вёрстки, прячущий служебные символы Markdown. layoutManager
+    /// держит делегата слабо — храним здесь.
+    let glyphHider = MarkdownGlyphHider()
 
     // Вставка — всегда текст как есть: Markdown из Notion, сайтов и
     // md-приложений сразу отрисуется, а чужое форматирование (RTF/HTML)
@@ -74,6 +77,25 @@ private final class CardNSTextView: NSTextView {
             dividerLineColor.setStroke()
             path.stroke()
         }
+
+        drawHeadingBadge(layoutManager: layoutManager, textStorage: textStorage, origin: origin)
+    }
+
+    /// Значок H1–H3 слева от заголовка, пока в нём курсор, — вместо скрытых `#`.
+    private func drawHeadingBadge(layoutManager: NSLayoutManager, textStorage: NSTextStorage, origin: NSPoint) {
+        guard window?.firstResponder === self, textStorage.length > 0 else { return }
+        let location = min(selectedRange().location, textStorage.length - 1)
+        guard let level = textStorage.attribute(MarkdownRenderer.headingKey, at: location, effectiveRange: nil) as? Int
+                ?? (location > 0 ? textStorage.attribute(MarkdownRenderer.headingKey, at: location - 1, effectiveRange: nil) as? Int : nil)
+        else { return }
+        let glyph = layoutManager.glyphIndexForCharacter(at: location)
+        let lineRect = layoutManager.lineFragmentRect(forGlyphAt: glyph, effectiveRange: nil)
+        let badge = NSAttributedString(string: "H\(level)", attributes: [
+            .font: NSFont.systemFont(ofSize: 9, weight: .semibold),
+            .foregroundColor: dividerLineColor.withAlphaComponent(0.6)
+        ])
+        let size = badge.size()
+        badge.draw(at: NSPoint(x: origin.x - size.width - 4, y: origin.y + lineRect.midY - size.height / 2))
     }
 
     /// Единая точка, через которую AppKit проводит ЛЮБОЕ изменение
@@ -230,8 +252,8 @@ private final class CardNSTextView: NSTextView {
                ns.substring(with: NSRange(location: lineRange.location + lineRange.length - 1, length: 1)) == "\n" {
                 lineRange.length -= 1
             }
-            guard let prefix = detectListPrefix(in: ns, lineRange: lineRange) else { return location }
-            let contentStart = lineRange.location + prefix.length
+            guard let prefixLength = hiddenPrefixLength(in: ns, lineRange: lineRange) else { return location }
+            let contentStart = lineRange.location + prefixLength
             // >= (не >): позиция РОВНО на первом символе маркера тоже должна
             // поджиматься к концу маркера — иначе Cmd+←/Home всё ещё могли
             // поставить курсор перед самим значком.
@@ -265,6 +287,15 @@ private final class CardNSTextView: NSTextView {
             case .numbered(let n): return "\(n + 1). "
             }
         }
+    }
+
+    /// Длина префикса строки, внутрь которого курсор не заходит: маркер
+    /// списка или скрытые `# ` заголовка.
+    static func hiddenPrefixLength(in ns: NSString, lineRange: NSRange) -> Int? {
+        if let prefix = detectListPrefix(in: ns, lineRange: lineRange) { return prefix.length }
+        let line = ns.substring(with: lineRange)
+        guard let match = line.range(of: #"^#{1,3} "#, options: .regularExpression) else { return nil }
+        return line.distance(from: match.lowerBound, to: match.upperBound)
     }
 
     /// "- " -> маркированный список, "1. "/"12. " и т.п. -> нумерованный.
@@ -320,6 +351,7 @@ struct CardTextView: NSViewRepresentable {
 
         let textView = CardNSTextView(frame: .zero)
         textView.delegate = context.coordinator
+        context.coordinator.textView = textView
         textView.onFirstResponderChange = { [weak coordinator = context.coordinator] focused in
             coordinator?.handleFirstResponderChange(focused)
         }
@@ -350,11 +382,10 @@ struct CardTextView: NSViewRepresentable {
         textView.maxSize = NSSize(width: CGFloat.greatestFiniteMagnitude, height: CGFloat.greatestFiniteMagnitude)
         Self.applyChrome(typography, to: textView)
 
+        textView.layoutManager?.delegate = textView.glyphHider
         textView.string = text
-        if let storage = textView.textStorage {
-            MarkdownRenderer.style(storage, typography: typography)
-        }
         context.coordinator.lastTypography = typography
+        Self.restyle(textView, typography: typography)
 
         scrollView.documentView = textView
         return scrollView
@@ -370,13 +401,13 @@ struct CardTextView: NSViewRepresentable {
 
         // Стиль поменяли в Settings, пока карточка открыта — перекрашиваем
         // уже набранный текст на месте (сам текст не меняется).
-        if context.coordinator.lastTypography != typography, let storage = textView.textStorage {
+        if context.coordinator.lastTypography != typography {
             let selectedRanges = textView.selectedRanges
-            MarkdownRenderer.style(storage, typography: typography)
+            context.coordinator.lastTypography = typography
+            Self.restyle(textView, typography: typography)
             textView.selectedRanges = selectedRanges
             Self.applyChrome(typography, to: textView)
             textView.needsDisplay = true
-            context.coordinator.lastTypography = typography
         }
 
         let innerWidth = max(cardSize.width - Self.horizontalTextInset * 2, 10)
@@ -398,9 +429,7 @@ struct CardTextView: NSViewRepresentable {
         if textView.string != text {
             let selectedRanges = textView.selectedRanges
             textView.string = text
-            if let storage = textView.textStorage {
-                MarkdownRenderer.style(storage, typography: typography)
-            }
+            Self.restyle(textView, typography: typography)
             let length = (textView.string as NSString).length
             textView.selectedRanges = selectedRanges.map { value in
                 let range = value.rangeValue
@@ -436,6 +465,16 @@ struct CardTextView: NSViewRepresentable {
 
     // MARK: - Attributed string helpers
 
+    /// Перекраска с учётом курсора: символы фрагмента рядом с ним видны.
+    /// Во время составного ввода (IME) не трогаем — смена атрибутов
+    /// посреди набора его ломает; после подтверждения придёт новый вызов.
+    fileprivate static func restyle(_ textView: NSTextView, typography: CardTypography) {
+        guard !textView.hasMarkedText(), let storage = textView.textStorage else { return }
+        let isFocused = textView.window?.firstResponder === textView
+        MarkdownRenderer.style(storage, typography: typography, selection: isFocused ? textView.selectedRange() : nil)
+        textView.typingAttributes = MarkdownRenderer.baseAttributes(typography)
+    }
+
     /// Всё, что зависит от стиля помимо самого текста: цвет по умолчанию,
     /// каретка, атрибуты набора и линия разделителя.
     private static func applyChrome(_ typography: CardTypography, to textView: CardNSTextView) {
@@ -452,6 +491,7 @@ struct CardTextView: NSViewRepresentable {
         var didRequestFocus = false
         /// Стиль, которым сейчас нарисован текст — см. updateNSView.
         var lastTypography: CardTypography?
+        weak var textView: NSTextView?
         private var typography: CardTypography { lastTypography ?? AppearanceSettings.shared.cardTypography }
 
         init(_ parent: CardTextView) {
@@ -494,8 +534,8 @@ struct CardTextView: NSViewRepresentable {
                 lineRange.length -= 1
             }
 
-            guard let prefix = CardNSTextView.detectListPrefix(in: ns, lineRange: lineRange) else { return false }
-            let contentStart = lineRange.location + prefix.length
+            guard let prefixLength = CardNSTextView.hiddenPrefixLength(in: ns, lineRange: lineRange) else { return false }
+            let contentStart = lineRange.location + prefixLength
             guard cursor.location == contentStart else { return false }
 
             let previousLineEnd = max(0, lineRange.location - 1)
@@ -521,13 +561,14 @@ struct CardTextView: NSViewRepresentable {
                 lineRange.length -= 1
             }
 
-            guard let prefix = CardNSTextView.detectListPrefix(in: ns, lineRange: lineRange) else { return false }
+            guard let prefixLength = CardNSTextView.hiddenPrefixLength(in: ns, lineRange: lineRange) else { return false }
             // Курсор должен стоять ровно сразу после маркера — иначе это
             // обычный backspace где-то в тексте пункта, не наша забота.
-            guard cursor.location == lineRange.location + prefix.length else { return false }
+            // У заголовка так же снимается `# ` — строка становится обычной.
+            guard cursor.location == lineRange.location + prefixLength else { return false }
 
             textView.textStorage?.beginEditing()
-            textView.textStorage?.replaceCharacters(in: NSRange(location: lineRange.location, length: prefix.length), with: "")
+            textView.textStorage?.replaceCharacters(in: NSRange(location: lineRange.location, length: prefixLength), with: "")
             textView.textStorage?.endEditing()
 
             let affectedRange = NSRange(location: lineRange.location, length: max(0, (textView.string as NSString).length - lineRange.location))
@@ -603,15 +644,17 @@ struct CardTextView: NSViewRepresentable {
 
         func textDidChange(_ notification: Notification) {
             guard let textView = notification.object as? NSTextView else { return }
-            // Пока идёт составной ввод (IME: японский, китайский) — не
-            // перекрашиваем: смена атрибутов посреди набора его ломает.
-            // После подтверждения набора textDidChange придёт ещё раз.
-            if !textView.hasMarkedText(), let storage = textView.textStorage {
-                MarkdownRenderer.style(storage, typography: typography)
-                textView.typingAttributes = MarkdownRenderer.baseAttributes(typography)
-            }
+            CardTextView.restyle(textView, typography: typography)
             parent.text = textView.string
             parent.onTextChange()
+        }
+
+        /// Курсор сдвинулся — показываем символы фрагмента, к которому он
+        /// подошёл, и прячем у того, от которого ушёл.
+        func textViewDidChangeSelection(_ notification: Notification) {
+            guard let textView = notification.object as? NSTextView else { return }
+            CardTextView.restyle(textView, typography: typography)
+            textView.needsDisplay = true
         }
 
         /// Единственный реальный источник смены фокуса — см. комментарий у
@@ -622,6 +665,10 @@ struct CardTextView: NSViewRepresentable {
             DispatchQueue.main.async {
                 self.parent.isFocused = focused
                 self.parent.onFocusChange(focused)
+                // Вне фокуса все служебные символы скрыты.
+                if let textView = self.textView {
+                    CardTextView.restyle(textView, typography: self.typography)
+                }
             }
         }
     }

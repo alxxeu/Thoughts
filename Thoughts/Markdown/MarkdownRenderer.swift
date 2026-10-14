@@ -7,6 +7,13 @@ import AppKit
 enum MarkdownRenderer {
     /// Отметка строки-разделителя `---` — по ней CardNSTextView рисует линию.
     static let dividerKey = NSAttributedString.Key("thoughts.markdownDivider")
+    /// Служебные символы, которые сейчас не показываются (глиф нулевой
+    /// ширины, см. MarkdownGlyphHider).
+    static let hiddenKey = NSAttributedString.Key("thoughts.markdownHidden")
+    /// `-` маркера списка, который рисуется как `•`.
+    static let bulletKey = NSAttributedString.Key("thoughts.markdownBullet")
+    /// Уровень заголовка строки — для значка H1–H3 слева от неё.
+    static let headingKey = NSAttributedString.Key("thoughts.markdownHeading")
 
     static func baseAttributes(_ typography: CardTypography) -> [NSAttributedString.Key: Any] {
         let paragraph = NSMutableParagraphStyle()
@@ -18,11 +25,13 @@ enum MarkdownRenderer {
         ]
     }
 
-    /// Перекрашивает весь текст.
+    /// Перекрашивает весь текст. `selection` — выделение в редакторе в фокусе:
+    /// служебные символы фрагмента видны, только пока курсор его касается
+    /// (как в Bear); nil — карточка не в фокусе, скрыто всё.
     /// shortcut: каждый раз целиком — для карточек размером с заметку это
     /// микросекунды; если на очень длинных текстах начнёт подтормаживать,
     /// перекрашивать только изменённые абзацы.
-    static func style(_ storage: NSMutableAttributedString, typography: CardTypography) {
+    static func style(_ storage: NSMutableAttributedString, typography: CardTypography, selection: NSRange? = nil) {
         let full = NSRange(location: 0, length: storage.length)
         guard full.length > 0 else { return }
         let ns = storage.string as NSString
@@ -42,8 +51,21 @@ enum MarkdownRenderer {
                     toHaveTrait: .boldFontMask
                 )
                 storage.addAttribute(.font, value: paragraphFont, range: paragraph.range)
+                storage.addAttribute(headingKey, value: level, range: paragraph.range)
+                // # всегда скрыт — уровень показывает значок слева.
+                if let marker = paragraph.blockMarker {
+                    storage.addAttribute(hiddenKey, value: true, range: marker)
+                }
             case .divider:
                 storage.addAttribute(dividerKey, value: true, range: paragraph.range)
+                // Пока курсор на строке, `---` видно и его можно править.
+                if !touches(selection, paragraph.range) {
+                    storage.addAttribute(hiddenKey, value: true, range: paragraph.range)
+                }
+            case .bullet:
+                if let marker = paragraph.blockMarker {
+                    storage.addAttribute(bulletKey, value: true, range: NSRange(location: marker.location, length: 1))
+                }
             default:
                 break
             }
@@ -71,10 +93,16 @@ enum MarkdownRenderer {
                 }
             }
 
-            var markers = paragraph.markers
-            if let marker = paragraph.blockMarker { markers.append(marker) }
-            for marker in markers {
+            // `#` и `---` бледные; `•` списка — цветом текста.
+            if let marker = paragraph.blockMarker, paragraph.block != .bullet {
                 storage.addAttribute(.foregroundColor, value: markerColor, range: marker)
+            }
+            for marker in paragraph.markers {
+                storage.addAttribute(.foregroundColor, value: markerColor, range: marker)
+                let isRevealed = paragraph.spans.contains { NSLocationInRange(marker.location, $0) && touches(selection, $0) }
+                if !isRevealed {
+                    storage.addAttribute(hiddenKey, value: true, range: marker)
+                }
             }
         }
 
@@ -89,6 +117,14 @@ enum MarkdownRenderer {
             }
         }
         storage.endEditing()
+    }
+
+    /// Курсор внутри диапазона или вплотную к нему (как в Bear: только что
+    /// напечатанное `**жирное**` ещё показывает звёздочки).
+    private static func touches(_ selection: NSRange?, _ range: NSRange) -> Bool {
+        guard let selection else { return false }
+        if selection.length > 0 { return NSIntersectionRange(selection, range).length > 0 }
+        return selection.location >= range.location && selection.location <= NSMaxRange(range)
     }
 
     private static func addTrait(_ trait: NSFontTraitMask, to storage: NSMutableAttributedString, in range: NSRange) {

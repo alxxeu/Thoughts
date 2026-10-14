@@ -33,10 +33,14 @@ enum MarkdownStyler {
         var inlines: [(range: NSRange, style: Inline)]
         /// Служебные символы внутри строки: `**`, `[`, `](url)`, `\` и т.п.
         var markers: [NSRange]
+        /// Фрагменты целиком, вместе со своими служебными символами (`**a**`,
+        /// `[a](url)`, `\*`) — символы фрагмента показываются, только пока
+        /// курсор рядом с ним.
+        var spans: [NSRange] = []
 
         static func == (lhs: Paragraph, rhs: Paragraph) -> Bool {
             lhs.range == rhs.range && lhs.block == rhs.block && lhs.blockMarker == rhs.blockMarker
-                && lhs.markers == rhs.markers
+                && lhs.markers == rhs.markers && lhs.spans == rhs.spans
                 && lhs.inlines.map(\.range) == rhs.inlines.map(\.range)
                 && lhs.inlines.map(\.style) == rhs.inlines.map(\.style)
         }
@@ -137,6 +141,7 @@ enum MarkdownStyler {
             // \* — символ как есть, обратный слэш служебный.
             if c == backslash, i + 1 < end, isEscapable(ns.character(at: i + 1)) {
                 paragraph.markers.append(NSRange(location: i, length: 1))
+                paragraph.spans.append(NSRange(location: i, length: 2))
                 i += 2
                 continue
             }
@@ -147,6 +152,7 @@ enum MarkdownStyler {
                     paragraph.markers.append(NSRange(location: i, length: 1))
                     paragraph.markers.append(NSRange(location: close, length: 1))
                     paragraph.inlines.append((NSRange(location: i + 1, length: close - i - 1), .code))
+                    paragraph.spans.append(NSRange(location: i, length: close - i + 1))
                     i = close + 1
                     continue
                 }
@@ -164,6 +170,8 @@ enum MarkdownStyler {
                 scanInlines(in: ns, range: link.text, into: &inner)
                 paragraph.inlines += inner.inlines
                 paragraph.markers += inner.markers
+                paragraph.spans += inner.spans
+                paragraph.spans.append(NSRange(location: i, length: NSMaxRange(link.tail) - i))
                 i = NSMaxRange(link.tail)
                 continue
             }
@@ -189,6 +197,7 @@ enum MarkdownStyler {
                         paragraph.markers.append(NSRange(location: top.location, length: top.length))
                         paragraph.markers.append(NSRange(location: position, length: top.length))
                         paragraph.inlines.append((NSRange(location: contentStart, length: position - contentStart), style))
+                        paragraph.spans.append(NSRange(location: top.location, length: position + top.length - top.location))
                     }
                     position += top.length
                     remaining -= top.length
