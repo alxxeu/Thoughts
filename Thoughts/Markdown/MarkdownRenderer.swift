@@ -61,7 +61,12 @@ enum MarkdownRenderer {
             storage.addAttribute(.foregroundColor, value: touches(selection, range) ? markerColor : NSColor.clear, range: line)
         }
 
-        for paragraph in MarkdownStyler.parse(storage.string) where paragraph.range.length > 0 {
+        let paragraphs = MarkdownStyler.parse(storage.string)
+        // Блоки кода, в которых уже есть хоть одна строка кода: пустой или
+        // одиночный ``` — ещё не блок, а просто текст.
+        let filledCodeBlocks = Set(paragraphs.filter { $0.block == .code }.compactMap { $0.codeBlock?.location })
+
+        for paragraph in paragraphs where paragraph.range.length > 0 {
             var paragraphFont = typography.font
             let mono = NSFont.monospacedSystemFont(ofSize: typography.font.pointSize * 0.92, weight: .regular)
             switch paragraph.block {
@@ -110,7 +115,10 @@ enum MarkdownRenderer {
                     storage.addAttribute(.foregroundColor, value: typography.color.withAlphaComponent(0.45), range: body)
                 }
             case .codeFence:
-                guard let block = paragraph.codeBlock else { break }
+                guard let block = paragraph.codeBlock, filledCodeBlocks.contains(block.location) else {
+                    storage.addAttribute(.foregroundColor, value: markerColor, range: paragraph.range)
+                    break
+                }
                 storage.addAttribute(codeBlockKey, value: NSValue(range: block), range: paragraph.range)
                 codeRanges.append(block)
                 if touches(selection, block) {

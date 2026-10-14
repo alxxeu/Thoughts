@@ -80,8 +80,18 @@ private final class CardNSTextView: NSTextView {
             guard let block = (value as? NSValue)?.rangeValue, seen.insert(block.location).inserted else { return }
             var rect = NSRect.null
             let glyphs = layoutManager.glyphRange(forCharacterRange: block, actualCharacterRange: nil)
-            layoutManager.enumerateLineFragments(forGlyphRange: glyphs) { lineRect, usedRect, _, _, _ in
-                rect = rect.union(textPadding == nil ? lineRect : usedRect)
+            layoutManager.enumerateLineFragments(forGlyphRange: glyphs) { lineRect, _, _, lineGlyphs, _ in
+                guard textPadding != nil else {
+                    rect = rect.union(lineRect)
+                    return
+                }
+                // Только сами буквы: от верха (ascender) до низа (descender)
+                // шрифта строки — без отступов абзаца и межстрочного интервала.
+                let char = layoutManager.characterIndexForGlyph(at: lineGlyphs.location)
+                let font = textStorage.attribute(.font, at: min(char, textStorage.length - 1), effectiveRange: nil) as? NSFont
+                    ?? .systemFont(ofSize: 15)
+                let baseline = lineRect.minY + layoutManager.location(forGlyphAt: lineGlyphs.location).y
+                rect = rect.union(NSRect(x: lineRect.minX, y: baseline - font.ascender, width: lineRect.width, height: font.ascender - font.descender))
             }
             guard !rect.isNull else { return }
             if let textPadding { rect = rect.insetBy(dx: 0, dy: -textPadding) }
@@ -103,7 +113,7 @@ private final class CardNSTextView: NSTextView {
         }
 
         let accent = NSColor.controlAccentColor
-        for (_, box) in blockBoxes(MarkdownRenderer.quoteKey, textPadding: 6) {
+        for (_, box) in blockBoxes(MarkdownRenderer.quoteKey, textPadding: 8) {
             let shape = NSBezierPath(roundedRect: box, xRadius: 6, yRadius: 6)
             accent.withAlphaComponent(0.14).setFill()
             shape.fill()
@@ -117,17 +127,20 @@ private final class CardNSTextView: NSTextView {
     }
 
     /// Иконка SF Symbols одного цвета.
+    /// В собственных пропорциях символа, по центру `rect` (растягивание в
+    /// квадрат сплющивало кавычки).
     private func drawSymbol(_ name: String, color: NSColor, in rect: NSRect) {
-        let config = NSImage.SymbolConfiguration(pointSize: rect.height, weight: .medium)
+        let config = NSImage.SymbolConfiguration(pointSize: rect.height * 0.85, weight: .regular)
             .applying(NSImage.SymbolConfiguration(paletteColors: [color]))
-        NSImage(systemSymbolName: name, accessibilityDescription: nil)?
-            .withSymbolConfiguration(config)?
-            .draw(in: rect)
+        guard let image = NSImage(systemSymbolName: name, accessibilityDescription: nil)?
+            .withSymbolConfiguration(config) else { return }
+        let size = image.size
+        image.draw(in: NSRect(x: rect.midX - size.width / 2, y: rect.midY - size.height / 2, width: size.width, height: size.height))
     }
 
     /// Кнопка/значок в правом верхнем углу поля блока.
     private func cornerIconRect(in box: NSRect) -> NSRect {
-        NSRect(x: box.maxX - 20, y: box.minY + 6, width: 12, height: 12)
+        NSRect(x: box.maxX - 26, y: box.minY + 6, width: 18, height: 18)
     }
 
     /// Блок кода, только что скопированный кнопкой, — на секунду галочка.
@@ -187,8 +200,8 @@ private final class CardNSTextView: NSTextView {
         }
 
         // Значки в углу полей, оба серые: « у цитаты, копирование у кода.
-        let iconColor = (textColor ?? .white).withAlphaComponent(0.45)
-        for (_, box) in blockBoxes(MarkdownRenderer.quoteKey, textPadding: 6) {
+        let iconColor = (textColor ?? .white).withAlphaComponent(0.7)
+        for (_, box) in blockBoxes(MarkdownRenderer.quoteKey, textPadding: 8) {
             drawSymbol("quote.closing", color: iconColor, in: cornerIconRect(in: box))
         }
         for (block, box) in blockBoxes(MarkdownRenderer.codeBlockKey) {

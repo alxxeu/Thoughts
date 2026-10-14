@@ -103,4 +103,11 @@ struct MarkdownRendererTests {
         #expect(code.attribute(.foregroundColor, at: 0, effectiveRange: nil) as? NSColor == .clear)
         #expect(code.attribute(MarkdownRenderer.codeBlockKey, at: 6, effectiveRange: nil) != nil)
     }
+
+    @Test func emptyFenceIsPlainText() {
+        // Одиночный ``` и блок без строк кода — не блок: без поля и кнопки.
+        #expect(styled("```").attribute(MarkdownRenderer.codeBlockKey, at: 0, effectiveRange: nil) == nil)
+        #expect(styled("```\n```").attribute(MarkdownRenderer.codeBlockKey, at: 0, effectiveRange: nil) == nil)
+        #expect(styled("```\nx").attribute(MarkdownRenderer.codeBlockKey, at: 0, effectiveRange: nil) != nil)
+    }
 }
