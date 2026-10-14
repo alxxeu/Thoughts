@@ -157,10 +157,6 @@ struct TextColorOption: Identifiable, Hashable {
         return TextColorOption(id: customPrefix + hex, title: "Custom", color: NSColor(hex: hex) ?? color)
     }
 
-    static func isCustom(_ id: String) -> Bool {
-        id.hasPrefix(customPrefix)
-    }
-
     static func resolve(_ id: String) -> TextColorOption {
         if let option = builtIn.first(where: { $0.id == id }) {
             return option

@@ -115,13 +115,12 @@ final class AskAIModel {
         let isAboutSelection = isAboutSelection
         Task {
             do {
-                let service = try AITextServiceFactory.makeActiveService()
-                let label = isAboutSelection ? "Selected text from a note" : "Note"
-                let userText = context.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
-                    ? question
-                    : "\(label):\n\(context)\n\nRequest: \(question)"
-                let result = try await service.generate(systemPrompt: AICardPrompt.systemPrompt, userText: userText)
-                answer = result
+                answer = try await AITextServiceFactory.ask(
+                    question,
+                    context: context,
+                    contextLabel: isAboutSelection ? "Selected text from a note" : "Note",
+                    systemPrompt: AICardPrompt.systemPrompt
+                )
             } catch {
                 errorMessage = error.localizedDescription
             }

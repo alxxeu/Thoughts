@@ -885,11 +885,12 @@ struct ContentView: View {
         isSpaceAIBusy = true
         Task {
             do {
-                let service = try AITextServiceFactory.makeActiveService()
-                let userText = context.isEmpty ? question : "Notes:\n\(context)\n\nQuestion: \(question)"
-                let result = try await service.generate(
-                    systemPrompt: AISpaceAction.askSystemPrompt,
-                    userText: userText
+                let result = try await AITextServiceFactory.ask(
+                    question,
+                    context: context,
+                    contextLabel: "Notes",
+                    questionLabel: "Question",
+                    systemPrompt: AISpaceAction.askSystemPrompt
                 )
                 await MainActor.run {
                     insertAIResultCard(result, slot: slot)

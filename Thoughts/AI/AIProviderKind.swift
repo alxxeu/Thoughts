@@ -30,17 +30,6 @@ enum AIProviderKind: String, CaseIterable, Identifiable, Codable {
         }
     }
 
-    /// ChatGPT/Claude — BYOK, нужен ключ пользователя. Apple Intelligence
-    /// работает on-device через FoundationModels, ключ не нужен вообще —
-    /// её "настроенность" определяется доступностью на Mac (см.
-    /// AppleIntelligenceAvailability), а не Keychain.
-    var requiresAPIKey: Bool {
-        switch self {
-        case .openAI, .anthropic: return true
-        case .appleIntelligence: return false
-        }
-    }
-
     var apiKeyHelpURL: URL? {
         switch self {
         case .openAI: return URL(string: "https://platform.openai.com/api-keys")!

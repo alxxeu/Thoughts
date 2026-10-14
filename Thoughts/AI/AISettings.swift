@@ -104,10 +104,4 @@ final class AISettings {
         case .appleIntelligence: break // Apple Intelligence ключей не хранит, сюда не вызывается
         }
     }
-
-    /// Настроен ли активный (выбранный) провайдер — им гейтится включение
-    /// AI-действий на карточках.
-    var isActiveProviderConfigured: Bool {
-        hasKey(for: selectedProvider)
-    }
 }

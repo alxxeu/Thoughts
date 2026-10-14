@@ -52,4 +52,20 @@ enum AITextServiceFactory {
             return AppleIntelligenceTextService()
         }
     }
+
+    /// Единая сборка запроса для всех панелей Ask AI: контекст (заметка,
+    /// выделение или весь Space) с подписью, затем сам вопрос.
+    static func ask(
+        _ question: String,
+        context: String,
+        contextLabel: String,
+        questionLabel: String = "Request",
+        systemPrompt: String
+    ) async throws -> String {
+        let service = try makeActiveService()
+        let userText = context.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+            ? question
+            : "\(contextLabel):\n\(context)\n\n\(questionLabel): \(question)"
+        return try await service.generate(systemPrompt: systemPrompt, userText: userText)
+    }
 }

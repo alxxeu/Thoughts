@@ -721,11 +721,11 @@ struct CardView: View {
         isGeneratingAI = true
         Task {
             do {
-                let service = try AITextServiceFactory.makeActiveService()
-                let userText = context.isEmpty ? question : "Note:\n\(context)\n\nRequest: \(question)"
-                let result = try await service.generate(
-                    systemPrompt: AICardPrompt.systemPrompt,
-                    userText: userText
+                let result = try await AITextServiceFactory.ask(
+                    question,
+                    context: context,
+                    contextLabel: "Note",
+                    systemPrompt: AICardPrompt.systemPrompt
                 )
                 await MainActor.run {
                     cardAIAnswer = result
