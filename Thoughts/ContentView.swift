@@ -1,5 +1,4 @@
 import SwiftUI
-import Carbon.HIToolbox
 
 struct CornerBracket: Shape {
     var corner: EdgeHint.Corner
@@ -167,18 +166,7 @@ struct ContentView: View {
     // после явного подтверждения, а не по одному нажатию пункта меню.
     @State private var isShowingClearSpaceConfirmation = false
 
-    // Desktop Overlay — фрейм окна до включения режима, чтобы вернуть его
-    // ровно как было при выключении в Settings. thoughtsWindow — конкретно
-    // окно, хостящее этот canvas (не Settings/QuitGuard), см. WindowAccessor
-    // ниже; NSApp.keyWindow ненадёжен здесь, так как Settings-окно вполне
-    // может быть открыто и фокусно ровно в момент переключения тумблера.
-    @State private var savedWindowFrame: NSRect?
-    @State private var thoughtsWindow: NSWindow?
-    @State private var chromeReapplyObservers: [NSObjectProtocol] = []
-    @State private var isDesktopOverlayActivationPendingFullScreenExit = false
-    /// Только хоткеи Desktop Overlay — снимаются при его выключении, не
-    /// трогая глобальный хоткей Quick Capture (см. GlobalHotKeyManager).
-    @State private var overlayHotKeyTokens: [HotKeyToken] = []
+    @State private var overlayWindow = DesktopOverlayWindowController()
 
     var body: some View {
         Group {
@@ -246,55 +234,7 @@ struct ContentView: View {
             SettingsNavigation.shared.openSettingsAction = openSettings
         }
         .background(
-            WindowAccessor { window in
-                guard thoughtsWindow == nil else { return }
-                thoughtsWindow = window
-                allowWindowToBecomeKey(window)
-                applyDesktopOverlayWindowState(
-                    isEnabled: viewModel.desktopOverlay.isEnabled,
-                    isDesktopModeActive: viewModel.desktopOverlay.isDesktopModeActive
-                )
-                // AppKit иногда сам переигрывает styleMask/title окна на
-                // переходах фокуса (например, relock() Space Lock делает
-                // makeFirstResponder(nil)) — тот же класс проблемы, что уже
-                // решён для VisualEffectBlur ниже в этом файле через
-                // переприменение после нотификаций, а не один раз. Здесь —
-                // то же самое для chrome-настроек Desktop Overlay.
-                for name: Notification.Name in [
-                    NSWindow.didBecomeKeyNotification,
-                    NSWindow.didResignKeyNotification,
-                    NSWindow.didChangeOcclusionStateNotification
-                ] {
-                    chromeReapplyObservers.append(
-                        NotificationCenter.default.addObserver(forName: name, object: window, queue: .main) { _ in
-                            guard viewModel.desktopOverlay.isEnabled else { return }
-                            applyDesktopOverlayWindowState(
-                                isEnabled: true,
-                                isDesktopModeActive: viewModel.desktopOverlay.isDesktopModeActive
-                            )
-                        }
-                    )
-                }
-                // Довершает включение Desktop Overlay, если оно было
-                // отложено из-за того, что окно было в нативном fullscreen
-                // (см. guard в applyDesktopOverlayWindowState) — level/frame
-                // нельзя было применить, пока переход не завершился.
-                chromeReapplyObservers.append(
-                    NotificationCenter.default.addObserver(
-                        forName: NSWindow.didExitFullScreenNotification,
-                        object: window,
-                        queue: .main
-                    ) { _ in
-                        guard isDesktopOverlayActivationPendingFullScreenExit else { return }
-                        isDesktopOverlayActivationPendingFullScreenExit = false
-                        guard viewModel.desktopOverlay.isEnabled else { return }
-                        applyDesktopOverlayWindowState(
-                            isEnabled: true,
-                            isDesktopModeActive: viewModel.desktopOverlay.isDesktopModeActive
-                        )
-                    }
-                )
-            }
+            WindowAccessor { overlayWindow.attach($0) }
         )
         // Привязано напрямую к состоянию, которое реально коррелирует с
         // проблемой (подтверждено вручную): переход в/из заблокированного
@@ -305,21 +245,18 @@ struct ContentView: View {
         // гадания, какая именно AppKit-нотификация выстрелит.
         .onChange(of: viewModel.isActiveSpaceLocked) { _, _ in
             guard viewModel.desktopOverlay.isEnabled else { return }
-            applyDesktopOverlayWindowState(
-                isEnabled: true,
-                isDesktopModeActive: viewModel.desktopOverlay.isDesktopModeActive
-            )
+            overlayWindow.apply()
         }
         // Синк с iCloud откладывает удалённые правки текста этой карточки,
         // пока в ней курсор (см. BoardViewModel.editingCardID).
         .onChange(of: textFocusedCardID) { _, id in
             viewModel.editingCardID = id
         }
-        .onChange(of: viewModel.desktopOverlay.isEnabled) { _, isEnabled in
-            applyDesktopOverlayWindowState(isEnabled: isEnabled, isDesktopModeActive: viewModel.desktopOverlay.isDesktopModeActive)
+        .onChange(of: viewModel.desktopOverlay.isEnabled) { _, _ in
+            overlayWindow.apply()
         }
-        .onChange(of: viewModel.desktopOverlay.isDesktopModeActive) { _, isActive in
-            applyDesktopOverlayWindowState(isEnabled: viewModel.desktopOverlay.isEnabled, isDesktopModeActive: isActive)
+        .onChange(of: viewModel.desktopOverlay.isDesktopModeActive) { _, _ in
+            overlayWindow.apply()
         }
         .onReceive(NotificationCenter.default.publisher(for: .switchWorkspace)) { notification in
             if let slot = notification.object as? Int {
@@ -910,133 +847,6 @@ struct ContentView: View {
     private var workspacePillTopPadding: CGFloat {
         guard viewModel.desktopOverlay.isEnabled else { return 10 }
         return (NSScreen.main?.safeAreaInsets.top ?? 0) + 12
-    }
-
-    /// Применяет/откатывает уровень, collectionBehavior, ignoresMouseEvents
-    /// и фрейм окна для Desktop Overlay. Значение уровня подобрано эмпирически
-    /// (публичной константы "чуть выше иконок, чуть ниже виджетов" у Apple
-    /// нет) и может понадобиться донастроить.
-    private func applyDesktopOverlayWindowState(isEnabled: Bool, isDesktopModeActive: Bool) {
-        guard let window = thoughtsWindow else { return }
-
-        // Нативный fullscreen — отдельная macOS Space, level/frame внутри
-        // неё игнорируются композитором (а styleMask-правки — нет, отсюда
-        // рассинхрон: кнопки/pill уже перестроились, а окно так и не легло
-        // на уровень иконок стола). Сначала выходим из fullscreen и ждём
-        // завершения перехода (didExitFullScreenNotification, см. ниже),
-        // и только потом применяем остальную конфигурацию.
-        if isEnabled, window.styleMask.contains(.fullScreen) {
-            isDesktopOverlayActivationPendingFullScreenExit = true
-            window.toggleFullScreen(nil)
-            return
-        }
-
-        if isEnabled {
-            if savedWindowFrame == nil {
-                savedWindowFrame = window.frame
-            }
-            // Уровень асимметричный между режимами — подтверждено реальным
-            // кодом Floatspace (native_desktop.rs): Desktop mode ниже
-            // иконок стола (окно совсем не мешает, даже не "прозрачно
-            // мешает"), Workspace mode выше иконок, но по-прежнему ниже
-            // обычных окон приложений. Раньше здесь был один и тот же
-            // фиксированный уровень в обоих режимах — работало, но не
-            // совпадало с проверенным эталоном без явной причины.
-            let desktopIconLevel = Int(CGWindowLevelForKey(.desktopIconWindow))
-            window.level = NSWindow.Level(
-                rawValue: isDesktopModeActive ? desktopIconLevel - 1 : desktopIconLevel + 1
-            )
-            window.collectionBehavior = [.ignoresCycle]
-            // В обычном режиме "прозрачность" фона держится целиком на
-            // VisualEffectBlur (живой блюр того, что позади окна) — само
-            // NSWindow остаётся непрозрачным по умолчанию. В Desktop mode
-            // блюр скрыт вместе с карточками (см. body/ThoughtsApp.swift), и
-            // без явного isOpaque/backgroundColor = .clear вместо настоящего
-            // стола был виден сплошной непрозрачный фон окна.
-            window.isOpaque = false
-            window.backgroundColor = .clear
-            window.hasShadow = false
-            // Floatspace на Tauri создаёт окно изначально безрамочным, ему
-            // это не нужно. WindowGroup в SwiftUI всегда рождает titled-окно
-            // (hiddenTitleBar прячет только полосу, не сами traits) — без
-            // явного снятия traits из styleMask курсор у верхнего края
-            // показывает настоящие traffic-light кнопки на весь экран.
-            // .titled — не только сами кнопки, но и причина зазора под
-            // menu bar: у titled-окон AppKit сам поджимает frame ниже
-            // строки меню, даже если явно попросить Y=0 через setFrame.
-            // Полностью безрамочное окно (как у Floatspace, создаваемого
-            // borderless с самого начала) это ограничение не имеет.
-            window.styleMask.remove([.closable, .miniaturizable, .resizable, .titled])
-            window.titleVisibility = .hidden
-            window.title = ""
-            // Плавающий title pill позиционируется относительно верхнего
-            // края фрейма окна (подтверждено эмпирически), поэтому подвинуть
-            // его ниже без потери полного покрытия экрана сверху невозможно
-            // — эти две вещи завязаны на один и тот же frame. Полное
-            // покрытие приоритетнее (явно попросили не обрезать снова),
-            // так что фрейм всегда во весь экран, начиная с Y=0.
-            if let screen = window.screen ?? NSScreen.main {
-                window.setFrame(screen.frame, display: true, animate: false)
-            }
-            registerDesktopOverlayHotKeys()
-        } else {
-            isDesktopOverlayActivationPendingFullScreenExit = false
-            unregisterDesktopOverlayHotKeys()
-            window.level = .normal
-            window.collectionBehavior = []
-            window.hasShadow = true
-            window.styleMask.insert([.closable, .miniaturizable, .resizable, .titled])
-            window.titleVisibility = .visible
-            window.title = "Thoughts"
-            if let savedWindowFrame {
-                window.setFrame(savedWindowFrame, display: true, animate: false)
-            }
-            savedWindowFrame = nil
-        }
-
-        window.ignoresMouseEvents = isEnabled && isDesktopModeActive
-    }
-
-    /// ⌃⌥D и ⌃⌥1–9 как глобальные хоткеты (см. GlobalHotKeyManager) — должны
-    /// срабатывать, даже когда активное приложение не Thoughts, а Finder
-    /// (ровно так и есть в Desktop mode после клика по иконке на столе).
-    /// Виртуальные keyCode — физические позиции клавиш на ANSI-клавиатуре,
-    /// не зависят от активной раскладки (в отличие от charactersIgnoring-
-    /// Modifiers, который для той же клавиши на русской раскладке вернул бы
-    /// не "1"–"9"/"d").
-    /// С ⌃, а не голым ⌥, как в меню: глобальный ⌥+цифра забирал эти клавиши
-    /// у всех приложений (на немецкой раскладке ⌥5–9 печатают `[ ] | { }`).
-    private func registerDesktopOverlayHotKeys() {
-        // Вызывается и на каждую смену фокуса окна — регистрируем один раз.
-        guard overlayHotKeyTokens.isEmpty else { return }
-        let modifiers = UInt32(controlKey | optionKey)
-        var tokens: [HotKeyToken] = []
-
-        if case .success(let token) = GlobalHotKeyManager.shared.register(keyCode: 2 /* kVK_ANSI_D */, modifiers: modifiers, action: {
-            // Иначе зажатое ⌥D (авто-повтор клавиши) непрерывно шлёт один
-            // и тот же вход в Desktop mode заново.
-            guard !viewModel.desktopOverlay.isDesktopModeActive else { return }
-            viewModel.desktopOverlay.isDesktopModeActive = true
-        }) {
-            tokens.append(token)
-        }
-
-        let digitKeyCodes: [UInt32] = [18, 19, 20, 21, 23, 22, 26, 28, 25] // kVK_ANSI_1...9
-        for (index, keyCode) in digitKeyCodes.enumerated() {
-            let slot = index + 1
-            if case .success(let token) = GlobalHotKeyManager.shared.register(keyCode: keyCode, modifiers: modifiers, action: {
-                viewModel.desktopOverlay.isDesktopModeActive = false
-                NotificationCenter.default.post(name: .switchWorkspace, object: slot)
-            }) {
-                tokens.append(token)
-            }
-        }
-        overlayHotKeyTokens = tokens
-    }
-
-    private func unregisterDesktopOverlayHotKeys() {
-        GlobalHotKeyManager.shared.unregister(overlayHotKeyTokens)
-        overlayHotKeyTokens = []
     }
 
     private func canvasDragGesture(in canvasSize: CGSize) -> some Gesture {
