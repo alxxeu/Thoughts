@@ -84,5 +84,10 @@ struct MarkdownMigrationTests {
         let copies = try FileManager.default.contentsOfDirectory(atPath: folder.appendingPathComponent("Backups").path)
         #expect(copies.count == 1)
         #expect(copies.first?.hasPrefix("before-markdown-") == true)
+
+        // Переведённое уже сохранено: следующий запуск без правок не делает новую копию.
+        #expect(try String(contentsOf: board, encoding: .utf8).contains("textFormat"))
+        _ = BoardStore(fileURL: board).load()
+        #expect(try FileManager.default.contentsOfDirectory(atPath: folder.appendingPathComponent("Backups").path).count == 1)
     }
 }

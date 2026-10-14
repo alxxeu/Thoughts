@@ -33,14 +33,19 @@ final class BoardStore {
     func load() -> (workspaces: [Workspace], cardsByWorkspace: [Int: [Card]]) {
         if let data = try? Data(contentsOf: fileURL) {
             if let decoded = try? JSONDecoder().decode(BoardData.self, from: data) {
-                if decoded.cardsByWorkspace.values.joined().contains(where: \.wasMigratedToMarkdown) {
-                    keepCopyBeforeMarkdownMigration(data)
-                }
                 var workspaces = decoded.workspaces
                 for slot in 1...9 where !workspaces.contains(where: { $0.slot == slot }) {
                     workspaces.append(Workspace(slot: slot, name: Workspace.defaultName(forSlot: slot)))
                 }
                 workspaces.sort { $0.slot < $1.slot }
+                // Переведённое в Markdown сохраняем сразу (а не при первой
+                // правке) — иначе каждый запуск без правок переводил бы файл
+                // заново и оставлял ещё одну копию. Только если копия
+                // исходника легла на диск.
+                if decoded.cardsByWorkspace.values.joined().contains(where: \.wasMigratedToMarkdown),
+                   keepCopyBeforeMarkdownMigration(data) {
+                    save(workspaces: workspaces, cardsByWorkspace: decoded.cardsByWorkspace)
+                }
                 return (workspaces, decoded.cardsByWorkspace)
             }
             // Файл есть, но не читается (повреждён или записан более новой
@@ -79,7 +84,7 @@ final class BoardStore {
     /// Карточки старого формата при чтении уже переведены в Markdown (см.
     /// Card.init(from:)). Исходный файл — с архивами форматирования —
     /// сохраняется как есть: вернуть всё можно, просто переименовав копию.
-    private func keepCopyBeforeMarkdownMigration(_ original: Data) {
+    private func keepCopyBeforeMarkdownMigration(_ original: Data) -> Bool {
         let formatter = DateFormatter()
         formatter.locale = Locale(identifier: "en_US_POSIX")
         formatter.dateFormat = "yyyy-MM-dd-HHmmss"
@@ -88,8 +93,10 @@ final class BoardStore {
         do {
             try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
             try original.write(to: copy, options: .atomic)
+            return true
         } catch {
             print("Couldn't keep a copy of board.json before the Markdown migration: \(error)")
+            return false
         }
     }
 
