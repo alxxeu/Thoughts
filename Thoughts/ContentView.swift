@@ -880,6 +880,8 @@ struct ContentView: View {
         let question = spaceAIQuestion.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !question.isEmpty, !isSpaceAIBusy else { return }
         let context = spaceAIContextText()
+        // Ответ — в тот Space, где спросили, даже если пока ждали, переключились.
+        let slot = viewModel.activeSlot
         isSpaceAIBusy = true
         Task {
             do {
@@ -890,7 +892,7 @@ struct ContentView: View {
                     userText: userText
                 )
                 await MainActor.run {
-                    insertAIResultCard(result)
+                    insertAIResultCard(result, slot: slot)
                     spaceAIQuestion = ""
                     withAnimation(spaceAISpring) { isAskingSpaceAI = false }
                     isSpaceAIBusy = false
@@ -908,16 +910,13 @@ struct ContentView: View {
     /// текстового ввода (.focusNewCard), что фактически "активирует" её и
     /// сразу же снимало бы постоянную AI-подсветку (см. aiHighlightedCardIDs
     /// и CardView) прежде, чем пользователь вообще успеет её заметить.
-    private func insertAIResultCard(_ text: String) {
+    private func insertAIResultCard(_ text: String, slot: Int) {
         let size = CGSize(width: 280, height: 220)
         let origin = CGPoint(
             x: max(0, (canvasSize.width - size.width) / 2),
             y: max(0, (canvasSize.height - size.height) / 2)
         )
-        let card = viewModel.addCard(at: origin, size: size)
-        card.text = text
-        card.isAIGenerated = true
-        viewModel.saveImmediately()
+        let card = viewModel.addCard(at: origin, size: size, slot: slot, text: text, isAIGenerated: true)
         viewModel.aiHighlightedCardIDs.insert(card.id)
     }
 

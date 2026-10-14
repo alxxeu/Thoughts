@@ -224,10 +224,11 @@ final class BoardViewModel {
     }
 
     @discardableResult
-    func addCard(at origin: CGPoint, size: CGSize) -> Card {
+    func addCard(at origin: CGPoint, size: CGSize, slot: Int? = nil, text: String = "", isAIGenerated: Bool = false) -> Card {
         let snapped = CGSize(width: Self.snap(size.width), height: Self.snap(size.height))
-        let card = Card(position: origin, size: snapped)
-        cards.append(card)
+        let card = Card(position: origin, size: snapped, text: text)
+        card.isAIGenerated = isAIGenerated
+        cardsByWorkspace[slot ?? activeSlot, default: []].append(card)
         saveImmediately()
         return card
     }
@@ -250,10 +251,7 @@ final class BoardViewModel {
             ? (NSScreen.main?.visibleFrame.size ?? CGSize(width: 900, height: 600))
             : lastCanvasSize
         let origin = Self.firstFreeOrigin(size: size, among: cards, canvasSize: canvasSize, topInset: topInset)
-        let card = addCard(at: origin, size: size)
-        card.text = text
-        saveImmediately()
-        return card
+        return addCard(at: origin, size: size, text: text)
     }
 
     /// Обходит канву рядами сверху-вниз, слева-направо с шагом
