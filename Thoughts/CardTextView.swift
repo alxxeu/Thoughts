@@ -430,9 +430,6 @@ struct CardTextView: NSViewRepresentable {
         Self.applyChrome(typography, to: textView)
 
         textView.layoutManager?.delegate = textView.bulletGlyphs
-        // Вёрстка только видимой части: при смене Space длинные карточки
-        // иначе верстались целиком все сразу.
-        textView.layoutManager?.allowsNonContiguousLayout = true
         textView.string = text
         context.coordinator.lastTypography = typography
         Self.restyle(textView, typography: typography)

@@ -227,6 +227,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             ]
         ) { [weak self] event in
             self?.viewModel?.recordInteraction()
+            if event.type == .keyDown, self?.handleSpaceKey(event) == true { return nil }
             return event
         }
         if let unreadable = BoardStore.shared.unreadableFileURL {
@@ -303,9 +304,29 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     /// `[ ] | { }`). keyCode — физические клавиши, от раскладки не зависят.
     /// Регистрируются на всё время работы приложения; занятое другим
     /// приложением сочетание просто не сработает.
+    /// ⌥1–9 — здесь, а не только шорткатом пункта меню: через меню каждое
+    /// нажатие подсвечивало меню, перерисовывало Space синхронно внутри
+    /// подсветки, а на частых нажатиях AppKit ещё и притормаживал повторы —
+    /// быстрые переключения копились до «радужного курсора». Отсюда
+    /// переключения между кадрами сливаются в одну перерисовку. Пункты меню
+    /// остаются — для вида и для клика мышью.
+    private func handleSpaceKey(_ event: NSEvent) -> Bool {
+        guard let viewModel,
+              event.modifierFlags.intersection([.command, .control, .option, .shift]) == .option,
+              let slot = Self.digitKeyCodes.firstIndex(of: UInt32(event.keyCode)).map({ $0 + 1 }) else { return false }
+        // Зажатая клавиша (автоповтор) не переключает снова.
+        guard !event.isARepeat else { return true }
+        let overlay = viewModel.desktopOverlay
+        guard slot != viewModel.activeSlot || overlay.isDesktopModeActive else { return true }
+        overlay.isDesktopModeActive = false
+        NotificationCenter.default.post(name: .switchWorkspace, object: slot)
+        return true
+    }
+
+    private static let digitKeyCodes: [UInt32] = [18, 19, 20, 21, 23, 22, 26, 28, 25] // kVK_ANSI_1...9
+
     private func registerSpaceHotKeys(_ viewModel: BoardViewModel) {
-        let digitKeyCodes: [UInt32] = [18, 19, 20, 21, 23, 22, 26, 28, 25] // kVK_ANSI_1...9
-        for (index, keyCode) in digitKeyCodes.enumerated() {
+        for (index, keyCode) in Self.digitKeyCodes.enumerated() {
             let slot = index + 1
             GlobalHotKeyManager.shared.register(keyCode: keyCode, modifiers: UInt32(controlKey | optionKey)) { [weak self] in
                 let overlay = viewModel.desktopOverlay
