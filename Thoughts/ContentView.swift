@@ -324,6 +324,8 @@ struct ContentView: View {
         }
         .onReceive(NotificationCenter.default.publisher(for: .switchWorkspace)) { notification in
             if let slot = notification.object as? Int {
+                // Имя сохраняется в Space, где его вводили, — пока он ещё активен.
+                commitWorkspaceRename()
                 // Нельзя оставить "зависший" фокус на карточке со Space, с
                 // которого только что ушли.
                 setFocusedCard(nil)
