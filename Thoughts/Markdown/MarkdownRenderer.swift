@@ -91,8 +91,8 @@ enum MarkdownRenderer {
                 // сверху и снизу — у первой и последней строки цитаты.
                 storage.addAttribute(.paragraphStyle, value: blockStyle(
                     indent: 18, tail: -26,
-                    before: paragraph.range.location == block.location ? 8 : 0,
-                    after: NSMaxRange(paragraph.range) == NSMaxRange(block) ? 8 : 0
+                    before: paragraph.range.location == block.location ? 12 : 0,
+                    after: NSMaxRange(paragraph.range) == NSMaxRange(block) ? 12 : 0
                 ), range: paragraph.range)
                 revealOrHide(paragraph.blockMarker, near: paragraph.range)
             case .task(let done):
@@ -124,7 +124,7 @@ enum MarkdownRenderer {
                 }
             case .code:
                 storage.addAttribute(.font, value: mono, range: paragraph.range)
-                storage.addAttribute(.foregroundColor, value: codeColor, range: paragraph.range)
+                storage.addAttribute(.foregroundColor, value: codeColor(typography), range: paragraph.range)
                 // Справа — место под кнопку копирования.
                 storage.addAttribute(.paragraphStyle, value: blockStyle(tail: -26), range: paragraph.range)
                 if let block = paragraph.codeBlock {
@@ -149,7 +149,7 @@ enum MarkdownRenderer {
                 case .code:
                     let mono = NSFont.monospacedSystemFont(ofSize: paragraphFont.pointSize * 0.92, weight: .regular)
                     storage.addAttribute(.font, value: mono, range: range)
-                    storage.addAttribute(.foregroundColor, value: codeColor, range: range)
+                    storage.addAttribute(.foregroundColor, value: codeColor(typography), range: range)
                 case .link(let url):
                     if let target = URL(string: url) {
                         storage.addAttribute(.link, value: target, range: range)
@@ -188,8 +188,10 @@ enum MarkdownRenderer {
         return selection.location >= range.location && selection.location <= NSMaxRange(range)
     }
 
-    /// Цвет кода — блоков и `инлайн`.
-    static let codeColor = NSColor.systemTeal
+    /// Цвет кода — блоков и `инлайн`: нейтральный, светлее/бледнее текста.
+    static func codeColor(_ typography: CardTypography) -> NSColor {
+        typography.color.withAlphaComponent(0.7)
+    }
 
     /// Ширина отступа под квадратик чек-листа.
     static func taskIndent(_ typography: CardTypography) -> CGFloat {

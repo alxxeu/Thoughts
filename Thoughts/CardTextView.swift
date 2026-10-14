@@ -68,9 +68,11 @@ private final class CardNSTextView: NSTextView {
         onEscape()
     }
 
-    /// Поля блоков (код, цитата): прямоугольник на всю ширину по строкам
-    /// блока, включая их отступы сверху и снизу.
-    private func blockBoxes(_ key: NSAttributedString.Key) -> [(range: NSRange, rect: NSRect)] {
+    /// Поля блоков на всю ширину. Код — по строкам целиком (узкие строки ```
+    /// и есть его поля); цитата — по самому тексту плюс `textPadding` сверху
+    /// и снизу: отступ перед первым абзацем TextKit не учитывает, и без
+    /// этого поле цитаты в начале карточки упиралось в текст.
+    private func blockBoxes(_ key: NSAttributedString.Key, textPadding: CGFloat? = nil) -> [(range: NSRange, rect: NSRect)] {
         guard let layoutManager, let textContainer, let textStorage, textStorage.length > 0 else { return [] }
         var boxes: [(NSRange, NSRect)] = []
         var seen = Set<Int>()
@@ -78,10 +80,11 @@ private final class CardNSTextView: NSTextView {
             guard let block = (value as? NSValue)?.rangeValue, seen.insert(block.location).inserted else { return }
             var rect = NSRect.null
             let glyphs = layoutManager.glyphRange(forCharacterRange: block, actualCharacterRange: nil)
-            layoutManager.enumerateLineFragments(forGlyphRange: glyphs) { lineRect, _, _, _, _ in
-                rect = rect.union(lineRect)
+            layoutManager.enumerateLineFragments(forGlyphRange: glyphs) { lineRect, usedRect, _, _, _ in
+                rect = rect.union(textPadding == nil ? lineRect : usedRect)
             }
             guard !rect.isNull else { return }
+            if let textPadding { rect = rect.insetBy(dx: 0, dy: -textPadding) }
             rect.origin.x = textContainerOrigin.x - 6
             rect.size.width = textContainer.size.width + 12
             rect.origin.y += textContainerOrigin.y
@@ -100,7 +103,7 @@ private final class CardNSTextView: NSTextView {
         }
 
         let accent = NSColor.controlAccentColor
-        for (_, box) in blockBoxes(MarkdownRenderer.quoteKey) {
+        for (_, box) in blockBoxes(MarkdownRenderer.quoteKey, textPadding: 6) {
             let shape = NSBezierPath(roundedRect: box, xRadius: 6, yRadius: 6)
             accent.withAlphaComponent(0.14).setFill()
             shape.fill()
@@ -183,13 +186,14 @@ private final class CardNSTextView: NSTextView {
             }
         }
 
-        // Значки в углу полей: « у цитаты, копирование у кода.
-        for (_, box) in blockBoxes(MarkdownRenderer.quoteKey) {
-            drawSymbol("quote.closing", color: .controlAccentColor, in: cornerIconRect(in: box))
+        // Значки в углу полей, оба серые: « у цитаты, копирование у кода.
+        let iconColor = (textColor ?? .white).withAlphaComponent(0.45)
+        for (_, box) in blockBoxes(MarkdownRenderer.quoteKey, textPadding: 6) {
+            drawSymbol("quote.closing", color: iconColor, in: cornerIconRect(in: box))
         }
         for (block, box) in blockBoxes(MarkdownRenderer.codeBlockKey) {
             let copied = copiedBlockLocation == block.location
-            drawSymbol(copied ? "checkmark" : "clipboard", color: dividerLineColor.withAlphaComponent(0.9), in: cornerIconRect(in: box))
+            drawSymbol(copied ? "checkmark" : "doc.on.doc", color: iconColor, in: cornerIconRect(in: box))
         }
     }
 
@@ -244,7 +248,7 @@ private final class CardNSTextView: NSTextView {
                 while open > 0, ns.character(at: open) != 0x5B { open -= 1 } // "["
                 let inside = NSRange(location: open + 1, length: close - open - 1)
                 let isDone = ns.substring(with: inside).lowercased() == "x"
-                let replacement = isDone ? "" : "x"
+                let replacement = isDone ? " " : "x"
                 if shouldChangeText(in: inside, replacementString: replacement) {
                     textStorage.replaceCharacters(in: inside, with: replacement)
                     didChangeText()
@@ -445,7 +449,7 @@ private final class CardNSTextView: NSTextView {
         var nextMarker: String {
             switch self {
             case .bullet: return "- "
-            case .task: return "[] "
+            case .task: return "- [ ] "
             case .quote: return "> "
             case .numbered(let n): return "\(n + 1). "
             }
@@ -460,7 +464,7 @@ private final class CardNSTextView: NSTextView {
         guard lineRange.length >= 2 else { return nil }
         let line = ns.substring(with: lineRange)
 
-        // Новый пункт чек-листа — всегда пустой `[] `, даже после отмеченного.
+        // Новый пункт чек-листа — всегда пустой `- [ ] `, даже после отмеченного.
         if let match = line.range(of: MarkdownStyler.taskPattern, options: .regularExpression) {
             return .task(length: (String(line[match]) as NSString).length)
         }
@@ -807,9 +811,43 @@ struct CardTextView: NSViewRepresentable {
 
         func textDidChange(_ notification: Notification) {
             guard let textView = notification.object as? NSTextView else { return }
+            normalizeTaskMarkers(in: textView)
             CardTextView.restyle(textView, typography: typography)
             parent.text = textView.string
             parent.onTextChange()
+        }
+
+        /// `[]`, `[ ]`, `- []`, `[x]` → стандартные `- [ ] ` / `- [x] `: так их
+        /// понимают Notion и другие Markdown-приложения. Пока идёт IME-набор —
+        /// не трогаем. Повторный textDidChange после правки уже ничего не найдёт.
+        private func normalizeTaskMarkers(in textView: NSTextView) {
+            guard !textView.hasMarkedText(), let storage = textView.textStorage else { return }
+            let ns = textView.string as NSString
+            var edits: [(range: NSRange, marker: String)] = []
+            for paragraph in MarkdownStyler.parse(textView.string) {
+                guard case .task(let done) = paragraph.block, let marker = paragraph.blockMarker else { continue }
+                let standard = done ? "- [x] " : "- [ ] "
+                if ns.substring(with: marker) != standard { edits.append((marker, standard)) }
+            }
+            guard !edits.isEmpty else { return }
+            // Курсор — туда же относительно текста: после маркера, если был в нём.
+            // С конца к началу: более ранние правки сдвигают позицию, более
+            // поздние на неё не влияют — диапазоны правок в исходных координатах.
+            var cursor = textView.selectedRange().location
+            for edit in edits.reversed() {
+                let newLength = (edit.marker as NSString).length
+                if NSMaxRange(edit.range) <= cursor {
+                    cursor += newLength - edit.range.length
+                } else if edit.range.location < cursor {
+                    cursor = edit.range.location + newLength
+                }
+            }
+            // С конца — чтобы диапазоны раньше по тексту не сдвигались.
+            for edit in edits.reversed() where textView.shouldChangeText(in: edit.range, replacementString: edit.marker) {
+                storage.replaceCharacters(in: edit.range, with: edit.marker)
+            }
+            textView.didChangeText()
+            textView.setSelectedRange(NSRange(location: min(cursor, storage.length), length: 0))
         }
 
         /// Курсор сдвинулся — показываем символы фрагмента, к которому он
