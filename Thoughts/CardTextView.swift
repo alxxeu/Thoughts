@@ -20,6 +20,18 @@ private final class CardNSTextView: NSTextView {
     // переключается в светлый в Light Mode, так что линии поверх него
     // должны следовать за текстом, а не за темой.
     var dividerLineColor = CardTypography.defaultTextColor.withAlphaComponent(0.22)
+    /// Ширина — всегда ровно по видимой области прокрутки: карточка
+    /// прокручивается только вертикально. Без этого после анимации появления
+    /// AI-карточки (масштаб 0.35 → 1) текст оставался шире карточки, и её
+    /// можно было сдвинуть вбок.
+    override func setFrameSize(_ newSize: NSSize) {
+        var size = newSize
+        if let visible = enclosingScrollView?.contentSize.width, visible > 0 {
+            size.width = visible
+        }
+        super.setFrameSize(size)
+    }
+
     /// Делегат вёрстки, прячущий служебные символы Markdown. layoutManager
     /// держит делегата слабо — храним здесь.
     let glyphHider = MarkdownGlyphHider()
@@ -540,6 +552,9 @@ struct CardTextView: NSViewRepresentable {
         scrollView.drawsBackground = false
         scrollView.hasVerticalScroller = false
         scrollView.hasHorizontalScroller = false
+        // Карточка прокручивается только вертикально — и без горизонтальной
+        // «пружины» трекпада.
+        scrollView.horizontalScrollElasticity = .none
         scrollView.borderType = .noBorder
 
         let textView = CardNSTextView(frame: .zero)
