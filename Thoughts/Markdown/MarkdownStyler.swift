@@ -11,7 +11,7 @@ import Foundation
 /// блоки кода ```` ``` ````, `--`…`----------` разделитель, `\*` экранирование.
 /// shortcut: свой упрощённый разбор, не полный CommonMark (нет `_`, таблиц,
 /// вложенных списков) — расширять вместе с редактором.
-enum MarkdownStyler {
+nonisolated enum MarkdownStyler {
     enum Block: Equatable {
         case paragraph
         case heading(Int)
