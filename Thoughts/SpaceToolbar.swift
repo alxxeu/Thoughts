@@ -204,8 +204,8 @@ struct SpaceToolbar: View {
     private func spaceAIContextText() -> String {
         viewModel.cards
             .filter { $0.privacyMode == .none && !$0.text.isEmpty }
-            .map(\.text)
-            .joined(separator: "\n---\n")
+            .map { "<note>\n\($0.text)\n</note>" }
+            .joined(separator: "\n")
     }
 
     private func askSpaceAI() {

@@ -96,7 +96,7 @@ struct CardAskAIPanel: View {
                     .frame(height: 1)
 
                 ScrollView {
-                    Text(answer)
+                    Text(.aiAnswerPreview(answer))
                         .font(.system(size: 14))
                         .lineSpacing(4)
                         .foregroundStyle(Color.white.opacity(0.88))

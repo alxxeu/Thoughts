@@ -222,7 +222,7 @@ private struct AskAIPopoverView: View {
                 .truncationMode(.tail)
 
             ScrollView {
-                Text(answer)
+                Text(.aiAnswerPreview(answer))
                     .font(.system(size: 13))
                     .lineSpacing(3)
                     .textSelection(.enabled)
