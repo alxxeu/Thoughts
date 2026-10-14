@@ -188,7 +188,7 @@ private final class CardNSTextView: NSTextView {
         // Квадратики чек-листов — слева, на отступе строки.
         textStorage.enumerateAttribute(MarkdownRenderer.taskBoxKey, in: fullRange) { value, range, _ in
             guard let done = value as? Bool, let box = taskBoxRect(for: range) else { return }
-            let color = textColor ?? .white
+            let color: NSColor = insertionPointColor ?? .white
             let path = NSBezierPath(roundedRect: box, xRadius: 3, yRadius: 3)
             if done {
                 color.withAlphaComponent(0.55).setFill()
@@ -212,7 +212,9 @@ private final class CardNSTextView: NSTextView {
         }
 
         // Значки в углу полей, оба серые: « у цитаты, копирование у кода.
-        let iconColor = (textColor ?? .white).withAlphaComponent(0.7)
+        // Цвет каретки, а не textColor: тот — цвет первого символа, а он бывает
+        // скрытым (прозрачным), и иконки становились чёрными.
+        let iconColor = (insertionPointColor ?? .white).withAlphaComponent(0.7)
         for (_, box) in blockBoxes(MarkdownRenderer.quoteKey, textPadding: 8) {
             drawSymbol("quote.closing", color: iconColor, in: cornerIconRect(in: box))
         }
