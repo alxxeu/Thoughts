@@ -85,13 +85,9 @@ final class DesktopOverlayWindowController {
             if savedWindowFrame == nil {
                 savedWindowFrame = window.frame
             }
-            // Уровень асимметричный между режимами — подтверждено реальным
-            // кодом Floatspace (native_desktop.rs): Desktop mode ниже
-            // иконок стола (окно совсем не мешает, даже не "прозрачно
-            // мешает"), Workspace mode выше иконок, но по-прежнему ниже
-            // обычных окон приложений. Раньше здесь был один и тот же
-            // фиксированный уровень в обоих режимах — работало, но не
-            // совпадало с проверенным эталоном без явной причины.
+            // Уровень разный по режимам: Desktop mode — ниже иконок стола
+            // (окно совсем не мешает), обычный режим — выше иконок, но ниже
+            // окон приложений.
             let desktopIconLevel = Int(CGWindowLevelForKey(.desktopIconWindow))
             window.level = NSWindow.Level(
                 rawValue: isDesktopModeActive ? desktopIconLevel - 1 : desktopIconLevel + 1
@@ -106,16 +102,13 @@ final class DesktopOverlayWindowController {
             window.isOpaque = false
             window.backgroundColor = .clear
             window.hasShadow = false
-            // Floatspace на Tauri создаёт окно изначально безрамочным, ему
-            // это не нужно. WindowGroup в SwiftUI всегда рождает titled-окно
+            // WindowGroup в SwiftUI всегда рождает titled-окно
             // (hiddenTitleBar прячет только полосу, не сами traits) — без
             // явного снятия traits из styleMask курсор у верхнего края
             // показывает настоящие traffic-light кнопки на весь экран.
             // .titled — не только сами кнопки, но и причина зазора под
             // menu bar: у titled-окон AppKit сам поджимает frame ниже
             // строки меню, даже если явно попросить Y=0 через setFrame.
-            // Полностью безрамочное окно (как у Floatspace, создаваемого
-            // borderless с самого начала) это ограничение не имеет.
             window.styleMask.remove([.closable, .miniaturizable, .resizable, .titled])
             window.titleVisibility = .hidden
             window.title = ""

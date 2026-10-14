@@ -196,20 +196,12 @@ struct ContentView: View {
                     .transition(.opacity)
             }
         }
-        // Плавные переходы между Spaces (обычное переключение, Desktop
-        // Overlay туда-обратно, лок/анлок) — раньше карточки/оверлеи
-        // сразу переключались без анимации, топорно. Пружина вместо
-        // плоского easeOut — привычная по ощущению кривая для macOS,
-        // а не линейное затухание.
+        // Плавные переходы: Desktop mode туда-обратно, лок/анлок.
         .animation(.easeOut(duration: 0.2), value: viewModel.desktopOverlay.isDesktopModeActive)
         .animation(.easeOut(duration: 0.2), value: viewModel.isActiveSpaceLocked)
-        // Смена Space сама по себе — без общего id/transition на весь
-        // блок: не имитируем это одним общим кросс-фейдом. Вместо этого,
-        // как у Floatspace, анимируется только УХОД старых карточек
-        // (asymmetric-transition на каждой CardView ниже), новые
-        // появляются сразу без входной анимации, а pill с названием
-        // просто меняет текст — так выглядит собраннее, а не "будто всё
-        // тает одним пятном".
+        // Смена Space — без общего кросс-фейда всего блока: заметно
+        // анимируется только уход старых карточек (asymmetric-transition на
+        // каждой CardView ниже), а не "всё тает одним пятном".
         .animation(.easeOut(duration: 0.1), value: viewModel.activeSlot)
         .animation(.easeOut(duration: 0.25), value: onboardingViewModel.isActive)
         .onAppear {
@@ -369,10 +361,9 @@ struct ContentView: View {
                         onEdgeHintsChange: { edgeHints = $0 }
                     )
                     .frame(width: displaySize.width, height: displaySize.height, alignment: .topLeading)
-                    // Подсказка над карточкой — снизу теперь живёт кнопка
-                    // Ask AI и её панель (см. CardView). Привязка к НИЖНЕМУ
-                    // краю со сдвигом на высоту карточки — не зависит от
-                    // собственной высоты подписи.
+                    // Подсказка над карточкой — снизу кнопка Ask AI и её
+                    // панель (см. CardView). Привязка к НИЖНЕМУ краю со
+                    // сдвигом на высоту карточки — не зависит от высоты подписи.
                     .overlay(alignment: .bottom) {
                         if isFocused && focusExitHint.isVisible {
                             // HintLabel фиксированно белый в обеих темах:
@@ -515,8 +506,7 @@ struct ContentView: View {
             .animation(.easeInOut(duration: 0.28), value: focusedCardID)
         }
         .overlay(alignment: .center) {
-            // Подсказка на пустом Space — по центру канвы, а не под
-            // pill'ом сверху (там раньше был просто тусклый текст). Та же
+            // Подсказка на пустом Space — по центру канвы. Та же
             // анимация "курсор растягивает карточку", что в шаге 1
             // интерактивного онбординга (см. CreateCardGestureIcon) —
             // единый визуальный язык, не два разных объяснения одного
@@ -570,7 +560,7 @@ struct ContentView: View {
         emptyHint.show(afterDelay: 2.5)
     }
 
-    /// В обычном окне — прежняя маленькая граница. В Desktop Overlay окно
+    /// В обычном окне — маленькая граница. В Desktop Overlay окно
     /// растянуто на весь экран, и карточки не должны упираться в самый
     /// верх/вырез камеры — там, где обычно сидят системные виджеты.
     private var effectiveTopInset: CGFloat {
@@ -580,7 +570,7 @@ struct ContentView: View {
     /// Плашка с именем Space — обычный SwiftUI-оверлей этой же канвы (не
     /// chrome окна), так что отступ под неё можно менять независимо от
     /// самого окна/frame — без компромисса с покрытием экрана, в отличие
-    /// от системных элементов. В обычном окне — как раньше, 10pt.
+    /// от системных элементов.
     private var workspacePillTopPadding: CGFloat {
         guard viewModel.desktopOverlay.isEnabled else { return 10 }
         return (NSScreen.main?.safeAreaInsets.top ?? 0) + 12
