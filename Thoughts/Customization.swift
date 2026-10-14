@@ -14,15 +14,11 @@ struct CardTypography: Equatable {
     let font: NSFont
     let color: NSColor
 
-    /// Размер до появления настройки размера текста — им набраны все
-    /// старые formattingData без отметки базового размера (см.
-    /// CardTextView.baseFontSizeKey).
-    static let legacyBaseFontSize: CGFloat = 15
+    /// Размер текста по умолчанию (M в Settings → Appearance).
+    static let defaultFontSize: CGFloat = 15
 
-    /// Цвет текста до появления кастомизации — им же заархивированы все
-    /// старые formattingData, поэтому он всегда считается "базовым" (см.
-    /// CardTextView.isBaseColor).
-    static let legacyTextColor = NSColor.white.withAlphaComponent(0.88)
+    /// Цвет текста по умолчанию (White в Settings → Appearance).
+    static let defaultTextColor = NSColor.white.withAlphaComponent(0.88)
 }
 
 // MARK: - Шрифт
@@ -100,7 +96,7 @@ enum CardTextSize: String, CaseIterable, Identifiable {
     var pointSize: CGFloat {
         switch self {
         case .small: return 13
-        case .medium: return CardTypography.legacyBaseFontSize
+        case .medium: return CardTypography.defaultFontSize
         case .large: return 18
         case .extraLarge: return 22
         }
@@ -141,7 +137,7 @@ struct TextColorOption: Identifiable, Hashable {
     /// на тёмной поверхности карточки (см. CardSurfaceStyle) читаются
     /// хуже — выбор за пользователем, остальное через ColorPicker.
     static let builtIn: [TextColorOption] = [
-        TextColorOption(id: defaultID, title: "White", color: CardTypography.legacyTextColor),
+        TextColorOption(id: defaultID, title: "White", color: CardTypography.defaultTextColor),
         preset("builtin.amber", "Amber", 0xF7D58A),
         preset("builtin.darkBlue", "Dark Blue", 0x1E3A8A),
         preset("builtin.black", "Black", 0x000000)

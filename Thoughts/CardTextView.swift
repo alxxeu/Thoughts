@@ -19,7 +19,7 @@ private final class CardNSTextView: NSTextView {
     // адаптивный labelColor — фон карточки (CardSurfaceStyle) не
     // переключается в светлый в Light Mode, так что линии поверх него
     // должны следовать за текстом, а не за темой.
-    var dividerLineColor = CardTypography.legacyTextColor.withAlphaComponent(0.22)
+    var dividerLineColor = CardTypography.defaultTextColor.withAlphaComponent(0.22)
     /// Делегат вёрстки, прячущий служебные символы Markdown. layoutManager
     /// держит делегата слабо — храним здесь.
     let glyphHider = MarkdownGlyphHider()

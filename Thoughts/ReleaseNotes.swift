@@ -16,6 +16,26 @@ struct ReleaseNote: Identifiable {
 
 enum ReleaseNotes {
     static let all: [ReleaseNote] = [
+        ReleaseNote(version: "1.4", sections: [
+            .init(title: "New", items: [
+                "Markdown \u{2014} cards are now written in Markdown: # headings, **bold**, *italic*, ~underline~, ~~strikethrough~~, ==highlight==, `code`, links, lists and --- dividers. The formatting characters show while you edit a word and hide when you move on. Markdown pasted from Notion and other apps appears formatted.",
+                "Switch Spaces from any app with \u{2303}\u{2325}1\u{2013}9 \u{2014} Thoughts comes forward on that Space."
+            ]),
+            .init(title: "Improved", items: [
+                "\u{2318}B, \u{2318}I, \u{2318}U, \u{21E7}\u{2318}X and \u{21E7}\u{2318}H format the selection; press again to remove.",
+                "Desktop Overlay shortcuts from other apps now use \u{2303}\u{2325}, so they no longer block typing \u{2325} characters in other apps.",
+                "A revealed Spoiler or Lock card locks again 5 seconds after you switch to another app.",
+                "A clear explanation when a Space has too much text for Apple Intelligence."
+            ]),
+            .init(title: "Fixed", items: [
+                "Your last words are saved \u{2014} and sent to iCloud \u{2014} even if you quit right after typing.",
+                "A damaged data file is kept aside instead of being overwritten.",
+                "Renaming a Space and switching Spaces at the same time no longer renames the wrong one."
+            ]),
+            .init(title: "Note", items: [
+                "Update Thoughts on all your Macs: older versions show Markdown characters in cards edited here. Your cards were converted automatically, and a copy of the previous data is kept in the Backups folder."
+            ])
+        ]),
         ReleaseNote(version: "1.3", sections: [
             .init(title: "New", items: [
                 "iCloud sync \u{2014} your Spaces and cards stay in sync across your Macs, end-to-end encrypted. The Space Lock passcode and AI keys sync through iCloud Keychain.",

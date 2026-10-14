@@ -7,7 +7,7 @@ import AppKit
 /// Ask Again.
 ///
 /// Вставка и замена идут через сам NSTextView (insertText:replacementRange:)
-/// — работает ⌘Z, а card.text/formattingData синхронизируются обычным путём
+/// — работает ⌘Z, а card.text синхронизируется обычным путём
 /// через textDidChange (см. CardTextView.Coordinator).
 final class AskAIPopoverController: NSObject, NSPopoverDelegate {
     /// Открыт не больше одного popover за раз.

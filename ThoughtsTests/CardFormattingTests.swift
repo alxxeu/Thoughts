@@ -4,8 +4,8 @@ import Testing
 
 @MainActor
 struct CardFormattingTests {
-    /// Карточка с разделителем раньше не архивировалась вовсе — и теряла
-    /// всё форматирование (см. DividerAttachment.supportsSecureCoding).
+    /// Архивы старого формата с разделителем должны читаться при миграции
+    /// в Markdown (см. DividerAttachment.supportsSecureCoding).
     @Test func formattingWithDividerSurvivesArchive() throws {
         let original = NSMutableAttributedString(string: "Bold", attributes: [.font: NSFont.boldSystemFont(ofSize: 15)])
         original.append(NSAttributedString(attachment: DividerAttachment()))
