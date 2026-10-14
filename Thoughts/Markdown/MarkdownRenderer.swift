@@ -12,6 +12,13 @@ enum MarkdownRenderer {
     static let hiddenKey = NSAttributedString.Key("thoughts.markdownHidden")
     /// `-` маркера списка, который рисуется как `•`.
     static let bulletKey = NSAttributedString.Key("thoughts.markdownBullet")
+    /// Строка цитаты — CardNSTextView рисует черту слева.
+    static let quoteKey = NSAttributedString.Key("thoughts.markdownQuote")
+    /// `[ ]` чек-листа (значение — отмечен ли пункт): поверх рисуется квадратик,
+    /// клик по нему отмечает пункт.
+    static let taskBoxKey = NSAttributedString.Key("thoughts.markdownTaskBox")
+    /// Строки блока кода (значение — NSRange всего блока) — для подложки.
+    static let codeBlockKey = NSAttributedString.Key("thoughts.markdownCodeBlock")
 
     static func baseAttributes(_ typography: CardTypography) -> [NSAttributedString.Key: Any] {
         let paragraph = NSMutableParagraphStyle()
@@ -39,8 +46,24 @@ enum MarkdownRenderer {
         storage.setAttributes(baseAttributes(typography), range: full)
 
         var linkedRanges: [NSRange] = []
+        var codeRanges: [NSRange] = []
+
+        /// Бледный символ блока; скрыт, пока курсор не на его строке.
+        func revealOrHide(_ marker: NSRange?, near range: NSRange) {
+            guard let marker else { return }
+            storage.addAttribute(.foregroundColor, value: markerColor, range: marker)
+            if !touches(selection, range) {
+                storage.addAttribute(hiddenKey, value: true, range: marker)
+            }
+        }
+        /// Бледная строка, пока курсор рядом; иначе прозрачная (высота строки остаётся).
+        func showOrClear(_ line: NSRange, near range: NSRange) {
+            storage.addAttribute(.foregroundColor, value: touches(selection, range) ? markerColor : NSColor.clear, range: line)
+        }
+
         for paragraph in MarkdownStyler.parse(storage.string) where paragraph.range.length > 0 {
             var paragraphFont = typography.font
+            let mono = NSFont.monospacedSystemFont(ofSize: typography.font.pointSize * 0.92, weight: .regular)
             switch paragraph.block {
             case .heading(let level):
                 let scale: CGFloat = [1.5, 1.3, 1.15][level - 1]
@@ -49,24 +72,51 @@ enum MarkdownRenderer {
                     toHaveTrait: .boldFontMask
                 )
                 storage.addAttribute(.font, value: paragraphFont, range: paragraph.range)
-                // `# ` виден, пока курсор на строке заголовка, — как остальные символы.
-                if let marker = paragraph.blockMarker, !touches(selection, paragraph.range) {
-                    storage.addAttribute(hiddenKey, value: true, range: marker)
-                }
+                // `# ` виден (бледно), пока курсор на строке заголовка, — как остальные символы.
+                revealOrHide(paragraph.blockMarker, near: paragraph.range)
             case .divider:
                 storage.addAttribute(dividerKey, value: true, range: paragraph.range)
-                // Пока курсор на строке, `---` видно и его можно править. Иначе
-                // — прозрачные дефисы, а не скрытые глифы: строке нужна своя
+                // Прозрачные дефисы, а не скрытые глифы: строке нужна своя
                 // высота, линию CardNSTextView рисует по её середине (глифы
                 // нулевой ширины AppKit относит к предыдущей строке).
-                if !touches(selection, paragraph.range) {
-                    storage.addAttribute(.foregroundColor, value: NSColor.clear, range: paragraph.range)
-                }
+                showOrClear(paragraph.range, near: paragraph.range)
             case .bullet:
                 if let marker = paragraph.blockMarker {
                     storage.addAttribute(bulletKey, value: true, range: NSRange(location: marker.location, length: 1))
                 }
-            default:
+            case .quote:
+                storage.addAttribute(quoteKey, value: true, range: paragraph.range)
+                storage.addAttribute(.paragraphStyle, value: indented(by: 14), range: paragraph.range)
+                storage.addAttribute(.foregroundColor, value: typography.color.withAlphaComponent(0.75), range: paragraph.range)
+                revealOrHide(paragraph.blockMarker, near: paragraph.range)
+            case .task(let done):
+                // `- [ ] ` всегда рисуется квадратиком: `- ` скрыт, `[ ]`
+                // прозрачный — поверх него CardNSTextView рисует галочку.
+                if let marker = paragraph.blockMarker {
+                    storage.addAttribute(hiddenKey, value: true, range: NSRange(location: marker.location, length: 2))
+                    let box = NSRange(location: marker.location + 2, length: 3)
+                    storage.addAttribute(.foregroundColor, value: NSColor.clear, range: box)
+                    storage.addAttribute(taskBoxKey, value: done, range: box)
+                    let body = NSRange(location: NSMaxRange(marker), length: NSMaxRange(paragraph.range) - NSMaxRange(marker))
+                    if done, body.length > 0 {
+                        storage.addAttribute(.strikethroughStyle, value: NSUnderlineStyle.single.rawValue, range: body)
+                        storage.addAttribute(.foregroundColor, value: typography.color.withAlphaComponent(0.45), range: body)
+                    }
+                }
+            case .codeFence:
+                storage.addAttribute(.font, value: mono, range: paragraph.range)
+                if let block = paragraph.codeBlock {
+                    storage.addAttribute(codeBlockKey, value: NSValue(range: block), range: paragraph.range)
+                    codeRanges.append(block)
+                    // ``` видны, пока курсор в блоке; иначе прозрачные — как разделитель.
+                    showOrClear(paragraph.range, near: block)
+                }
+            case .code:
+                storage.addAttribute(.font, value: mono, range: paragraph.range)
+                if let block = paragraph.codeBlock {
+                    storage.addAttribute(codeBlockKey, value: NSValue(range: block), range: paragraph.range)
+                }
+            case .paragraph, .numbered:
                 break
             }
 
@@ -93,11 +143,6 @@ enum MarkdownRenderer {
                 }
             }
 
-            // `#` и `---` бледные; `•` списка — цветом текста.
-            if let marker = paragraph.blockMarker, paragraph.block != .bullet,
-               paragraph.block != .divider || touches(selection, paragraph.range) {
-                storage.addAttribute(.foregroundColor, value: markerColor, range: marker)
-            }
             for marker in paragraph.markers {
                 storage.addAttribute(.foregroundColor, value: markerColor, range: marker)
                 let isRevealed = paragraph.spans.contains { NSLocationInRange(marker.location, $0) && touches(selection, $0) }
@@ -112,7 +157,7 @@ enum MarkdownRenderer {
         if let detector = try? NSDataDetector(types: NSTextCheckingResult.CheckingType.link.rawValue) {
             for match in detector.matches(in: storage.string, range: full) {
                 guard let url = match.url,
-                      !linkedRanges.contains(where: { NSIntersectionRange($0, match.range).length > 0 }),
+                      !(linkedRanges + codeRanges).contains(where: { NSIntersectionRange($0, match.range).length > 0 }),
                       ns.substring(with: match.range).contains(".") else { continue }
                 storage.addAttribute(.link, value: url, range: match.range)
             }
@@ -126,6 +171,14 @@ enum MarkdownRenderer {
         guard let selection else { return false }
         if selection.length > 0 { return NSIntersectionRange(selection, range).length > 0 }
         return selection.location >= range.location && selection.location <= NSMaxRange(range)
+    }
+
+    private static func indented(by indent: CGFloat) -> NSParagraphStyle {
+        let style = NSMutableParagraphStyle()
+        style.lineSpacing = 4
+        style.firstLineHeadIndent = indent
+        style.headIndent = indent
+        return style
     }
 
     private static func addTrait(_ trait: NSFontTraitMask, to storage: NSMutableAttributedString, in range: NSRange) {

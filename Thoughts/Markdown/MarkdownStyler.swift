@@ -7,9 +7,10 @@ import Foundation
 ///
 /// Набор синтаксиса — как в Bear 2: `# ## ###`, `**жирный**`, `*курсив*`,
 /// `~~зачёркнутый~~`, `~подчёркнутый~`, `==выделение==`, `` `код` ``,
-/// `[текст](url)`, `- ` и `1. ` списки, `--`…`----------` разделитель, `\*` экранирование.
-/// shortcut: свой упрощённый разбор, не полный CommonMark (нет `_`, цитат,
-/// чек-листов, таблиц, блоков кода) — расширять вместе с редактором.
+/// `[текст](url)`, `- ` и `1. ` списки, `- [ ] ` чек-листы, `> ` цитаты,
+/// блоки кода ```` ``` ````, `--`…`----------` разделитель, `\*` экранирование.
+/// shortcut: свой упрощённый разбор, не полный CommonMark (нет `_`, таблиц,
+/// вложенных списков) — расширять вместе с редактором.
 enum MarkdownStyler {
     enum Block: Equatable {
         case paragraph
@@ -17,6 +18,12 @@ enum MarkdownStyler {
         case bullet
         case numbered
         case divider
+        case quote
+        case task(done: Bool)
+        /// Строка ```` ``` ```` — начало или конец блока кода.
+        case codeFence
+        /// Строка внутри блока кода — без разметки.
+        case code
     }
 
     enum Inline: Equatable {
@@ -37,10 +44,12 @@ enum MarkdownStyler {
         /// `[a](url)`, `\*`) — символы фрагмента показываются, только пока
         /// курсор рядом с ним.
         var spans: [NSRange] = []
+        /// У строк блока кода (и его ```) — весь блок, от ``` до ```.
+        var codeBlock: NSRange?
 
         static func == (lhs: Paragraph, rhs: Paragraph) -> Bool {
             lhs.range == rhs.range && lhs.block == rhs.block && lhs.blockMarker == rhs.blockMarker
-                && lhs.markers == rhs.markers && lhs.spans == rhs.spans
+                && lhs.markers == rhs.markers && lhs.spans == rhs.spans && lhs.codeBlock == rhs.codeBlock
                 && lhs.inlines.map(\.range) == rhs.inlines.map(\.range)
                 && lhs.inlines.map(\.style) == rhs.inlines.map(\.style)
         }
@@ -50,24 +59,51 @@ enum MarkdownStyler {
         let ns = text as NSString
         var result: [Paragraph] = []
         var location = 0
+        // Индекс строки с открывающим ``` — пока блок кода не закрыт.
+        var openFence: Int?
         repeat {
             let lineRange = ns.lineRange(for: NSRange(location: location, length: 0))
-            result.append(paragraph(in: ns, lineRange: lineRange))
+            let range = contentRange(in: ns, lineRange: lineRange)
+            let isFence = ns.substring(with: range).trimmingCharacters(in: .whitespaces).hasPrefix("```")
+            if isFence || openFence != nil {
+                let block: Block = isFence ? .codeFence : .code
+                result.append(Paragraph(range: range, block: block, blockMarker: isFence ? range : nil, inlines: [], markers: []))
+                if isFence, let start = openFence {
+                    closeCodeBlock(&result, from: start)
+                    openFence = nil
+                } else if isFence {
+                    openFence = result.count - 1
+                }
+            } else {
+                result.append(paragraph(in: ns, lineRange: lineRange))
+            }
             location = NSMaxRange(lineRange)
         } while location < ns.length
+        // Незакрытый блок кода тянется до конца текста.
+        if let start = openFence { closeCodeBlock(&result, from: start) }
         if ns.length > 0, text.hasSuffix("\n") {
             result.append(Paragraph(range: NSRange(location: ns.length, length: 0), block: .paragraph, blockMarker: nil, inlines: [], markers: []))
         }
         return result
     }
 
-    /// Разбор одной строки; lineRange может включать завершающий перевод строки.
-    static func paragraph(in ns: NSString, lineRange: NSRange) -> Paragraph {
+    private static func closeCodeBlock(_ result: inout [Paragraph], from start: Int) {
+        let block = NSRange(location: result[start].range.location, length: NSMaxRange(result[result.count - 1].range) - result[start].range.location)
+        for index in start..<result.count { result[index].codeBlock = block }
+    }
+
+    /// Строка без завершающего перевода строки.
+    private static func contentRange(in ns: NSString, lineRange: NSRange) -> NSRange {
         var contentEnd = NSMaxRange(lineRange)
         while contentEnd > lineRange.location, isNewline(ns.character(at: contentEnd - 1)) {
             contentEnd -= 1
         }
-        let range = NSRange(location: lineRange.location, length: contentEnd - lineRange.location)
+        return NSRange(location: lineRange.location, length: contentEnd - lineRange.location)
+    }
+
+    /// Разбор одной строки вне блока кода; lineRange может включать перевод строки.
+    static func paragraph(in ns: NSString, lineRange: NSRange) -> Paragraph {
+        let range = contentRange(in: ns, lineRange: lineRange)
         let line = ns.substring(with: range)
 
         // Разделитель — строка из 2–10 дефисов (`--` — наше расширение,
@@ -83,6 +119,16 @@ enum MarkdownStyler {
         if let match = line.range(of: #"^#{1,3} "#, options: .regularExpression) {
             let length = line.distance(from: match.lowerBound, to: match.upperBound)
             block = .heading(length - 1)
+            blockMarker = NSRange(location: range.location, length: length)
+            bodyStart += length
+        } else if line.range(of: #"^- \[[ xX]\] "#, options: .regularExpression) != nil {
+            let done = line.dropFirst(3).first != " "
+            block = .task(done: done)
+            blockMarker = NSRange(location: range.location, length: 6)
+            bodyStart += 6
+        } else if line.hasPrefix("> ") || line == ">" {
+            let length = min(2, (line as NSString).length)
+            block = .quote
             blockMarker = NSRange(location: range.location, length: length)
             bodyStart += length
         } else if line.hasPrefix("- ") {
@@ -105,8 +151,10 @@ enum MarkdownStyler {
         let ns = text as NSString
         return parse(text).map { paragraph -> String in
             switch paragraph.block {
-            case .divider:
+            case .divider, .codeFence:
                 return ""
+            case .code:
+                return ns.substring(with: paragraph.range)
             default:
                 var hidden = paragraph.markers
                 if let marker = paragraph.blockMarker { hidden.append(marker) }
@@ -117,7 +165,11 @@ enum MarkdownStyler {
                     cursor = NSMaxRange(marker)
                 }
                 line += ns.substring(with: NSRange(location: cursor, length: NSMaxRange(paragraph.range) - cursor))
-                return paragraph.block == .bullet ? "\u{2022} " + line : line
+                switch paragraph.block {
+                case .bullet: return "\u{2022} " + line
+                case .task(let done): return (done ? "\u{2611} " : "\u{2610} ") + line
+                default: return line
+                }
             }
         }.joined(separator: "\n")
     }

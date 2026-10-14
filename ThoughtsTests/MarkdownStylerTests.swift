@@ -86,4 +86,36 @@ struct MarkdownStylerTests {
         #expect(MarkdownStyler.parse("a\n").count == 2)
         #expect(MarkdownStyler.plainText("a\n") == "a\n")
     }
+
+    @Test func quotesAndTasks() {
+        let paragraphs = MarkdownStyler.parse("> said **this**\n>\n- [ ] todo\n- [x] done\n- [ ]no space")
+        #expect(paragraphs.map(\.block) == [.quote, .quote, .task(done: false), .task(done: true), .bullet])
+        #expect(paragraphs[0].blockMarker == NSRange(location: 0, length: 2))
+        #expect(paragraphs[1].blockMarker?.length == 1)
+        #expect(paragraphs[2].blockMarker?.length == 6)
+        // Внутри цитаты разметка работает.
+        #expect(styled("> said **this**", .bold) == ["this"])
+    }
+
+    @Test func codeBlocks() {
+        let text = "a\n```swift\nlet **x** = 1\n```\nb **c**"
+        let paragraphs = MarkdownStyler.parse(text)
+        #expect(paragraphs.map(\.block) == [.paragraph, .codeFence, .code, .codeFence, .paragraph])
+        // Внутри блока кода разметки нет, после него — снова есть.
+        #expect(paragraphs[2].inlines.isEmpty)
+        #expect(styled(text, .bold) == ["c"])
+        let block = (text as NSString).range(of: "```swift\nlet **x** = 1\n```")
+        #expect(paragraphs[1].codeBlock == block)
+        #expect(paragraphs[3].codeBlock == block)
+        #expect(paragraphs[0].codeBlock == nil)
+    }
+
+    @Test func unclosedCodeBlockRunsToEnd() {
+        let paragraphs = MarkdownStyler.parse("```\n# not heading\n**x**")
+        #expect(paragraphs.map(\.block) == [.codeFence, .code, .code])
+    }
+
+    @Test func plainTextForNewBlocks() {
+        #expect(MarkdownStyler.plainText("> quote\n- [ ] a\n- [x] b\n```\n*raw*\n```") == "quote\n\u{2610} a\n\u{2611} b\n\n*raw*\n")
+    }
 }

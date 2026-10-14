@@ -68,6 +68,37 @@ private final class CardNSTextView: NSTextView {
         onEscape()
     }
 
+    /// Под текстом: подложка блоков кода и черта слева у цитат.
+    override func drawBackground(in rect: NSRect) {
+        super.drawBackground(in: rect)
+        guard let layoutManager, let textContainer, let textStorage else { return }
+        let origin = textContainerOrigin
+        let fullRange = NSRange(location: 0, length: textStorage.length)
+
+        var drawnBlocks = Set<Int>()
+        textStorage.enumerateAttribute(MarkdownRenderer.codeBlockKey, in: fullRange) { value, _, _ in
+            guard let block = (value as? NSValue)?.rangeValue, drawnBlocks.insert(block.location).inserted else { return }
+            let glyphs = layoutManager.glyphRange(forCharacterRange: block, actualCharacterRange: nil)
+            var box = layoutManager.boundingRect(forGlyphRange: glyphs, in: textContainer)
+            box.origin.x = origin.x - 6
+            box.size.width = textContainer.size.width + 12
+            box.origin.y += origin.y - 2
+            box.size.height += 4
+            dividerLineColor.withAlphaComponent(0.08).setFill()
+            NSBezierPath(roundedRect: box, xRadius: 6, yRadius: 6).fill()
+        }
+
+        textStorage.enumerateAttribute(MarkdownRenderer.quoteKey, in: fullRange) { value, range, _ in
+            guard value != nil else { return }
+            let glyphs = layoutManager.glyphRange(forCharacterRange: range, actualCharacterRange: nil)
+            layoutManager.enumerateLineFragments(forGlyphRange: glyphs) { lineRect, _, _, _, _ in
+                let bar = NSRect(x: origin.x + 2, y: origin.y + lineRect.minY, width: 2.5, height: lineRect.height)
+                self.dividerLineColor.withAlphaComponent(0.9).setFill()
+                NSBezierPath(roundedRect: bar, xRadius: 1.25, yRadius: 1.25).fill()
+            }
+        }
+    }
+
     /// Рисует линии разделителей `---` поверх текста (строки отмечены
     /// MarkdownRenderer.dividerKey) и для каждой берёт СВЕЖИЙ line fragment
     /// rect у layoutManager — без риска нарисовать по устаревшему layout.
@@ -94,6 +125,72 @@ private final class CardNSTextView: NSTextView {
             dividerLineColor.setStroke()
             path.stroke()
         }
+
+        // Квадратики чек-листов — поверх прозрачных `[ ]`.
+        textStorage.enumerateAttribute(MarkdownRenderer.taskBoxKey, in: fullRange) { value, range, _ in
+            guard let done = value as? Bool, let box = taskBoxRect(for: range) else { return }
+            let color = textColor ?? .white
+            let path = NSBezierPath(roundedRect: box, xRadius: 3, yRadius: 3)
+            if done {
+                color.withAlphaComponent(0.55).setFill()
+                path.fill()
+                let check = NSBezierPath()
+                check.move(to: NSPoint(x: box.minX + box.width * 0.25, y: box.midY))
+                check.line(to: NSPoint(x: box.minX + box.width * 0.43, y: box.maxY - box.height * 0.27))
+                check.line(to: NSPoint(x: box.maxX - box.width * 0.22, y: box.minY + box.height * 0.28))
+                check.lineWidth = 1.6
+                check.lineCapStyle = .round
+                check.lineJoinStyle = .round
+                // Галочка контрастна заливке: на светлом тексте — тёмная, на тёмном — светлая.
+                let isLight = (color.usingColorSpace(.sRGB)?.brightnessComponent ?? 1) > 0.5
+                (isLight ? NSColor.black : NSColor.white).withAlphaComponent(0.8).setStroke()
+                check.stroke()
+            } else {
+                path.lineWidth = 1.2
+                color.withAlphaComponent(0.6).setStroke()
+                path.stroke()
+            }
+        }
+    }
+
+    /// Квадрат чек-листа на месте `[ ]` — по высоте строки шрифта, по центру.
+    private func taskBoxRect(for range: NSRange) -> NSRect? {
+        guard let layoutManager, let textContainer else { return nil }
+        let glyphs = layoutManager.glyphRange(forCharacterRange: range, actualCharacterRange: nil)
+        guard glyphs.length > 0 else { return nil }
+        let rect = layoutManager.boundingRect(forGlyphRange: glyphs, in: textContainer)
+        let font = textStorage?.attribute(.font, at: range.location, effectiveRange: nil) as? NSFont
+        let side = ((font?.capHeight ?? 10) * 1.35).rounded()
+        return NSRect(
+            x: textContainerOrigin.x + rect.minX + 1,
+            y: textContainerOrigin.y + rect.midY - side / 2,
+            width: side,
+            height: side
+        )
+    }
+
+    /// Клик по квадратику отмечает пункт: `[ ]` ↔ `[x]`, с ⌘Z.
+    override func mouseDown(with event: NSEvent) {
+        let point = convert(event.locationInWindow, from: nil)
+        if let textStorage, textStorage.length > 0 {
+            var hit: NSRange?
+            textStorage.enumerateAttribute(MarkdownRenderer.taskBoxKey, in: NSRange(location: 0, length: textStorage.length)) { value, range, stop in
+                guard value != nil, let box = taskBoxRect(for: range), box.insetBy(dx: -3, dy: -3).contains(point) else { return }
+                hit = range
+                stop.pointee = true
+            }
+            if let box = hit {
+                let mark = NSRange(location: box.location + 1, length: 1)
+                let isDone = (string as NSString).substring(with: mark) != " "
+                let replacement = isDone ? " " : "x"
+                if shouldChangeText(in: mark, replacementString: replacement) {
+                    textStorage.replaceCharacters(in: mark, with: replacement)
+                    didChangeText()
+                }
+                return
+            }
+        }
+        super.mouseDown(with: event)
     }
 
     /// Единая точка, через которую AppKit проводит ЛЮБОЕ изменение
@@ -270,9 +367,13 @@ private final class CardNSTextView: NSTextView {
     enum ListPrefix {
         case bullet
         case numbered(Int)
+        case task
+        case quote
 
         var length: Int {
             switch self {
+            case .task: return 6 // "- [ ] "
+            case .quote: return 2 // "> "
             case .bullet: return 2 // "- "
             case .numbered(let n): return "\(n). ".count
             }
@@ -282,18 +383,28 @@ private final class CardNSTextView: NSTextView {
         var nextMarker: String {
             switch self {
             case .bullet: return "- "
+            case .task: return "- [ ] "
+            case .quote: return "> "
             case .numbered(let n): return "\(n + 1). "
             }
         }
     }
 
-    /// "- " -> маркированный список, "1. "/"12. " и т.п. -> нумерованный.
+    /// "- " -> маркированный список, "1. "/"12. " и т.п. -> нумерованный,
+    /// "- [ ] " -> чек-лист, "> " -> цитата.
     /// Отдельной "активации" для чисел не нужно — "1. " уже выглядит как
     /// корректный маркер, распознаётся здесь же в момент нажатия Enter.
     static func detectListPrefix(in ns: NSString, lineRange: NSRange) -> ListPrefix? {
         guard lineRange.length >= 2 else { return nil }
         let line = ns.substring(with: lineRange)
 
+        // Новый пункт чек-листа — всегда пустой `[ ]`, даже после отмеченного.
+        if line.range(of: #"^- \[[ xX]\] "#, options: .regularExpression) != nil {
+            return .task
+        }
+        if line.hasPrefix("> ") {
+            return .quote
+        }
         if line.hasPrefix("- ") {
             return .bullet
         }

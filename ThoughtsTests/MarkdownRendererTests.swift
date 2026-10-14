@@ -80,4 +80,26 @@ struct MarkdownRendererTests {
         MarkdownRenderer.style(divider, typography: typography, selection: NSRange(location: 4, length: 0))
         #expect(divider.attribute(.foregroundColor, at: 3, effectiveRange: nil) as? NSColor != .clear)
     }
+
+    @Test func newBlocks() {
+        // Цитата: черта, `> ` скрыт без курсора.
+        #expect(hidden("> q", selection: nil) == "> ")
+        let quote = styled("> q")
+        #expect(quote.attribute(MarkdownRenderer.quoteKey, at: 2, effectiveRange: nil) != nil)
+
+        // Чек-лист: `- ` скрыт всегда, `[ ]` — квадратик, выполненный — зачёркнут.
+        let task = NSMutableAttributedString(string: "- [x] done")
+        MarkdownRenderer.style(task, typography: typography, selection: NSRange(location: 8, length: 0))
+        #expect(task.attribute(MarkdownRenderer.hiddenKey, at: 0, effectiveRange: nil) != nil)
+        #expect(task.attribute(MarkdownRenderer.taskBoxKey, at: 3, effectiveRange: nil) as? Bool == true)
+        #expect(task.attribute(.strikethroughStyle, at: 7, effectiveRange: nil) != nil)
+
+        // Блок кода: моноширинный, ``` прозрачны без курсора, ссылки внутри не ставятся.
+        let code = styled("```\nhttps://x.com **b**\n```")
+        let font = code.attribute(.font, at: 6, effectiveRange: nil) as? NSFont
+        #expect(font?.isFixedPitch == true)
+        #expect(code.attribute(.link, at: 6, effectiveRange: nil) == nil)
+        #expect(code.attribute(.foregroundColor, at: 0, effectiveRange: nil) as? NSColor == .clear)
+        #expect(code.attribute(MarkdownRenderer.codeBlockKey, at: 6, effectiveRange: nil) != nil)
+    }
 }
