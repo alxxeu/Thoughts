@@ -7,8 +7,10 @@ import AppKit
 enum MarkdownRenderer {
     /// Отметка строки-разделителя `---` — по ней CardNSTextView рисует линию.
     static let dividerKey = NSAttributedString.Key("thoughts.markdownDivider")
-    /// Служебные символы, которые сейчас не показываются (глиф нулевой
-    /// ширины, см. MarkdownGlyphHider).
+    /// Служебные символы, которые сейчас не показываются: прозрачные и
+    /// крохотного размера. Не глифы нулевой ширины (.null) — такие AppKit
+    /// прикрепляет к концу предыдущей строки, и `> `/`# ` в начале строки
+    /// уезжали в строку выше вместе со своим абзацем.
     static let hiddenKey = NSAttributedString.Key("thoughts.markdownHidden")
     /// `-` маркера списка, который рисуется как `•`.
     static let bulletKey = NSAttributedString.Key("thoughts.markdownBullet")
@@ -94,8 +96,13 @@ enum MarkdownRenderer {
                 storage.addAttribute(quoteKey, value: NSValue(range: block), range: paragraph.range)
                 // Отступ под полосу слева и место под иконку « справа; поля
                 // сверху и снизу — у первой и последней строки цитаты.
+                // Пока `> ` видно, перенесённые строки выравниваются по
+                // тексту после него, а не по самому `>`.
+                let markerWidth = touches(selection, paragraph.range) && paragraph.blockMarker != nil
+                    ? (ns.substring(with: paragraph.blockMarker!) as NSString).size(withAttributes: [.font: typography.font]).width
+                    : 0
                 storage.addAttribute(.paragraphStyle, value: blockStyle(
-                    indent: 18, tail: -26,
+                    indent: 18, hanging: markerWidth, tail: -26,
                     before: paragraph.range.location == block.location ? 12 : 0,
                     after: NSMaxRange(paragraph.range) == NSMaxRange(block) ? 12 : 0
                 ), range: paragraph.range)
@@ -185,8 +192,15 @@ enum MarkdownRenderer {
                 storage.addAttribute(.link, value: url, range: match.range)
             }
         }
+        // Скрытое — прозрачное и почти нулевой ширины, но остаётся в своей строке.
+        storage.enumerateAttribute(hiddenKey, in: full) { value, range, _ in
+            guard value != nil else { return }
+            storage.addAttributes([.font: hiddenFont, .foregroundColor: NSColor.clear], range: range)
+        }
         storage.endEditing()
     }
+
+    private static let hiddenFont = NSFont.systemFont(ofSize: 0.1)
 
     /// Курсор внутри диапазона или вплотную к нему (как в Bear: только что
     /// напечатанное `**жирное**` ещё показывает звёздочки).
@@ -206,11 +220,11 @@ enum MarkdownRenderer {
         (typography.font.pointSize * 1.5).rounded()
     }
 
-    private static func blockStyle(indent: CGFloat = 0, tail: CGFloat = 0, before: CGFloat = 0, after: CGFloat = 0) -> NSParagraphStyle {
+    private static func blockStyle(indent: CGFloat = 0, hanging: CGFloat = 0, tail: CGFloat = 0, before: CGFloat = 0, after: CGFloat = 0) -> NSParagraphStyle {
         let style = NSMutableParagraphStyle()
         style.lineSpacing = 4
         style.firstLineHeadIndent = indent
-        style.headIndent = indent
+        style.headIndent = indent + hanging
         style.tailIndent = tail
         style.paragraphSpacingBefore = before
         style.paragraphSpacing = after

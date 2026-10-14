@@ -87,10 +87,12 @@ private final class CardNSTextView: NSTextView {
                 }
                 // Только сами буквы: от верха (ascender) до низа (descender)
                 // шрифта строки — без отступов абзаца и межстрочного интервала.
-                // Первый видимый глиф: у скрытого `> ` (нулевая ширина) AppKit
-                // отдаёт неверное положение, и поле уезжало на строку выше.
+                // Первый видимый символ: у скрытого `> ` крохотный шрифт.
                 var glyph = lineGlyphs.location
-                while glyph < NSMaxRange(lineGlyphs) - 1, layoutManager.propertyForGlyph(at: glyph) == .null { glyph += 1 }
+                while glyph < NSMaxRange(lineGlyphs) - 1,
+                      textStorage.attribute(MarkdownRenderer.hiddenKey, at: layoutManager.characterIndexForGlyph(at: glyph), effectiveRange: nil) != nil {
+                    glyph += 1
+                }
                 let char = layoutManager.characterIndexForGlyph(at: glyph)
                 let font = textStorage.attribute(.font, at: min(char, textStorage.length - 1), effectiveRange: nil) as? NSFont
                     ?? .systemFont(ofSize: 15)
@@ -99,6 +101,12 @@ private final class CardNSTextView: NSTextView {
             }
             guard !rect.isNull else { return }
             if let textPadding { rect = rect.insetBy(dx: 0, dy: -textPadding) }
+            // Незакрытый блок кода: снизу нет строки ``` — добавляем поле.
+            if key == MarkdownRenderer.codeBlockKey {
+                let lines = (textStorage.string as NSString).substring(with: block).components(separatedBy: "\n")
+                let isClosed = lines.count > 1 && lines.last?.trimmingCharacters(in: .whitespaces).hasPrefix("```") == true
+                if !isClosed { rect.size.height += 8 }
+            }
             rect.origin.x = textContainerOrigin.x - 6
             rect.size.width = textContainer.size.width + 12
             rect.origin.y += textContainerOrigin.y
