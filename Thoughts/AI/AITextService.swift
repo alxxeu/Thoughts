@@ -66,6 +66,8 @@ enum AITextServiceFactory {
         let userText = context.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
             ? question
             : "\(contextLabel):\n\(context)\n\n\(questionLabel): \(question)"
-        return try await service.generate(systemPrompt: systemPrompt, userText: userText)
+        let answer = try await service.generate(systemPrompt: systemPrompt, userText: userText)
+        // Чек-листы — в стандартный `- [ ] `, как при наборе в карточке.
+        return MarkdownFormatting.standardizingTaskMarkers(answer, atLineStart: true)
     }
 }

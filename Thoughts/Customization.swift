@@ -220,15 +220,4 @@ extension NSColor {
         let b = Int((srgb.blueComponent * 255).rounded())
         return String(format: "#%02X%02X%02X", r, g, b)
     }
-
-    /// isEqual у NSColor чувствителен к цветовому пространству —
-    /// разархивированный цвет может прийти в другом, чем исходный.
-    func isApproximatelyEqual(to other: NSColor) -> Bool {
-        guard let a = usingColorSpace(.sRGB), let b = other.usingColorSpace(.sRGB) else { return false }
-        let epsilon: CGFloat = 0.004
-        return abs(a.redComponent - b.redComponent) < epsilon
-            && abs(a.greenComponent - b.greenComponent) < epsilon
-            && abs(a.blueComponent - b.blueComponent) < epsilon
-            && abs(a.alphaComponent - b.alphaComponent) < epsilon
-    }
 }

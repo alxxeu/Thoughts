@@ -7,7 +7,7 @@ import Testing
 /// пустого пункта), — на настоящем NSTextView с менеджером отмен окна.
 @MainActor
 struct CardEditorUndoTests {
-    private final class Harness {
+    @MainActor private final class Harness {
         let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 300, height: 300), styleMask: [.titled], backing: .buffered, defer: false)
         let textView = NSTextView(frame: NSRect(x: 0, y: 0, width: 300, height: 300))
         let coordinator: CardTextView.Coordinator

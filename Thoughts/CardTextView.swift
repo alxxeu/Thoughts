@@ -1,7 +1,7 @@
 import SwiftUI
 import AppKit
 
-// MARK: - Custom NSTextView (plain-text paste + divider drawing)
+// MARK: - Custom NSTextView (вставка как текст, списки, фокус; рисование — MarkdownBlockDecorator)
 
 private final class CardNSTextView: NSTextView {
     // Источник истины для фокуса наружу, в SwiftUI. NSTextViewDelegate's
@@ -467,9 +467,9 @@ struct CardTextView: NSViewRepresentable {
             )
         }
 
-        // Требование 6: обновляем содержимое NSTextView только если оно
-        // реально разошлось с привязкой — иначе получаем бесконечный цикл
-        // (textDidChange -> $text = ... -> updateNSView -> setAttributedString -> ...).
+        // Обновляем содержимое NSTextView, только если оно реально
+        // разошлось с привязкой — иначе бесконечный цикл
+        // (textDidChange -> $text = ... -> updateNSView -> string = ... -> ...).
         //
         // Текст поменялся снаружи (AI-действие, импорт бэкапа, правка с
         // другого Mac через iCloud).
@@ -477,8 +477,9 @@ struct CardTextView: NSViewRepresentable {
             let selectedRanges = textView.selectedRanges
             // Записи отмен хранят позиции в прежнем тексте — применённые к
             // новому, они ломали бы ⌘Z (и менеджер отмен всего окна).
-            textView.undoManager?.removeAllActions(withTarget: textView)
-            textView.undoManager?.removeAllActions(withTarget: textView.textStorage as Any)
+            if let storage = textView.textStorage {
+                textView.undoManager?.removeAllActions(withTarget: storage)
+            }
             textView.string = text
             Self.restyle(textView, typography: typography)
             let length = (textView.string as NSString).length
@@ -648,9 +649,9 @@ struct CardTextView: NSViewRepresentable {
             textView.needsDisplay = true
         }
 
-        /// Требование: Enter на непустом пункте списка ("• текст" или "N. текст")
-        /// продолжает список новым маркером на следующей строке; Enter на
-        /// пустом пункте ("• "/"N. " без текста) убирает маркер вместо
+        /// Enter на непустом пункте списка (`- текст`, `N. текст`, `- [ ] текст`,
+        /// `> текст`) продолжает список новым маркером на следующей строке;
+        /// Enter на пустом пункте убирает маркер вместо
         /// переноса строки — как в стандартных списках Notes/TextEdit.
         private func continueListIfNeeded(in textView: NSTextView) -> Bool {
             let cursor = textView.selectedRange()

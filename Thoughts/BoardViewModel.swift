@@ -255,7 +255,8 @@ final class BoardViewModel {
             ? (NSScreen.main?.visibleFrame.size ?? CGSize(width: 900, height: 600))
             : lastCanvasSize
         let origin = Self.firstFreeOrigin(size: size, among: cards, canvasSize: canvasSize, topInset: topInset)
-        return addCard(at: origin, size: size, text: text)
+        // Чек-листы — в стандартный `- [ ] `, как при наборе в карточке.
+        return addCard(at: origin, size: size, text: MarkdownFormatting.standardizingTaskMarkers(text, atLineStart: true))
     }
 
     /// Обходит канву рядами сверху-вниз, слева-направо с шагом
