@@ -66,7 +66,8 @@ struct MarkdownRendererTests {
     }
 
     @Test func blockMarkers() {
-        #expect(hidden("# Title", selection: NSRange(location: 3, length: 0)) == "# ")
+        #expect(hidden("# Title", selection: NSRange(location: 3, length: 0)).isEmpty)
+        #expect(hidden("# Title\nx", selection: NSRange(location: 9, length: 0)) == "# ")
         let list = NSMutableAttributedString(string: "- item")
         MarkdownRenderer.style(list, typography: typography)
         #expect(list.attribute(MarkdownRenderer.bulletKey, at: 0, effectiveRange: nil) != nil)

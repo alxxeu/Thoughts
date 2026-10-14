@@ -12,8 +12,6 @@ enum MarkdownRenderer {
     static let hiddenKey = NSAttributedString.Key("thoughts.markdownHidden")
     /// `-` маркера списка, который рисуется как `•`.
     static let bulletKey = NSAttributedString.Key("thoughts.markdownBullet")
-    /// Уровень заголовка строки — для значка H1–H3 слева от неё.
-    static let headingKey = NSAttributedString.Key("thoughts.markdownHeading")
 
     static func baseAttributes(_ typography: CardTypography) -> [NSAttributedString.Key: Any] {
         let paragraph = NSMutableParagraphStyle()
@@ -51,9 +49,8 @@ enum MarkdownRenderer {
                     toHaveTrait: .boldFontMask
                 )
                 storage.addAttribute(.font, value: paragraphFont, range: paragraph.range)
-                storage.addAttribute(headingKey, value: level, range: paragraph.range)
-                // # всегда скрыт — уровень показывает значок слева.
-                if let marker = paragraph.blockMarker {
+                // `# ` виден, пока курсор на строке заголовка, — как остальные символы.
+                if let marker = paragraph.blockMarker, !touches(selection, paragraph.range) {
                     storage.addAttribute(hiddenKey, value: true, range: marker)
                 }
             case .divider:

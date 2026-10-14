@@ -77,25 +77,6 @@ private final class CardNSTextView: NSTextView {
             dividerLineColor.setStroke()
             path.stroke()
         }
-
-        drawHeadingBadge(layoutManager: layoutManager, textStorage: textStorage, origin: origin)
-    }
-
-    /// Значок H1–H3 слева от заголовка, пока в нём курсор, — вместо скрытых `#`.
-    private func drawHeadingBadge(layoutManager: NSLayoutManager, textStorage: NSTextStorage, origin: NSPoint) {
-        guard window?.firstResponder === self, textStorage.length > 0 else { return }
-        let location = min(selectedRange().location, textStorage.length - 1)
-        guard let level = textStorage.attribute(MarkdownRenderer.headingKey, at: location, effectiveRange: nil) as? Int
-                ?? (location > 0 ? textStorage.attribute(MarkdownRenderer.headingKey, at: location - 1, effectiveRange: nil) as? Int : nil)
-        else { return }
-        let glyph = layoutManager.glyphIndexForCharacter(at: location)
-        let lineRect = layoutManager.lineFragmentRect(forGlyphAt: glyph, effectiveRange: nil)
-        let badge = NSAttributedString(string: "H\(level)", attributes: [
-            .font: NSFont.systemFont(ofSize: 9, weight: .semibold),
-            .foregroundColor: dividerLineColor.withAlphaComponent(0.6)
-        ])
-        let size = badge.size()
-        badge.draw(at: NSPoint(x: origin.x - size.width - 4, y: origin.y + lineRect.midY - size.height / 2))
     }
 
     /// Единая точка, через которую AppKit проводит ЛЮБОЕ изменение
@@ -252,8 +233,8 @@ private final class CardNSTextView: NSTextView {
                ns.substring(with: NSRange(location: lineRange.location + lineRange.length - 1, length: 1)) == "\n" {
                 lineRange.length -= 1
             }
-            guard let prefixLength = hiddenPrefixLength(in: ns, lineRange: lineRange) else { return location }
-            let contentStart = lineRange.location + prefixLength
+            guard let prefix = detectListPrefix(in: ns, lineRange: lineRange) else { return location }
+            let contentStart = lineRange.location + prefix.length
             // >= (не >): позиция РОВНО на первом символе маркера тоже должна
             // поджиматься к концу маркера — иначе Cmd+←/Home всё ещё могли
             // поставить курсор перед самим значком.
@@ -287,15 +268,6 @@ private final class CardNSTextView: NSTextView {
             case .numbered(let n): return "\(n + 1). "
             }
         }
-    }
-
-    /// Длина префикса строки, внутрь которого курсор не заходит: маркер
-    /// списка или скрытые `# ` заголовка.
-    static func hiddenPrefixLength(in ns: NSString, lineRange: NSRange) -> Int? {
-        if let prefix = detectListPrefix(in: ns, lineRange: lineRange) { return prefix.length }
-        let line = ns.substring(with: lineRange)
-        guard let match = line.range(of: #"^#{1,3} "#, options: .regularExpression) else { return nil }
-        return line.distance(from: match.lowerBound, to: match.upperBound)
     }
 
     /// "- " -> маркированный список, "1. "/"12. " и т.п. -> нумерованный.
@@ -534,8 +506,8 @@ struct CardTextView: NSViewRepresentable {
                 lineRange.length -= 1
             }
 
-            guard let prefixLength = CardNSTextView.hiddenPrefixLength(in: ns, lineRange: lineRange) else { return false }
-            let contentStart = lineRange.location + prefixLength
+            guard let prefix = CardNSTextView.detectListPrefix(in: ns, lineRange: lineRange) else { return false }
+            let contentStart = lineRange.location + prefix.length
             guard cursor.location == contentStart else { return false }
 
             let previousLineEnd = max(0, lineRange.location - 1)
@@ -561,14 +533,13 @@ struct CardTextView: NSViewRepresentable {
                 lineRange.length -= 1
             }
 
-            guard let prefixLength = CardNSTextView.hiddenPrefixLength(in: ns, lineRange: lineRange) else { return false }
+            guard let prefix = CardNSTextView.detectListPrefix(in: ns, lineRange: lineRange) else { return false }
             // Курсор должен стоять ровно сразу после маркера — иначе это
             // обычный backspace где-то в тексте пункта, не наша забота.
-            // У заголовка так же снимается `# ` — строка становится обычной.
-            guard cursor.location == lineRange.location + prefixLength else { return false }
+            guard cursor.location == lineRange.location + prefix.length else { return false }
 
             textView.textStorage?.beginEditing()
-            textView.textStorage?.replaceCharacters(in: NSRange(location: lineRange.location, length: prefixLength), with: "")
+            textView.textStorage?.replaceCharacters(in: NSRange(location: lineRange.location, length: prefix.length), with: "")
             textView.textStorage?.endEditing()
 
             let affectedRange = NSRange(location: lineRange.location, length: max(0, (textView.string as NSString).length - lineRange.location))
