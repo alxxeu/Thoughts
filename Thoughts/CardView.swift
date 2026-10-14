@@ -499,6 +499,19 @@ struct CardView: View {
                         scheduleRelock()
                     }
                 }
+                // Уход в другое приложение — тот же 5-секундный отсчёт: успеть
+                // скопировать что-то и вернуться. Возврат с курсором в этой же
+                // карточке — сигнал "я снова здесь", отсчёт отменяется.
+                .onReceive(NotificationCenter.default.publisher(for: NSApplication.didResignActiveNotification)) { _ in
+                    if isRevealed {
+                        scheduleRelock()
+                    }
+                }
+                .onReceive(NotificationCenter.default.publisher(for: NSApplication.didBecomeActiveNotification)) { _ in
+                    if isTextFocused {
+                        cancelRelock()
+                    }
+                }
                 .onReceive(NotificationCenter.default.publisher(for: .cardWasClicked)) { notification in
                     guard let clickedID = notification.object as? UUID else { return }
                     if clickedID == card.id {
