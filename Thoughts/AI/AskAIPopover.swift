@@ -36,8 +36,7 @@ final class AskAIPopoverController: NSObject, NSPopoverDelegate {
         let hasSelection = range.length > 0 && NSMaxRange(range) <= text.length
         let context = hasSelection ? text.substring(with: range) : textView.string
         model = AskAIModel(
-            // Разделитель — символ-заглушка U+FFFC, AI он ни к чему.
-            context: context.replacingOccurrences(of: "\u{FFFC}", with: "---"),
+            context: context,
             isAboutSelection: hasSelection
         )
         super.init()

@@ -104,3 +104,11 @@ enum MarkdownMigration {
         return leading + open + core + close + trailing
     }
 }
+
+/// Разделитель в старом формате — вложение в архиве formattingData. Нужен
+/// только чтобы прочитать такие архивы при миграции; сейчас разделитель —
+/// строка `---` в Markdown.
+final class DividerAttachment: NSTextAttachment {
+    /// Без этого secure coding не читает архивы с разделителем.
+    override class var supportsSecureCoding: Bool { true }
+}

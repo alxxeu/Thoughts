@@ -88,9 +88,8 @@ struct CardFontOption: Identifiable, Hashable {
 
 // MARK: - Размер текста
 
-/// Базовый размер текста карточек. Относительные размеры внутри карточки
-/// (Format → Bigger/Smaller) масштабируются вместе с ним — см.
-/// CardTextView.restyle.
+/// Базовый размер текста карточек; заголовки Markdown масштабируются от
+/// него (см. MarkdownRenderer).
 enum CardTextSize: String, CaseIterable, Identifiable {
     case small, medium, large, extraLarge
 

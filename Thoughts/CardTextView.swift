@@ -1,46 +1,6 @@
 import SwiftUI
 import AppKit
 
-// MARK: - Divider Attachment
-
-/// Маркер разделителя в тексте. Сам по себе ничего не рисует и не занимает
-/// заметного места — реальная линия рисуется отдельно, поверх обычного
-/// прохода отрисовки, в `CardNSTextView.draw(_:)`. Такой подход (вместо
-/// кастомных `image(forBounds:)`/`NSTextAttachmentCell`) полностью убирает
-/// рассинхрон между тем, что TextKit насчитал для layout, и тем, что
-/// реально попадает на экран — здесь позиция строки берётся из ЖИВОГО
-/// `layoutManager` в момент самой отрисовки, каждый раз заново.
-final class DividerAttachment: NSTextAttachment {
-    /// Без этого архив formattingData (requiringSecureCoding) падал на любой
-    /// карточке с разделителем, и её форматирование молча обнулялось.
-    override class var supportsSecureCoding: Bool { true }
-
-    /// Высота строки, которую резервирует под себя разделитель в тексте —
-    /// заметно больше обычной строки (15pt шрифт + 4pt lineSpacing ≈ 22pt
-    /// → 30pt), чтобы всегда был чёткий зазор до соседних строк сверху и
-    /// снизу. Растёт вместе с размером текста (Settings → Appearance).
-    static var rowHeight: CGFloat {
-        max(30, (AppearanceSettings.shared.cardTypography.font.pointSize * 2).rounded())
-    }
-
-    override func attachmentBounds(
-        for textContainer: NSTextContainer?,
-        proposedLineFragment lineFrag: NSRect,
-        glyphPosition position: NSPoint,
-        characterIndex charIndex: Int
-    ) -> NSRect {
-        // Минимальная невидимая "заглушка" (не 0 — вырожденный по площади
-        // rect некоторые внутренности TextKit могут обработать как особый
-        // случай и пропустить генерацию глифа). Реальная ширина линии не
-        // нужна здесь, она вычисляется отдельно в CardNSTextView.draw(_:).
-        NSRect(x: 0, y: 0, width: 1, height: Self.rowHeight)
-    }
-
-    override func image(forBounds imageBounds: NSRect, textContainer: NSTextContainer?, characterIndex charIndex: Int) -> NSImage? {
-        nil
-    }
-}
-
 // MARK: - Custom NSTextView (plain-text paste + divider drawing)
 
 private final class CardNSTextView: NSTextView {
@@ -61,9 +21,9 @@ private final class CardNSTextView: NSTextView {
     // должны следовать за текстом, а не за темой.
     var dividerLineColor = CardTypography.legacyTextColor.withAlphaComponent(0.22)
 
-    // Требование 4: вставка всегда plain text в стиле карточки.
-    // Работает только с диапазоном вставки — существующие NSTextAttachment
-    // (наши разделители) в остальном тексте не затрагиваются.
+    // Вставка — всегда текст как есть: Markdown из Notion, сайтов и
+    // md-приложений сразу отрисуется, а чужое форматирование (RTF/HTML)
+    // в карточку не попадает.
     //
     // Принципиально не вызываем super.paste(sender) здесь: если в буфере нет
     // строки, super попытался бы материализовать содержимое под остальные
@@ -88,11 +48,9 @@ private final class CardNSTextView: NSTextView {
         onEscape()
     }
 
-    /// Рисует линии разделителей поверх обычного текста. Проходит по всем
-    /// диапазонам с атрибутом `.attachment` типа `DividerAttachment` и для
-    /// каждого берёт СВЕЖИЙ line fragment rect у layoutManager — то есть
-    /// позиция всегда соответствует текущему, только что посчитанному layout,
-    /// без риска отрисовать линию по устаревшим/закэшированным координатам.
+    /// Рисует линии разделителей `---` поверх текста (строки отмечены
+    /// MarkdownRenderer.dividerKey) и для каждой берёт СВЕЖИЙ line fragment
+    /// rect у layoutManager — без риска нарисовать по устаревшему layout.
     override func draw(_ dirtyRect: NSRect) {
         super.draw(dirtyRect)
 
@@ -100,8 +58,8 @@ private final class CardNSTextView: NSTextView {
         let fullRange = NSRange(location: 0, length: textStorage.length)
         let origin = textContainerOrigin
 
-        textStorage.enumerateAttribute(.attachment, in: fullRange) { value, range, _ in
-            guard value is DividerAttachment else { return }
+        textStorage.enumerateAttribute(MarkdownRenderer.dividerKey, in: fullRange) { value, range, _ in
+            guard value != nil else { return }
 
             let glyphRange = layoutManager.glyphRange(forCharacterRange: range, actualCharacterRange: nil)
             guard glyphRange.length > 0 else { return }
@@ -295,31 +253,28 @@ private final class CardNSTextView: NSTextView {
 
         var length: Int {
             switch self {
-            case .bullet: return 2 // "• "
+            case .bullet: return 2 // "- "
             case .numbered(let n): return "\(n). ".count
             }
         }
 
-        /// Аттрибутированная строка нового маркера продолжения списка
-        /// (без ведущего "\n" — его добавляет вызывающий код).
-        func attributedMarker(baseAttributes: [NSAttributedString.Key: Any]) -> NSAttributedString {
+        /// Маркер следующего пункта (без ведущего "\n").
+        var nextMarker: String {
             switch self {
-            case .bullet:
-                return NSAttributedString(string: "• ", attributes: baseAttributes)
-            case .numbered(let n):
-                return NSAttributedString(string: "\(n + 1). ", attributes: baseAttributes)
+            case .bullet: return "- "
+            case .numbered(let n): return "\(n + 1). "
             }
         }
     }
 
-    /// "• " -> маркированный список, "1. "/"12. " и т.п. -> нумерованный.
+    /// "- " -> маркированный список, "1. "/"12. " и т.п. -> нумерованный.
     /// Отдельной "активации" для чисел не нужно — "1. " уже выглядит как
     /// корректный маркер, распознаётся здесь же в момент нажатия Enter.
     static func detectListPrefix(in ns: NSString, lineRange: NSRange) -> ListPrefix? {
         guard lineRange.length >= 2 else { return nil }
         let line = ns.substring(with: lineRange)
 
-        if line.hasPrefix("• ") {
+        if line.hasPrefix("- ") {
             return .bullet
         }
 
@@ -336,11 +291,9 @@ private final class CardNSTextView: NSTextView {
 // MARK: - CardTextView
 
 struct CardTextView: NSViewRepresentable {
+    /// Markdown карточки — хранится и редактируется как есть, раскраска —
+    /// MarkdownRenderer.
     @Binding var text: String
-    /// Сериализованный NSAttributedString (bold и т.п.) — см. комментарий
-    /// у Card.formattingData. Восстанавливается в makeNSView, обновляется
-    /// в Coordinator.textDidChange вместе с text.
-    @Binding var formattingData: Data?
     @Binding var isFocused: Bool
     var cardSize: CGSize
     var onTextChange: () -> Void
@@ -352,7 +305,6 @@ struct CardTextView: NSViewRepresentable {
     /// updateNSView, а это происходит только при изменении входных данных.
     var typography: CardTypography
 
-    private static let dividerPlaceholder: Character = "\u{FFFC}"
     /// Единственный источник горизонтального инсета текста — раньше
     /// updateNSView независимо считал ширину как "cardSize.width - 40",
     /// не привязывая это число к textContainerInset ниже; расхождение
@@ -379,7 +331,8 @@ struct CardTextView: NSViewRepresentable {
         // картинке попасть в текст через paste или drag-and-drop.
         textView.importsGraphics = false
         textView.allowsUndo = true
-        textView.isAutomaticLinkDetectionEnabled = true
+        // Ссылки, в том числе голые адреса, расставляет MarkdownRenderer.
+        textView.isAutomaticLinkDetectionEnabled = false
         textView.isAutomaticQuoteSubstitutionEnabled = false
         textView.isAutomaticDashSubstitutionEnabled = false
         textView.isAutomaticSpellingCorrectionEnabled = false
@@ -397,30 +350,14 @@ struct CardTextView: NSViewRepresentable {
         textView.maxSize = NSSize(width: CGFloat.greatestFiniteMagnitude, height: CGFloat.greatestFiniteMagnitude)
         Self.applyChrome(typography, to: textView)
 
-        let restored = NSMutableAttributedString(
-            attributedString: Self.restoredAttributedString(text: text, formattingData: formattingData, typography: typography)
-        )
-        Self.restyle(restored, with: typography, previous: nil)
-        textView.textStorage?.setAttributedString(restored)
+        textView.string = text
+        if let storage = textView.textStorage {
+            MarkdownRenderer.style(storage, typography: typography)
+        }
         context.coordinator.lastTypography = typography
-        context.coordinator.knownFormattingData = formattingData
 
         scrollView.documentView = textView
         return scrollView
-    }
-
-    /// Если formattingData есть и реально соответствует text (совпадают
-    /// голые символы) — восстанавливает настоящий стиль. Иначе (нет
-    /// сохранённого форматирования, оно повреждено, или text был заменён
-    /// снаружи — например, AI-действием — без обновления formattingData)
-    /// откатывается к обычной plain-реконструкции, как было всегда.
-    fileprivate static func restoredAttributedString(text: String, formattingData: Data?, typography: CardTypography) -> NSAttributedString {
-        if let data = formattingData,
-           let restored = try? NSKeyedUnarchiver.unarchivedObject(ofClass: NSAttributedString.self, from: data),
-           restored.string == text {
-            return restored
-        }
-        return buildAttributedString(from: text, typography: typography)
     }
 
     func updateNSView(_ nsView: NSScrollView, context: Context) {
@@ -432,15 +369,10 @@ struct CardTextView: NSViewRepresentable {
         textView.onEscape = onEscape
 
         // Стиль поменяли в Settings, пока карточка открыта — перекрашиваем
-        // уже набранный текст на месте. text не меняется, так что
-        // textDidChange не нужен: formattingData перезапишется при
-        // следующей правке, а до тех пор restyle в makeNSView всё равно
-        // применяет актуальный стиль.
+        // уже набранный текст на месте (сам текст не меняется).
         if context.coordinator.lastTypography != typography, let storage = textView.textStorage {
             let selectedRanges = textView.selectedRanges
-            storage.beginEditing()
-            Self.restyle(storage, with: typography, previous: context.coordinator.lastTypography)
-            storage.endEditing()
+            MarkdownRenderer.style(storage, typography: typography)
             textView.selectedRanges = selectedRanges
             Self.applyChrome(typography, to: textView)
             textView.needsDisplay = true
@@ -461,25 +393,20 @@ struct CardTextView: NSViewRepresentable {
         // реально разошлось с привязкой — иначе получаем бесконечный цикл
         // (textDidChange -> $text = ... -> updateNSView -> setAttributedString -> ...).
         //
-        // Текст или форматирование поменялись снаружи (AI-действие, импорт
-        // бэкапа, правка с другого Mac через iCloud) — восстанавливаем
-        // вместе с форматированием, если архив подходит к новому тексту.
-        // knownFormattingData отличает внешнюю смену форматирования от
-        // собственной правки, уже отражённой в textView.
-        if textView.string != text || formattingData != context.coordinator.knownFormattingData {
+        // Текст поменялся снаружи (AI-действие, импорт бэкапа, правка с
+        // другого Mac через iCloud).
+        if textView.string != text {
             let selectedRanges = textView.selectedRanges
-            let attributed = NSMutableAttributedString(
-                attributedString: Self.restoredAttributedString(text: text, formattingData: formattingData, typography: typography)
-            )
-            Self.restyle(attributed, with: typography, previous: nil)
-            textView.textStorage?.setAttributedString(attributed)
+            textView.string = text
+            if let storage = textView.textStorage {
+                MarkdownRenderer.style(storage, typography: typography)
+            }
             let length = (textView.string as NSString).length
             textView.selectedRanges = selectedRanges.map { value in
                 let range = value.rangeValue
                 let location = min(range.location, length)
                 return NSValue(range: NSRange(location: location, length: min(range.length, length - location)))
             }
-            context.coordinator.knownFormattingData = formattingData
         }
 
         // Синхронный переход фокуса, срабатывающий только один раз на реальное
@@ -509,135 +436,13 @@ struct CardTextView: NSViewRepresentable {
 
     // MARK: - Attributed string helpers
 
-    fileprivate static func baseAttributes(
-        _ typography: CardTypography = AppearanceSettings.shared.cardTypography
-    ) -> [NSAttributedString.Key: Any] {
-        let paragraph = NSMutableParagraphStyle()
-        paragraph.lineSpacing = 4
-        return [
-            .font: typography.font,
-            .foregroundColor: typography.color,
-            .paragraphStyle: paragraph
-        ]
-    }
-
     /// Всё, что зависит от стиля помимо самого текста: цвет по умолчанию,
     /// каретка, атрибуты набора и линия разделителя.
     private static func applyChrome(_ typography: CardTypography, to textView: CardNSTextView) {
         textView.textColor = typography.color
         textView.insertionPointColor = typography.color
-        textView.typingAttributes = baseAttributes(typography)
+        textView.typingAttributes = MarkdownRenderer.baseAttributes(typography)
         textView.dividerLineColor = typography.color.withAlphaComponent(0.22)
-    }
-
-    /// Базовый размер текста (Settings → Appearance → Text Size), при
-    /// котором был заархивирован formattingData — без него при следующем
-    /// открытии нельзя отличить "текст базового размера" от фрагмента,
-    /// увеличенного через Format → Bigger. Живёт только в архиве: restyle
-    /// снимает его сразу после восстановления.
-    fileprivate static let baseFontSizeKey = NSAttributedString.Key("thoughts.baseFontSize")
-
-    /// Переводит текст на шрифт/цвет/размер из typography, сохраняя то, что
-    /// пользователь сделал сам: bold/italic (TextFormattingCommands, ⌘B/⌘I)
-    /// переносятся на новое семейство, фрагменты, увеличенные или
-    /// уменьшенные через Format → Bigger/Smaller, масштабируются
-    /// пропорционально новому базовому размеру, а цвет заменяется только у
-    /// "базовых" фрагментов (см. isBaseColor) — цвет, выставленный через
-    /// Show Colors, остаётся.
-    fileprivate static func restyle(_ storage: NSMutableAttributedString, with typography: CardTypography, previous: CardTypography?) {
-        let fullRange = NSRange(location: 0, length: storage.length)
-        guard fullRange.length > 0 else { return }
-        let manager = NSFontManager.shared
-        let newBaseSize = typography.font.pointSize
-        // Прежний базовый размер: при смене на лету — из предыдущего стиля,
-        // при восстановлении — отметка из архива, у старых архивов — 15pt.
-        let oldBaseSize = previous?.font.pointSize
-            ?? (storage.attribute(baseFontSizeKey, at: 0, effectiveRange: nil) as? NSNumber).map { CGFloat($0.doubleValue) }
-            ?? CardTypography.legacyBaseFontSize
-
-        storage.enumerateAttribute(.font, in: fullRange) { value, range, _ in
-            var font = typography.font
-            if let old = value as? NSFont {
-                let scaledSize = old.pointSize * newBaseSize / max(oldBaseSize, 1)
-                if abs(scaledSize - newBaseSize) > 0.01 {
-                    font = NSFont(descriptor: font.fontDescriptor, size: scaledSize) ?? font
-                }
-                let traits = manager.traits(of: old)
-                if traits.contains(.boldFontMask) {
-                    font = manager.convert(font, toHaveTrait: .boldFontMask)
-                }
-                if traits.contains(.italicFontMask) {
-                    font = manager.convert(font, toHaveTrait: .italicFontMask)
-                }
-            }
-            storage.addAttribute(.font, value: font, range: range)
-        }
-
-        storage.enumerateAttribute(.foregroundColor, in: fullRange) { value, range, _ in
-            guard isBaseColor(value as? NSColor, previous: previous) else { return }
-            storage.addAttribute(.foregroundColor, value: typography.color, range: range)
-        }
-        storage.removeAttribute(baseFontSizeKey, range: fullRange)
-    }
-
-    /// "Базовый" цвет — тот, что пришёл из стиля карточки, а не выбран
-    /// пользователем для конкретного фрагмента: отсутствующий (так
-    /// архивирует archivedFormatting), исходный белый до появления
-    /// кастомизации или цвет предыдущего стиля при смене на лету.
-    private static func isBaseColor(_ color: NSColor?, previous: CardTypography?) -> Bool {
-        guard let color else { return true }
-        if color.isApproximatelyEqual(to: CardTypography.legacyTextColor) { return true }
-        if let previous, color.isApproximatelyEqual(to: previous.color) { return true }
-        return false
-    }
-
-    /// Архив для Card.formattingData без базового цвета — иначе после
-    /// смены цвета в Settings старые карточки при следующем запуске не
-    /// отличили бы "цвет темы на момент правки" от цвета, выбранного
-    /// пользователем для фрагмента. По той же причине в архив кладётся
-    /// базовый размер текста (baseFontSizeKey).
-    fileprivate static func archivedFormatting(of attributed: NSAttributedString, typography: CardTypography) -> Data? {
-        let copy = NSMutableAttributedString(attributedString: attributed)
-        let fullRange = NSRange(location: 0, length: copy.length)
-        copy.enumerateAttribute(.foregroundColor, in: fullRange) { value, range, _ in
-            guard isBaseColor(value as? NSColor, previous: typography) else { return }
-            copy.removeAttribute(.foregroundColor, range: range)
-        }
-        if fullRange.length > 0 {
-            copy.addAttribute(baseFontSizeKey, value: NSNumber(value: Double(typography.font.pointSize)), range: fullRange)
-        }
-        return try? NSKeyedArchiver.archivedData(withRootObject: copy, requiringSecureCoding: true)
-    }
-
-    /// U+FFFC в исходной String — это ровно то место, куда NSTextView сам
-    /// подставляет символ attachment-а в свою plain-string репрезентацию.
-    /// Поскольку в карточке используется только один тип attachment (разделитель),
-    /// каждое такое вхождение детерминированно восстанавливается обратно
-    /// без необходимости хранить AttributedString отдельно.
-    fileprivate static func buildAttributedString(from text: String, typography: CardTypography) -> NSAttributedString {
-        let result = NSMutableAttributedString()
-        let base = baseAttributes(typography)
-
-        for character in text {
-            if character == dividerPlaceholder {
-                result.append(Self.dividerAttributedString(with: base))
-            } else {
-                result.append(NSAttributedString(string: String(character), attributes: base))
-            }
-        }
-
-        return result
-    }
-
-    /// Attachment-строка с теми же атрибутами (в т.ч. `lineSpacing` в
-    /// paragraphStyle), что у обычного текста — иначе параграф разделителя
-    /// получает другую метрику строки, чем соседний текст, и высота
-    /// `attachmentBounds` перестаёт совпадать с реальным зазором до
-    /// следующей строки (она "налезает" сверху).
-    fileprivate static func dividerAttributedString(with baseAttributes: [NSAttributedString.Key: Any] = baseAttributes()) -> NSAttributedString {
-        let attachmentString = NSMutableAttributedString(attachment: DividerAttachment())
-        attachmentString.addAttributes(baseAttributes, range: NSRange(location: 0, length: attachmentString.length))
-        return attachmentString
     }
 
     // MARK: - Coordinator
@@ -647,8 +452,7 @@ struct CardTextView: NSViewRepresentable {
         var didRequestFocus = false
         /// Стиль, которым сейчас нарисован текст — см. updateNSView.
         var lastTypography: CardTypography?
-        /// formattingData, которое уже отражено в textView — см. updateNSView.
-        var knownFormattingData: Data?
+        private var typography: CardTypography { lastTypography ?? AppearanceSettings.shared.cardTypography }
 
         init(_ parent: CardTextView) {
             self.parent = parent
@@ -761,11 +565,9 @@ struct CardTextView: NSViewRepresentable {
             let newCursorLocation: Int
             textView.textStorage?.beginEditing()
             if hasContent {
-                let base = CardTextView.baseAttributes()
-                let insertion = NSMutableAttributedString(string: "\n", attributes: base)
-                insertion.append(prefix.attributedMarker(baseAttributes: base))
+                let insertion = "\n" + prefix.nextMarker
                 textView.textStorage?.replaceCharacters(in: cursor, with: insertion)
-                newCursorLocation = cursor.location + insertion.length
+                newCursorLocation = cursor.location + (insertion as NSString).length
             } else {
                 textView.textStorage?.replaceCharacters(in: lineRange, with: "")
                 newCursorLocation = lineRange.location
@@ -801,18 +603,14 @@ struct CardTextView: NSViewRepresentable {
 
         func textDidChange(_ notification: Notification) {
             guard let textView = notification.object as? NSTextView else { return }
-
-            applyTypingAttributes(to: textView)
-            replaceDashLineWithDividerIfNeeded(in: textView)
-            replaceDashPrefixWithBulletIfNeeded(in: textView)
-
+            // Пока идёт составной ввод (IME: японский, китайский) — не
+            // перекрашиваем: смена атрибутов посреди набора его ломает.
+            // После подтверждения набора textDidChange придёт ещё раз.
+            if !textView.hasMarkedText(), let storage = textView.textStorage {
+                MarkdownRenderer.style(storage, typography: typography)
+                textView.typingAttributes = MarkdownRenderer.baseAttributes(typography)
+            }
             parent.text = textView.string
-            let archived = CardTextView.archivedFormatting(
-                of: textView.attributedString(),
-                typography: lastTypography ?? AppearanceSettings.shared.cardTypography
-            )
-            knownFormattingData = archived
-            parent.formattingData = archived
             parent.onTextChange()
         }
 
@@ -825,94 +623,6 @@ struct CardTextView: NSViewRepresentable {
                 self.parent.isFocused = focused
                 self.parent.onFocusChange(focused)
             }
-        }
-
-        // Гарантирует, что вновь введённый текст остаётся в базовом стиле
-        // карточки (шрифт/размер из Settings, line spacing 4), даже если курсор стоит сразу
-        // после разделителя-attachment.
-        private func applyTypingAttributes(to textView: NSTextView) {
-            textView.typingAttributes = CardTextView.baseAttributes()
-        }
-
-        // Требование 3: строка из 3-20 тире, завершённая переносом строки, -> векторный разделитель.
-        private func replaceDashLineWithDividerIfNeeded(in textView: NSTextView) {
-            let selectedLocation = textView.selectedRange().location
-            guard selectedLocation > 0 else { return }
-
-            let ns = textView.string as NSString
-            guard selectedLocation <= ns.length,
-                  ns.substring(with: NSRange(location: selectedLocation - 1, length: 1)) == "\n"
-            else { return }
-
-            var paragraphRange = ns.paragraphRange(
-                for: NSRange(location: max(0, selectedLocation - 2), length: 0)
-            )
-            if paragraphRange.length > 0,
-               ns.substring(with: NSRange(location: paragraphRange.location + paragraphRange.length - 1, length: 1)) == "\n" {
-                paragraphRange.length -= 1
-            }
-
-            guard paragraphRange.length >= 3, paragraphRange.length <= 20 else { return }
-
-            let lineText = ns.substring(with: paragraphRange)
-            guard lineText.allSatisfy({ $0 == "-" }) else { return }
-
-            let attachmentString = CardTextView.dividerAttributedString()
-
-            textView.textStorage?.beginEditing()
-            textView.textStorage?.replaceCharacters(in: paragraphRange, with: attachmentString)
-            textView.textStorage?.endEditing()
-
-            // Без явной инвалидации TextKit может не пересчитать
-            // attachmentBounds/не перерисовать линию сразу — она появлялась
-            // только после следующего внешнего relayout (например, ресайза
-            // карточки). Форсируем layout и отрисовку строки с разделителем
-            // немедленно после вставки.
-            let insertedRange = NSRange(location: paragraphRange.location, length: attachmentString.length)
-            textView.layoutManager?.invalidateLayout(forCharacterRange: insertedRange, actualCharacterRange: nil)
-            textView.layoutManager?.ensureLayout(forCharacterRange: insertedRange)
-            textView.needsDisplay = true
-
-            // +1 за attachment и ещё +1 за оставшийся "\n" сразу после него
-            // (paragraphRange не включает этот "\n", он не был заменён) —
-            // курсор должен встать уже В СЛЕДУЮЩЕМ параграфе. Раньше он
-            // вставал МЕЖДУ attachment-ом и этим "\n", из-за чего весь текст,
-            // напечатанный сразу после, попадал в один параграф с
-            // разделителем — визуально линия и следующая строка сливались.
-            let newLocation = min(paragraphRange.location + attachmentString.length + 1, (textView.string as NSString).length)
-            textView.setSelectedRange(NSRange(location: newLocation, length: 0))
-            // См. комментарий в continueListIfNeeded — обязателен после
-            // прямой правки textStorage, иначе card.text не подхватит вставку.
-            textView.didChangeText()
-        }
-
-        // "- " в начале строки -> "• " (стандартный маркер списка).
-        private func replaceDashPrefixWithBulletIfNeeded(in textView: NSTextView) {
-            let selectedLocation = textView.selectedRange().location
-            guard selectedLocation > 0 else { return }
-
-            let ns = textView.string as NSString
-            guard selectedLocation <= ns.length,
-                  ns.substring(with: NSRange(location: selectedLocation - 1, length: 1)) == " "
-            else { return }
-
-            let paragraphRange = ns.paragraphRange(for: NSRange(location: selectedLocation, length: 0))
-            let prefixRange = NSRange(location: paragraphRange.location, length: selectedLocation - paragraphRange.location)
-            guard prefixRange.length == 2, ns.substring(with: prefixRange) == "- " else { return }
-
-            let bulletString = NSAttributedString(string: "•", attributes: CardTextView.baseAttributes())
-
-            textView.textStorage?.beginEditing()
-            textView.textStorage?.replaceCharacters(in: NSRange(location: prefixRange.location, length: 1), with: bulletString)
-            textView.textStorage?.endEditing()
-
-            // Замена того же размера (1 символ на 1 символ) — позиция курсора
-            // не сдвигается, но выставляем явно на случай, если TextKit
-            // сбросит selection при replaceCharacters.
-            textView.setSelectedRange(NSRange(location: selectedLocation, length: 0))
-            // См. комментарий в continueListIfNeeded — обязателен после
-            // прямой правки textStorage, иначе card.text не подхватит вставку.
-            textView.didChangeText()
         }
     }
 }
