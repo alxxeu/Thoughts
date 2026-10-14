@@ -60,6 +60,10 @@ final class BoardViewModel {
         workspaces.first { $0.slot == activeSlot }
     }
 
+    var activeWorkspaceName: String {
+        activeWorkspace?.name ?? Workspace.defaultName(forSlot: activeSlot)
+    }
+
     private let store = BoardStore.shared
     private var saveTask: Task<Void, Never>?
     /// См. BoardChangeTracker. Не наблюдается: это служебное состояние, не UI.

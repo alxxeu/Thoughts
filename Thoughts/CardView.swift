@@ -727,15 +727,11 @@ struct CardView: View {
                     contextLabel: "Note",
                     systemPrompt: AICardPrompt.systemPrompt
                 )
-                await MainActor.run {
-                    cardAIAnswer = result
-                    isGeneratingAI = false
-                }
+                cardAIAnswer = result
+                isGeneratingAI = false
             } catch {
-                await MainActor.run {
-                    aiErrorMessage = error.localizedDescription
-                    isGeneratingAI = false
-                }
+                aiErrorMessage = error.localizedDescription
+                isGeneratingAI = false
             }
         }
     }
@@ -882,15 +878,13 @@ struct CardView: View {
         relockTask = Task {
             try? await Task.sleep(nanoseconds: 5_000_000_000) // 5 секунд
             guard !Task.isCancelled else { return }
-            await MainActor.run {
-                // Естественное срабатывание (не отмена через cancelRelock)
-                // тоже должно обнулить relockTask — иначе guard выше
-                // навсегда блокировал бы повторный запуск таймера при
-                // следующем раскрытии этой же карточки.
-                relockTask = nil
-                withAnimation(.easeInOut(duration: 0.3)) {
-                    isRevealed = false
-                }
+            // Естественное срабатывание (не отмена через cancelRelock)
+            // тоже должно обнулить relockTask — иначе guard выше
+            // навсегда блокировал бы повторный запуск таймера при
+            // следующем раскрытии этой же карточки.
+            relockTask = nil
+            withAnimation(.easeInOut(duration: 0.3)) {
+                isRevealed = false
             }
         }
     }

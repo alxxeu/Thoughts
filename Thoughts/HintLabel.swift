@@ -19,11 +19,11 @@ final class HintTimer {
             guard !Task.isCancelled else { return }
             // 0.35 — то же значение, что уже было у обоих существующих
             // прецедентов (showEmptyHint/showFocusHint) до этого рефактора.
-            await MainActor.run { withAnimation(.easeInOut(duration: 0.35)) { isVisible = true } }
+            withAnimation(.easeInOut(duration: 0.35)) { isVisible = true }
             guard let hold else { return }
             try? await Task.sleep(for: .seconds(hold))
             guard !Task.isCancelled else { return }
-            await MainActor.run { withAnimation(.easeInOut(duration: 0.35)) { isVisible = false } }
+            withAnimation(.easeInOut(duration: 0.35)) { isVisible = false }
         }
     }
 
