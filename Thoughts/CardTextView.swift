@@ -87,10 +87,14 @@ private final class CardNSTextView: NSTextView {
                 }
                 // Только сами буквы: от верха (ascender) до низа (descender)
                 // шрифта строки — без отступов абзаца и межстрочного интервала.
-                let char = layoutManager.characterIndexForGlyph(at: lineGlyphs.location)
+                // Первый видимый глиф: у скрытого `> ` (нулевая ширина) AppKit
+                // отдаёт неверное положение, и поле уезжало на строку выше.
+                var glyph = lineGlyphs.location
+                while glyph < NSMaxRange(lineGlyphs) - 1, layoutManager.propertyForGlyph(at: glyph) == .null { glyph += 1 }
+                let char = layoutManager.characterIndexForGlyph(at: glyph)
                 let font = textStorage.attribute(.font, at: min(char, textStorage.length - 1), effectiveRange: nil) as? NSFont
                     ?? .systemFont(ofSize: 15)
-                let baseline = lineRect.minY + layoutManager.location(forGlyphAt: lineGlyphs.location).y
+                let baseline = lineRect.minY + layoutManager.location(forGlyphAt: glyph).y
                 rect = rect.union(NSRect(x: lineRect.minX, y: baseline - font.ascender, width: lineRect.width, height: font.ascender - font.descender))
             }
             guard !rect.isNull else { return }
@@ -130,7 +134,7 @@ private final class CardNSTextView: NSTextView {
     /// В собственных пропорциях символа, по центру `rect` (растягивание в
     /// квадрат сплющивало кавычки).
     private func drawSymbol(_ name: String, color: NSColor, in rect: NSRect) {
-        let config = NSImage.SymbolConfiguration(pointSize: rect.height * 0.85, weight: .regular)
+        let config = NSImage.SymbolConfiguration(pointSize: 12, weight: .regular)
             .applying(NSImage.SymbolConfiguration(paletteColors: [color]))
         guard let image = NSImage(systemSymbolName: name, accessibilityDescription: nil)?
             .withSymbolConfiguration(config) else { return }
@@ -140,7 +144,7 @@ private final class CardNSTextView: NSTextView {
 
     /// Кнопка/значок в правом верхнем углу поля блока.
     private func cornerIconRect(in box: NSRect) -> NSRect {
-        NSRect(x: box.maxX - 26, y: box.minY + 6, width: 18, height: 18)
+        NSRect(x: box.maxX - 22, y: box.minY + 6, width: 14, height: 14)
     }
 
     /// Блок кода, только что скопированный кнопкой, — на секунду галочка.
