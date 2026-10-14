@@ -39,6 +39,23 @@ private final class CardNSTextView: NSTextView {
         insertText(plain, replacementRange: selectedRange())
     }
 
+    // MARK: Format (⌘B, ⌘I, …) — меню шлёт эти действия по responder chain
+
+    @objc func markdownBold(_ sender: Any?) { toggleMarkdown("**") }
+    @objc func markdownItalic(_ sender: Any?) { toggleMarkdown("*") }
+    @objc func markdownUnderline(_ sender: Any?) { toggleMarkdown("~") }
+    @objc func markdownStrikethrough(_ sender: Any?) { toggleMarkdown("~~") }
+    @objc func markdownHighlight(_ sender: Any?) { toggleMarkdown("==") }
+
+    /// Через shouldChangeText/didChangeText — правка попадает в ⌘Z и в card.text.
+    private func toggleMarkdown(_ marker: String) {
+        let edit = MarkdownFormatting.toggle(marker, in: string as NSString, selection: selectedRange())
+        guard shouldChangeText(in: edit.range, replacementString: edit.replacement) else { return }
+        textStorage?.replaceCharacters(in: edit.range, with: edit.replacement)
+        didChangeText()
+        setSelectedRange(edit.selection)
+    }
+
     /// Escape в NSTextView штатно уходит в `complete:` и дальше по цепочке
     /// не идёт — поэтому SwiftUI-модификатор .onExitCommand на карточке
     /// его не увидел бы, пока текст в фокусе. Перехватываем здесь и только
@@ -334,6 +351,8 @@ struct CardTextView: NSViewRepresentable {
         // Изображения не поддерживаются: выключенный импорт графики не даёт
         // картинке попасть в текст через paste или drag-and-drop.
         textView.importsGraphics = false
+        // Шрифт и цвет фрагмента в Markdown не сохранить — панели не нужны.
+        textView.usesFontPanel = false
         textView.allowsUndo = true
         // Ссылки, в том числе голые адреса, расставляет MarkdownRenderer.
         textView.isAutomaticLinkDetectionEnabled = false

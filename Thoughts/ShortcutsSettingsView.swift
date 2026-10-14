@@ -13,6 +13,11 @@ private struct ShortcutInfo: Identifiable {
 }
 
 private let shortcuts: [ShortcutInfo] = [
+    ShortcutInfo(title: "Bold", subtitle: "Wraps the selection in **…**.", symbol: "\u{2318}B"),
+    ShortcutInfo(title: "Italic", subtitle: "Wraps the selection in *…*.", symbol: "\u{2318}I"),
+    ShortcutInfo(title: "Underline", subtitle: "Wraps the selection in ~…~.", symbol: "\u{2318}U"),
+    ShortcutInfo(title: "Strikethrough", subtitle: "Wraps the selection in ~~…~~.", symbol: "\u{21E7}\u{2318}X"),
+    ShortcutInfo(title: "Highlight", subtitle: "Wraps the selection in ==…==.", symbol: "\u{21E7}\u{2318}H"),
     ShortcutInfo(
         title: "Lock Space",
         subtitle: "Instantly protect and lock the active Space.",

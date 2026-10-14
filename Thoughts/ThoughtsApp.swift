@@ -57,7 +57,15 @@ struct ThoughtsApp: App {
                 }
                 .keyboardShortcut("q", modifiers: .command)
             }
-            TextFormattingCommands()
+            // Своё меню Format: только то, что хранится в Markdown (системное
+            // давало шрифт, цвет и размер, которые терялись бы при сохранении).
+            CommandGroup(replacing: .textFormatting) {
+                formatButton("Bold", "markdownBold:", "b")
+                formatButton("Italic", "markdownItalic:", "i")
+                formatButton("Underline", "markdownUnderline:", "u")
+                formatButton("Strikethrough", "markdownStrikethrough:", "x", modifiers: [.command, .shift])
+                formatButton("Highlight", "markdownHighlight:", "h", modifiers: [.command, .shift])
+            }
             // Само удаление не отсюда — только запрос на подтверждение;
             // см. requestClearSpace/isShowingClearSpaceConfirmation в
             // ContentView, где и происходит реальный вызов
@@ -168,6 +176,15 @@ struct ThoughtsApp: App {
             SettingsView(viewModel: viewModel)
                 .preferredColorScheme(preferredColorScheme)
         }
+    }
+
+    /// Пункт Format: действие уходит в карточку с курсором (CardNSTextView);
+    /// вне карточки — никто не отвечает, ничего не происходит.
+    private func formatButton(_ title: String, _ action: String, _ key: KeyEquivalent, modifiers: SwiftUI.EventModifiers = .command) -> some View {
+        Button(title) {
+            NSApp.sendAction(Selector(action), to: nil, from: nil)
+        }
+        .keyboardShortcut(key, modifiers: modifiers)
     }
 
     private var preferredColorScheme: ColorScheme? {
