@@ -138,6 +138,14 @@ final class CloudSyncEngine: CKSyncEngineDelegate {
         await sendChanges()
     }
 
+    /// Перед выходом: очередь движка сохраняется на диск событием stateUpdate
+    /// позже, чем приложение успевает выйти, — правка из последнего
+    /// сохранения иначе не дошла бы до iCloud никогда.
+    func flushBeforeQuit() async {
+        guard let engine, !engine.state.pendingRecordZoneChanges.isEmpty else { return }
+        await sendChanges()
+    }
+
     // MARK: - Private: engine
 
     private func makeContainer() -> CKContainer {

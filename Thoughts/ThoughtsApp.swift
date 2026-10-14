@@ -213,9 +213,24 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     /// Текст сохраняется с задержкой (scheduleDebouncedSave) — без этого
-    /// последние слова перед ⌘Q/выходом из системы терялись бы.
-    func applicationWillTerminate(_ notification: Notification) {
+    /// последние слова перед ⌘Q/выходом из системы терялись бы. С синком
+    /// ещё и отправляем очередь в iCloud, но ждём не дольше 2 с.
+    func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
         viewModel?.flushPendingSave()
+        guard CloudSyncSettings.shared.isEnabled else { return .terminateNow }
+
+        var hasReplied = false
+        func reply() {
+            guard !hasReplied else { return }
+            hasReplied = true
+            NSApp.reply(toApplicationShouldTerminate: true)
+        }
+        Task {
+            await CloudSyncEngine.shared.flushBeforeQuit()
+            reply()
+        }
+        DispatchQueue.main.asyncAfter(deadline: .now() + 2) { reply() }
+        return .terminateLater
     }
 
     private func showUnreadableBoardAlert(_ url: URL) {
