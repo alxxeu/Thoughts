@@ -55,9 +55,12 @@ enum MarkdownRenderer {
                 }
             case .divider:
                 storage.addAttribute(dividerKey, value: true, range: paragraph.range)
-                // Пока курсор на строке, `---` видно и его можно править.
+                // Пока курсор на строке, `---` видно и его можно править. Иначе
+                // — прозрачные дефисы, а не скрытые глифы: строке нужна своя
+                // высота, линию CardNSTextView рисует по её середине (глифы
+                // нулевой ширины AppKit относит к предыдущей строке).
                 if !touches(selection, paragraph.range) {
-                    storage.addAttribute(hiddenKey, value: true, range: paragraph.range)
+                    storage.addAttribute(.foregroundColor, value: NSColor.clear, range: paragraph.range)
                 }
             case .bullet:
                 if let marker = paragraph.blockMarker {
@@ -91,7 +94,8 @@ enum MarkdownRenderer {
             }
 
             // `#` и `---` бледные; `•` списка — цветом текста.
-            if let marker = paragraph.blockMarker, paragraph.block != .bullet {
+            if let marker = paragraph.blockMarker, paragraph.block != .bullet,
+               paragraph.block != .divider || touches(selection, paragraph.range) {
                 storage.addAttribute(.foregroundColor, value: markerColor, range: marker)
             }
             for marker in paragraph.markers {

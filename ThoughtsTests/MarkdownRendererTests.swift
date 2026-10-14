@@ -72,7 +72,12 @@ struct MarkdownRendererTests {
         MarkdownRenderer.style(list, typography: typography)
         #expect(list.attribute(MarkdownRenderer.bulletKey, at: 0, effectiveRange: nil) != nil)
         #expect(list.attribute(MarkdownRenderer.bulletKey, at: 1, effectiveRange: nil) == nil)
-        #expect(hidden("x\n---", selection: NSRange(location: 0, length: 0)) == "---")
-        #expect(hidden("x\n---", selection: NSRange(location: 4, length: 0)).isEmpty)
+        // Разделитель не скрывается, а становится прозрачным — у строки остаётся высота.
+        #expect(hidden("x\n---", selection: NSRange(location: 0, length: 0)).isEmpty)
+        let divider = NSMutableAttributedString(string: "x\n---")
+        MarkdownRenderer.style(divider, typography: typography, selection: NSRange(location: 0, length: 0))
+        #expect(divider.attribute(.foregroundColor, at: 3, effectiveRange: nil) as? NSColor == .clear)
+        MarkdownRenderer.style(divider, typography: typography, selection: NSRange(location: 4, length: 0))
+        #expect(divider.attribute(.foregroundColor, at: 3, effectiveRange: nil) as? NSColor != .clear)
     }
 }
