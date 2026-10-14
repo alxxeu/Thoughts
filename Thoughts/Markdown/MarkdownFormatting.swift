@@ -72,4 +72,31 @@ enum MarkdownFormatting {
         let run = end - start
         return run == m || run == 3
     }
+
+    /// `[]`, `[ ]`, `- []`, `[x]` → стандартные `- [ ] ` / `- [x] `: так их
+    /// понимают Notion и другие Markdown-приложения. Правки идут с конца
+    /// текста (более ранние диапазоны не сдвигаются); `cursor` — где окажется
+    /// курсор после них: после маркера, если стоял в нём.
+    static func normalizedTaskMarkers(in text: String, cursor: Int) -> (edits: [(range: NSRange, marker: String)], cursor: Int) {
+        let ns = text as NSString
+        var edits: [(range: NSRange, marker: String)] = []
+        for paragraph in MarkdownStyler.parse(text) {
+            guard case .task(let done) = paragraph.block, let marker = paragraph.blockMarker else { continue }
+            let standard = done ? "- [x] " : "- [ ] "
+            if ns.substring(with: marker) != standard { edits.append((marker, standard)) }
+        }
+        // С конца к началу: более поздние правки на позицию не влияют,
+        // более ранние сдвигают её — диапазоны в исходных координатах.
+        var newCursor = cursor
+        for edit in edits.reversed() {
+            let newLength = (edit.marker as NSString).length
+            if NSMaxRange(edit.range) <= newCursor {
+                newCursor += newLength - edit.range.length
+            } else if edit.range.location < newCursor {
+                newCursor = edit.range.location + newLength
+            }
+        }
+        return (edits.reversed(), newCursor)
+    }
 }
+

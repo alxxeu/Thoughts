@@ -859,37 +859,21 @@ struct CardTextView: NSViewRepresentable {
             parent.onTextChange()
         }
 
-        /// `[]`, `[ ]`, `- []`, `[x]` → стандартные `- [ ] ` / `- [x] `: так их
-        /// понимают Notion и другие Markdown-приложения. Пока идёт IME-набор —
-        /// не трогаем. Повторный textDidChange после правки уже ничего не найдёт.
+        /// Нестандартные маркеры чек-листа → `- [ ] ` / `- [x] ` (см.
+        /// MarkdownFormatting.normalizedTaskMarkers). Не во время IME-набора и не
+        /// во время ⌘Z/⇧⌘Z: иначе отмена тут же переписывалась бы заново, и
+        /// до правок раньше неё было не добраться.
         private func normalizeTaskMarkers(in textView: NSTextView) {
-            guard !textView.hasMarkedText(), let storage = textView.textStorage else { return }
-            let ns = textView.string as NSString
-            var edits: [(range: NSRange, marker: String)] = []
-            for paragraph in MarkdownStyler.parse(textView.string) {
-                guard case .task(let done) = paragraph.block, let marker = paragraph.blockMarker else { continue }
-                let standard = done ? "- [x] " : "- [ ] "
-                if ns.substring(with: marker) != standard { edits.append((marker, standard)) }
-            }
-            guard !edits.isEmpty else { return }
-            // Курсор — туда же относительно текста: после маркера, если был в нём.
-            // С конца к началу: более ранние правки сдвигают позицию, более
-            // поздние на неё не влияют — диапазоны правок в исходных координатах.
-            var cursor = textView.selectedRange().location
-            for edit in edits.reversed() {
-                let newLength = (edit.marker as NSString).length
-                if NSMaxRange(edit.range) <= cursor {
-                    cursor += newLength - edit.range.length
-                } else if edit.range.location < cursor {
-                    cursor = edit.range.location + newLength
-                }
-            }
-            // С конца — чтобы диапазоны раньше по тексту не сдвигались.
-            for edit in edits.reversed() where textView.shouldChangeText(in: edit.range, replacementString: edit.marker) {
+            guard !textView.hasMarkedText(),
+                  textView.undoManager?.isUndoing != true, textView.undoManager?.isRedoing != true,
+                  let storage = textView.textStorage else { return }
+            let result = MarkdownFormatting.normalizedTaskMarkers(in: textView.string, cursor: textView.selectedRange().location)
+            guard !result.edits.isEmpty else { return }
+            for edit in result.edits where textView.shouldChangeText(in: edit.range, replacementString: edit.marker) {
                 storage.replaceCharacters(in: edit.range, with: edit.marker)
             }
             textView.didChangeText()
-            textView.setSelectedRange(NSRange(location: min(cursor, storage.length), length: 0))
+            textView.setSelectedRange(NSRange(location: min(result.cursor, storage.length), length: 0))
         }
 
         /// Курсор сдвинулся — показываем символы фрагмента, к которому он
