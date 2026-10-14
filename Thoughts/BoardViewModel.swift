@@ -219,11 +219,11 @@ final class BoardViewModel {
     }
 
 
-    func renameActiveWorkspace(to name: String) {
-        guard let index = workspaces.firstIndex(where: { $0.slot == activeSlot }) else { return }
+    func renameWorkspace(slot: Int, to name: String) {
+        guard let index = workspaces.firstIndex(where: { $0.slot == slot }) else { return }
         let trimmed = name.trimmingCharacters(in: .whitespacesAndNewlines)
         let limited = String(trimmed.prefix(Self.maxWorkspaceNameLength))
-        workspaces[index].name = limited.isEmpty ? Workspace.defaultName(forSlot: activeSlot) : limited
+        workspaces[index].name = limited.isEmpty ? Workspace.defaultName(forSlot: slot) : limited
         saveImmediately()
     }
 
