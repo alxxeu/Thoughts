@@ -207,11 +207,9 @@ struct CardView: View {
             .onHover { inside in
                 guard !isPrivacyLocked, !isInFocusMode else { return }
                 isHoveringTagButton = inside
-                if inside {
-                    NSCursor.pointingHand.set()
-                } else {
-                    NSCursor.arrow.set()
-                }
+                // Стрелка явно — на всех хэндлах карточки: I-beam текстового
+                // поля в фокусе покрывает всю карточку (см. CardNSTextView).
+                if inside { NSCursor.arrow.set() }
             }
             .popover(isPresented: $isShowingTagPopover, arrowEdge: .bottom) {
                 TagPopoverView(selectedColor: $card.tagColor, privacyMode: $card.privacyMode) {
@@ -266,17 +264,7 @@ struct CardView: View {
                 .frame(width: 32, height: 32)
                 .contentShape(Rectangle())
                 .onHover { inside in
-                    if inside {
-                        let selector = NSSelectorFromString("_windowResizeNorthWestSouthEastCursor")
-                        if NSCursor.responds(to: selector) {
-                            if let customCursor = NSCursor.perform(selector)?.takeUnretainedValue() as? NSCursor {
-                                customCursor.set()
-                            }
-                        }
-                    } else {
-                        NSCursor.pop()
-                        NSCursor.arrow.set()
-                    }
+                    if inside { NSCursor.arrow.set() }
                 }
                 .gesture(resizeGesture)
                 .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottomTrailing)
@@ -297,9 +285,7 @@ struct CardView: View {
                     .transition(.identity)
                     .zIndex(102)
                     .onHover { inside in
-                        if inside {
-                            dragOrigin != nil ? NSCursor.closedHand.set() : NSCursor.arrow.set()
-                        }
+                        if inside { NSCursor.arrow.set() }
                     }
             }
 
@@ -329,16 +315,11 @@ struct CardView: View {
                 .zIndex(103)
                 .onHover { inside in
                     isHoveringDeleteButton = inside
-                    if inside {
-                        NSCursor.pointingHand.set()
-                    } else {
-                        NSCursor.arrow.set()
-                    }
+                    if inside { NSCursor.arrow.set() }
                 }
                 .onLongPressGesture(minimumDuration: 0.5, maximumDistance: 10, perform: {
                     Task { @MainActor in
                         viewModel.deleteCard(card)
-                        NSCursor.arrow.set()
                         resetDeleteState()
                     }
                 }, onPressingChanged: { pressing in
@@ -563,9 +544,6 @@ struct CardView: View {
             .contentShape(Capsule())
         }
         .buttonStyle(.plain)
-        .onHover { inside in
-            if inside { NSCursor.pointingHand.set() } else { NSCursor.arrow.set() }
-        }
         .transition(.opacity)
     }
 
@@ -719,9 +697,6 @@ struct CardView: View {
             .contentShape(Capsule())
         }
         .buttonStyle(.plain)
-        .onHover { inside in
-            if inside { NSCursor.pointingHand.set() } else { NSCursor.arrow.set() }
-        }
     }
 
     /// Результат НЕ попадает в карточку сам — показывается под вопросом,
@@ -776,7 +751,6 @@ struct CardView: View {
                 if dragOrigin == nil {
                     dragOrigin = card.position
                     viewModel.bringToFront(card)
-                    NSCursor.closedHand.set()
                 }
                 guard let origin = dragOrigin else { return }
 
@@ -810,7 +784,6 @@ struct CardView: View {
                 )
             }
             .onEnded { _ in
-                NSCursor.openHand.set()
                 if let preview = BoardViewModel.placementPreview(
                     movingId: card.id,
                     movingPosition: card.position,
@@ -865,8 +838,6 @@ struct CardView: View {
                 )
             }
             .onEnded { _ in
-                NSCursor.pop()
-                NSCursor.arrow.set()
                 guard let size = dragResizeSize else { return }
                 withAnimation(.spring(response: 0.3, dampingFraction: 0.8)) {
                     card.size = CGSize(
