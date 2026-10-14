@@ -13,6 +13,12 @@ struct AppleIntelligenceTextService: AITextService {
         do {
             let response = try await session.respond(to: userText)
             return response.content
+        } catch LanguageModelSession.GenerationError.exceededContextWindowSize {
+            // Окно on-device модели — несколько тысяч токенов: большой Space
+            // целиком в него не влезает.
+            throw AITextServiceError.apiError(
+                "Too much text for Apple Intelligence. Choose ChatGPT or Claude, or ask about a single card."
+            )
         } catch {
             throw AITextServiceError.apiError(error.localizedDescription)
         }
