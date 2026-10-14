@@ -18,7 +18,7 @@ enum ReleaseNotes {
     static let all: [ReleaseNote] = [
         ReleaseNote(version: "1.4", sections: [
             .init(title: "New", items: [
-                "Markdown \u{2014} cards are now written in Markdown: # headings, **bold**, *italic*, ~underline~, ~~strikethrough~~, ==highlight==, `code`, links, lists and --- dividers. The formatting characters show while you edit a word and hide when you move on. Markdown pasted from Notion and other apps appears formatted.",
+                "Markdown \u{2014} cards are now written in Markdown: # headings, **bold**, *italic*, ~underline~, ~~strikethrough~~, ==highlight==, `code`, links, lists and dividers (a line of -- or more dashes). The formatting characters show while you edit a word and hide when you move on. Markdown pasted from Notion and other apps appears formatted.",
                 "Switch Spaces from any app with \u{2303}\u{2325}1\u{2013}9 \u{2014} Thoughts comes forward on that Space."
             ]),
             .init(title: "Improved", items: [

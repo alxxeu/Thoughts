@@ -61,6 +61,8 @@ struct MarkdownStylerTests {
         #expect(paragraphs.map(\.block) == [.heading(1), .heading(3), .bullet, .numbered, .divider, .paragraph])
         #expect(paragraphs[0].blockMarker == NSRange(location: 0, length: 2))
         #expect(paragraphs[3].blockMarker == nil)
+        // Разделитель — от 2 до 10 дефисов.
+        #expect(MarkdownStyler.parse("--\n----------\n-\n-----------\n - - ").map(\.block) == [.divider, .divider, .paragraph, .paragraph, .paragraph])
         // #### — уже не заголовок.
         #expect(MarkdownStyler.parse("#### x")[0].block == .paragraph)
     }

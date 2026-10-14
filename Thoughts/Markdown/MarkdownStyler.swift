@@ -7,7 +7,7 @@ import Foundation
 ///
 /// Набор синтаксиса — как в Bear 2: `# ## ###`, `**жирный**`, `*курсив*`,
 /// `~~зачёркнутый~~`, `~подчёркнутый~`, `==выделение==`, `` `код` ``,
-/// `[текст](url)`, `- ` и `1. ` списки, `---` разделитель, `\*` экранирование.
+/// `[текст](url)`, `- ` и `1. ` списки, `--`…`----------` разделитель, `\*` экранирование.
 /// shortcut: свой упрощённый разбор, не полный CommonMark (нет `_`, цитат,
 /// чек-листов, таблиц, блоков кода) — расширять вместе с редактором.
 enum MarkdownStyler {
@@ -70,7 +70,10 @@ enum MarkdownStyler {
         let range = NSRange(location: lineRange.location, length: contentEnd - lineRange.location)
         let line = ns.substring(with: range)
 
-        if line.trimmingCharacters(in: .whitespaces) == "---" {
+        // Разделитель — строка из 2–10 дефисов (`--` — наше расширение,
+        // в стандартном Markdown минимум три).
+        let trimmed = line.trimmingCharacters(in: .whitespaces)
+        if (2...10).contains(trimmed.count), trimmed.allSatisfy({ $0 == "-" }) {
             return Paragraph(range: range, block: .divider, blockMarker: range, inlines: [], markers: [])
         }
 
