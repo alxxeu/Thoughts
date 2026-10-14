@@ -140,15 +140,12 @@ final class DesktopOverlayWindowController {
         window.ignoresMouseEvents = isEnabled && isDesktopModeActive
     }
 
-    /// ⌃⌥D и ⌃⌥1–9 как глобальные хоткеты (см. GlobalHotKeyManager) — должны
+    /// ⌃⌥D как глобальный хоткей (см. GlobalHotKeyManager) — должен
     /// срабатывать, даже когда активное приложение не Thoughts, а Finder
     /// (ровно так и есть в Desktop mode после клика по иконке на столе).
-    /// Виртуальные keyCode — физические позиции клавиш на ANSI-клавиатуре,
-    /// не зависят от активной раскладки (в отличие от charactersIgnoring-
-    /// Modifiers, который для той же клавиши на русской раскладке вернул бы
-    /// не "1"–"9"/"d").
-    /// С ⌃, а не голым ⌥, как в меню: глобальный ⌥+цифра забирал эти клавиши
-    /// у всех приложений (на немецкой раскладке ⌥5–9 печатают `[ ] | { }`).
+    /// С ⌃, а не голым ⌥, как в меню: глобальный ⌥D забирал бы клавишу
+    /// у всех приложений. ⌃⌥1–9 (выход из Desktop mode) — глобальные
+    /// всегда, см. AppDelegate.registerSpaceHotKeys.
     private func registerHotKeys() {
         // Вызывается и на каждую смену фокуса окна — регистрируем один раз.
         guard hotKeyTokens.isEmpty else { return }
@@ -163,17 +160,6 @@ final class DesktopOverlayWindowController {
             settings.isDesktopModeActive = true
         }) {
             tokens.append(token)
-        }
-
-        let digitKeyCodes: [UInt32] = [18, 19, 20, 21, 23, 22, 26, 28, 25] // kVK_ANSI_1...9
-        for (index, keyCode) in digitKeyCodes.enumerated() {
-            let slot = index + 1
-            if case .success(let token) = GlobalHotKeyManager.shared.register(keyCode: keyCode, modifiers: modifiers, action: {
-                settings.isDesktopModeActive = false
-                NotificationCenter.default.post(name: .switchWorkspace, object: slot)
-            }) {
-                tokens.append(token)
-            }
         }
         hotKeyTokens = tokens
     }

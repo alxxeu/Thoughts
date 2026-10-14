@@ -1,6 +1,7 @@
 import SwiftUI
 import AppKit
 import CoreSpotlight
+import Carbon.HIToolbox
 
 @main
 struct ThoughtsApp: App {
@@ -196,6 +197,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         if let viewModel {
             QuickCaptureController.shared.start(viewModel: viewModel)
             CloudSyncEngine.shared.start(viewModel: viewModel)
+            registerSpaceHotKeys(viewModel)
         }
         interactionMonitor = NSEvent.addLocalMonitorForEvents(
             matching: [
@@ -262,13 +264,38 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             return false
         }
 
+        showMainWindow()
+        viewModel?.focusOnCard(id: cardID)
+        return true
+    }
+
+    private func showMainWindow() {
         NSApp.activate(ignoringOtherApps: true)
         if let window = NSApp.windows.first {
             if window.isMiniaturized { window.deminiaturize(nil) }
             window.makeKeyAndOrderFront(nil)
         }
-        viewModel?.focusOnCard(id: cardID)
-        return true
+    }
+
+    /// ⌃⌥1–9 из любого приложения: переключают Space и выводят Thoughts
+    /// вперёд. С ⌃, а не голым ⌥, как в меню: глобальный ⌥+цифра забирал
+    /// бы эти клавиши у всех приложений (на немецкой раскладке ⌥5–9 печатают
+    /// `[ ] | { }`). keyCode — физические клавиши, от раскладки не зависят.
+    /// Регистрируются на всё время работы приложения; занятое другим
+    /// приложением сочетание просто не сработает.
+    private func registerSpaceHotKeys(_ viewModel: BoardViewModel) {
+        let digitKeyCodes: [UInt32] = [18, 19, 20, 21, 23, 22, 26, 28, 25] // kVK_ANSI_1...9
+        for (index, keyCode) in digitKeyCodes.enumerated() {
+            let slot = index + 1
+            GlobalHotKeyManager.shared.register(keyCode: keyCode, modifiers: UInt32(controlKey | optionKey)) { [weak self] in
+                let overlay = viewModel.desktopOverlay
+                // В Overlay окно живёт на уровне стола — активировать нечего,
+                // достаточно выйти из Desktop mode.
+                if !overlay.isEnabled { self?.showMainWindow() }
+                overlay.isDesktopModeActive = false
+                NotificationCenter.default.post(name: .switchWorkspace, object: slot)
+            }
+        }
     }
 }
 

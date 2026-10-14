@@ -40,7 +40,7 @@ private let shortcuts: [ShortcutInfo] = [
     ),
     ShortcutInfo(
         title: "Switch Spaces from Any App",
-        subtitle: "While Desktop Overlay is on.",
+        subtitle: "Jumps to that Space and brings Thoughts forward.",
         symbol: "\u{2303}\u{2325}1\u{2013}9"
     )
 ]
