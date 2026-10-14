@@ -80,7 +80,7 @@ final class CloudSyncEngine: CKSyncEngineDelegate {
         AutomaticBackups.write(viewModel.makeSnapshot(), reason: "before-icloud-sync")
         stateStore.reset()
         settings.isEnabled = true
-        KeychainSync.reconcile(showNotices: true)
+        KeychainSync.reconcile(uploadLocal: true, showNotices: true)
         settings.status = .syncing
 
         let engine = makeEngine(container: container, state: nil)
@@ -169,7 +169,7 @@ final class CloudSyncEngine: CKSyncEngineDelegate {
             return
         }
         _ = makeEngine(container: container, state: state)
-        KeychainSync.reconcile(showNotices: true)
+        KeychainSync.reconcile(uploadLocal: false, showNotices: true)
         await syncNow()
     }
 

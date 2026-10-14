@@ -4,15 +4,15 @@ import AppKit
 /// включении синка и при каждом запуске с включённым синком (значение
 /// могли поменять на другом Mac). Само хранение — SyncableKeychainItem.
 enum KeychainSync {
-    static func reconcile(showNotices: Bool) {
-        let passcode = PasscodeStore.item.reconcile()
+    static func reconcile(uploadLocal: Bool, showNotices: Bool) {
+        let passcode = PasscodeStore.item.reconcile(uploadLocal: uploadLocal)
         if case .adoptedFromICloud = passcode {
             // Код пришёл с другого Mac — Space Lock включается и здесь.
             SecuritySettings.shared.isPasscodeEnabled = true
         }
 
         for provider in [AIProviderKind.openAI, .anthropic] {
-            AIKeyStore.item(for: provider).reconcile()
+            AIKeyStore.item(for: provider).reconcile(uploadLocal: uploadLocal)
         }
         AISettings.shared.refreshKeyState()
 
