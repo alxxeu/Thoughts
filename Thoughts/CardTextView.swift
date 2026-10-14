@@ -11,6 +11,10 @@ import AppKit
 /// реально попадает на экран — здесь позиция строки берётся из ЖИВОГО
 /// `layoutManager` в момент самой отрисовки, каждый раз заново.
 final class DividerAttachment: NSTextAttachment {
+    /// Без этого архив formattingData (requiringSecureCoding) падал на любой
+    /// карточке с разделителем, и её форматирование молча обнулялось.
+    override class var supportsSecureCoding: Bool { true }
+
     /// Высота строки, которую резервирует под себя разделитель в тексте —
     /// заметно больше обычной строки (15pt шрифт + 4pt lineSpacing ≈ 22pt
     /// → 30pt), чтобы всегда был чёткий зазор до соседних строк сверху и
