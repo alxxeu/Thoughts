@@ -314,6 +314,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         guard let viewModel,
               event.modifierFlags.intersection([.command, .control, .option, .shift]) == .option,
               let slot = Self.digitKeyCodes.firstIndex(of: UInt32(event.keyCode)).map({ $0 + 1 }) else { return false }
+        // В тексте ⌥1–9 печатают символы (¡, ™, £…) — как и до перехвата.
+        guard !(event.window?.firstResponder is NSTextView) else { return false }
         // Зажатая клавиша (автоповтор) не переключает снова.
         guard !event.isARepeat else { return true }
         let overlay = viewModel.desktopOverlay
