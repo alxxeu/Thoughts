@@ -475,6 +475,10 @@ struct CardTextView: NSViewRepresentable {
         // другого Mac через iCloud).
         if textView.string != text {
             let selectedRanges = textView.selectedRanges
+            // Записи отмен хранят позиции в прежнем тексте — применённые к
+            // новому, они ломали бы ⌘Z (и менеджер отмен всего окна).
+            textView.undoManager?.removeAllActions(withTarget: textView)
+            textView.undoManager?.removeAllActions(withTarget: textView.textStorage as Any)
             textView.string = text
             Self.restyle(textView, typography: typography)
             let length = (textView.string as NSString).length
@@ -616,19 +620,32 @@ struct CardTextView: NSViewRepresentable {
             // обычный backspace где-то в тексте пункта, не наша забота.
             guard cursor.location == lineRange.location + prefix.length else { return false }
 
-            textView.textStorage?.beginEditing()
-            textView.textStorage?.replaceCharacters(in: NSRange(location: lineRange.location, length: prefix.length), with: "")
-            textView.textStorage?.endEditing()
-
-            let affectedRange = NSRange(location: lineRange.location, length: max(0, (textView.string as NSString).length - lineRange.location))
-            textView.layoutManager?.invalidateLayout(forCharacterRange: affectedRange, actualCharacterRange: nil)
-            textView.layoutManager?.ensureLayout(forCharacterRange: affectedRange)
-            textView.needsDisplay = true
-
+            guard replaceUndoably(NSRange(location: lineRange.location, length: prefix.length), with: "", in: textView) else { return true }
+            refreshLayout(of: textView, from: lineRange.location)
             textView.setSelectedRange(NSRange(location: lineRange.location, length: 0))
-            textView.didChangeText()
-
             return true
+        }
+
+        /// Правка текста самим редактором — как ввод с клавиатуры, через
+        /// shouldChangeText/didChangeText: попадает в историю отмен. Прямая
+        /// правка textStorage в обход неё расходилась с историей: ⌘Z откатывал
+        /// только набранное (маркеры списка оставались), а затем ломался
+        /// менеджер отмен — общий на всё окно, ⌘Z переставал работать везде.
+        private func replaceUndoably(_ range: NSRange, with string: String, in textView: NSTextView) -> Bool {
+            guard textView.shouldChangeText(in: range, replacementString: string) else { return false }
+            textView.textStorage?.replaceCharacters(in: range, with: string)
+            textView.didChangeText()
+            return true
+        }
+
+        /// Без явной инвалидации TextKit мог рисовать по ещё не пересчитанному
+        /// layout сразу после правки — маркер либо «приклеивался» к предыдущей
+        /// строке, либо для удаления пустого пункта требовалось нажать Enter дважды.
+        private func refreshLayout(of textView: NSTextView, from location: Int) {
+            let affected = NSRange(location: location, length: max(0, (textView.string as NSString).length - location))
+            textView.layoutManager?.invalidateLayout(forCharacterRange: affected, actualCharacterRange: nil)
+            textView.layoutManager?.ensureLayout(forCharacterRange: affected)
+            textView.needsDisplay = true
         }
 
         /// Требование: Enter на непустом пункте списка ("• текст" или "N. текст")
@@ -653,41 +670,18 @@ struct CardTextView: NSViewRepresentable {
                 && !ns.substring(with: contentRange).trimmingCharacters(in: .whitespaces).isEmpty
 
             let newCursorLocation: Int
-            textView.textStorage?.beginEditing()
             if hasContent {
                 let insertion = "\n" + prefix.nextMarker
-                textView.textStorage?.replaceCharacters(in: cursor, with: insertion)
+                guard replaceUndoably(cursor, with: insertion, in: textView) else { return true }
                 newCursorLocation = cursor.location + (insertion as NSString).length
             } else {
-                textView.textStorage?.replaceCharacters(in: lineRange, with: "")
+                guard replaceUndoably(lineRange, with: "", in: textView) else { return true }
                 newCursorLocation = lineRange.location
             }
-            textView.textStorage?.endEditing()
-
-            // Без явной инвалидации TextKit мог рисовать по ещё не
-            // пересчитанному layout сразу после правки — маркер либо
-            // оставался "приклеенным" к предыдущей строке, либо для удаления
-            // пустого пункта требовалось нажать Enter дважды (первый раз
-            // просто ничего не перерисовывал).
-            let affectedRange = NSRange(location: lineRange.location, length: max(0, (textView.string as NSString).length - lineRange.location))
-            textView.layoutManager?.invalidateLayout(forCharacterRange: affectedRange, actualCharacterRange: nil)
-            textView.layoutManager?.ensureLayout(forCharacterRange: affectedRange)
-            textView.needsDisplay = true
-
-            // setSelectedRange — только ПОСЛЕ endEditing(): пока транзакция
-            // редактирования textStorage не закрыта, layout ещё не
-            // пересчитан, и попытка выставить selection в этот момент уводит
-            // NSTextView в зависшее состояние (переставали работать Enter,
-            // ввод, выделение, удаление — вплоть до потери фокуса).
+            refreshLayout(of: textView, from: lineRange.location)
+            // Курсор — после правки: пока она не применена, выставление
+            // выделения уводило NSTextView в зависшее состояние.
             textView.setSelectedRange(NSRange(location: newCursorLocation, length: 0))
-
-            // Прямая правка textStorage (replaceCharacters) не уведомляет
-            // делегата сама по себе — didChangeText() обязателен, иначе
-            // card.text не синхронизируется с этим изменением, и следующий
-            // ререндер (updateNSView увидит рассинхрон) затирает только что
-            // вставленную строку старым значением card.text.
-            textView.didChangeText()
-
             return true
         }
 
