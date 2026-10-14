@@ -128,42 +128,15 @@ struct CardAskAIPanel: View {
                     .frame(height: 96)
                     .padding(12)
             } else {
-                AIPromptTextView(text: $cardAIQuestion, shouldFocus: isShowingCardAI) {
-                    askCardAI()
-                }
-                .frame(height: 96)
-                .overlay(alignment: .topLeading) {
-                    if cardAIQuestion.isEmpty {
-                        Text(cardAIPlaceholder)
-                            .font(.system(size: 13))
-                            .foregroundStyle(Color.white.opacity(0.35))
-                            .padding(.leading, 11)
-                            .padding(.top, 6)
-                            .allowsHitTesting(false)
-                    }
-                }
-                .overlay(alignment: .bottomLeading) {
-                    AIProviderMenu()
-                        .padding(4)
-                }
-                .overlay(alignment: .bottomTrailing) {
-                    HStack(spacing: 8) {
-                        if isGenerating {
-                            ProgressView()
-                                .controlSize(.small)
-                                .tint(.white)
-                        }
-                        Button {
-                            askCardAI()
-                        } label: {
-                            Image(systemName: "arrow.up.circle.fill")
-                                .font(.system(size: 22))
-                        }
-                        .buttonStyle(.plain)
-                        .foregroundStyle(Color.white.opacity(0.85))
-                        .disabled(isGenerating || cardAIQuestion.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
-                    }
-                }
+                AIPromptField(
+                    text: $cardAIQuestion,
+                    placeholder: cardAIPlaceholder,
+                    shouldFocus: isShowingCardAI,
+                    isBusy: isGenerating,
+                    height: 96,
+                    sendIconSize: 22,
+                    onSend: askCardAI
+                )
                 .padding(12)
             }
         }

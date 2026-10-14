@@ -186,52 +186,18 @@ struct SpaceToolbar: View {
     }
 
     private var spaceAIPrompt: some View {
-        AIPromptTextView(text: $spaceAIQuestion, shouldFocus: isAskingSpaceAI) {
-            askSpaceAI()
-        }
+        AIPromptField(
+            text: $spaceAIQuestion,
+            placeholder: "Ask about your project\u{2026}",
+            shouldFocus: isAskingSpaceAI,
+            isBusy: isSpaceAIBusy,
+            height: 130,
+            onSend: askSpaceAI
+        )
         .frame(maxWidth: .infinity)
-        .frame(height: 130)
         .onExitCommand {
             withAnimation(spaceAISpring) { isAskingSpaceAI = false }
             spaceAIQuestion = ""
-        }
-        // NSTextView не даёт placeholder "из коробки" (в отличие от
-        // NSTextField/SwiftUI TextField) — просто текст поверх, скрытый,
-        // как только начали печатать. Отступы подобраны под
-        // textContainerInset (6) + дефолтный lineFragmentPadding NSTextView (5).
-        .overlay(alignment: .topLeading) {
-            if spaceAIQuestion.isEmpty {
-                Text("Ask about your project…")
-                    .font(.system(size: 13))
-                    .foregroundStyle(Color.white.opacity(0.35))
-                    .padding(.leading, 11)
-                    .padding(.top, 6)
-                    .allowsHitTesting(false)
-            }
-        }
-        .overlay(alignment: .bottomLeading) {
-            HStack(spacing: 12) {
-                AIProviderMenu()
-
-                if isSpaceAIBusy {
-                    ProgressView()
-                        .controlSize(.small)
-                        .tint(.white)
-                }
-            }
-            .padding(6)
-        }
-        .overlay(alignment: .bottomTrailing) {
-            Button {
-                askSpaceAI()
-            } label: {
-                Image(systemName: "arrow.up.circle.fill")
-                    .font(.system(size: 20))
-            }
-            .buttonStyle(.plain)
-            .foregroundStyle(Color.white.opacity(0.85))
-            .disabled(isSpaceAIBusy || spaceAIQuestion.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
-            .padding(5)
         }
     }
 
