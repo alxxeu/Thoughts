@@ -169,6 +169,9 @@ struct ThoughtsApp: App {
                         KeyEquivalent(Character("\(workspace.slot)")),
                         modifiers: .option
                     )
+                    // Текущий Space выключен: зажатый ⌥N иначе повторял переход
+                    // на автоповторе. Из Desktop mode ⌥N по-прежнему выводит.
+                    .disabled(workspace.slot == viewModel.activeSlot && !viewModel.desktopOverlay.isDesktopModeActive)
                 }
             }
         }
@@ -306,6 +309,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             let slot = index + 1
             GlobalHotKeyManager.shared.register(keyCode: keyCode, modifiers: UInt32(controlKey | optionKey)) { [weak self] in
                 let overlay = viewModel.desktopOverlay
+                // Уже на этом Space и он на экране — зажатый хоткей ничего не повторяет.
+                if slot == viewModel.activeSlot, !overlay.isDesktopModeActive,
+                   overlay.isEnabled || NSApp.isActive { return }
                 // В Overlay окно живёт на уровне стола — активировать нечего,
                 // достаточно выйти из Desktop mode.
                 if !overlay.isEnabled { self?.showMainWindow() }

@@ -233,7 +233,7 @@ struct ContentView: View {
             overlayWindow.apply()
         }
         .onReceive(NotificationCenter.default.publisher(for: .switchWorkspace)) { notification in
-            if let slot = notification.object as? Int {
+            if let slot = notification.object as? Int, slot != viewModel.activeSlot {
                 // Нельзя оставить "зависший" фокус на карточке со Space, с
                 // которого только что ушли.
                 setFocusedCard(nil)
