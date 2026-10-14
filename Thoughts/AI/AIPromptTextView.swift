@@ -91,9 +91,7 @@ struct AIPromptTextView: NSViewRepresentable {
         if textView.string != text {
             // Записи отмен хранят позиции в прежнем тексте (например, до
             // очистки поля после отправки) — к новому их применять нельзя.
-            if let storage = textView.textStorage {
-                textView.undoManager?.removeAllActions(withTarget: storage)
-            }
+            context.coordinator.undoManager.removeAllActions()
             textView.string = text
         }
         textView.onSend = onSend
@@ -144,6 +142,13 @@ struct AIPromptTextView: NSViewRepresentable {
         var parent: AIPromptTextView
         var didRequestFocus = false
         var isFocusRequestPending = false
+        /// Своя история отмен — не общая с карточками (см.
+        /// CardTextView.Coordinator.undoManager).
+        let undoManager = UndoManager()
+
+        func undoManager(for view: NSTextView) -> UndoManager? {
+            undoManager
+        }
 
         init(_ parent: AIPromptTextView) {
             self.parent = parent

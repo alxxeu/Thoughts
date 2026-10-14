@@ -75,4 +75,32 @@ struct CardEditorUndoTests {
         h.undo.undo()
         #expect(h.textView.string == "- item")
     }
+
+    @Test func promptFieldUndoNeverReachesTheCard() {
+        let card = Harness()
+        card.type("card text")
+
+        // Поле Ask AI в том же окне — со своим координатором.
+        let prompt = NSTextView(frame: NSRect(x: 0, y: 0, width: 200, height: 50))
+        let promptCoordinator = AIPromptTextView(text: .constant(""), shouldFocus: true, onSend: {}).makeCoordinator()
+        prompt.allowsUndo = true
+        prompt.delegate = promptCoordinator
+        card.textView.addSubview(prompt)
+        card.window.makeFirstResponder(prompt)
+        let promptUndo = prompt.undoManager!
+        promptUndo.groupsByEvent = false
+        promptUndo.beginUndoGrouping()
+        prompt.insertText("question", replacementRange: prompt.selectedRange())
+        prompt.breakUndoCoalescing()
+        promptUndo.endUndoGrouping()
+
+        #expect(promptUndo !== card.undo)
+        promptUndo.undo()
+        #expect(prompt.string == "")
+        // Отменять в поле больше нечего — карточку это не трогает.
+        #expect(!promptUndo.canUndo)
+        #expect(card.textView.string == "card text")
+        #expect(card.undo.canUndo)
+    }
 }
+

@@ -477,9 +477,7 @@ struct CardTextView: NSViewRepresentable {
             let selectedRanges = textView.selectedRanges
             // Записи отмен хранят позиции в прежнем тексте — применённые к
             // новому, они ломали бы ⌘Z (и менеджер отмен всего окна).
-            if let storage = textView.textStorage {
-                textView.undoManager?.removeAllActions(withTarget: storage)
-            }
+            context.coordinator.undoManager.removeAllActions()
             textView.string = text
             Self.restyle(textView, typography: typography)
             let length = (textView.string as NSString).length
@@ -544,6 +542,14 @@ struct CardTextView: NSViewRepresentable {
         /// Стиль, которым сейчас нарисован текст — см. updateNSView.
         var lastTypography: CardTypography?
         weak var textView: NSTextView?
+        /// Своя история отмен у каждой карточки: общий менеджер окна делили
+        /// все карточки и поля Ask AI — ⌘Z «проваливался» в чужую историю,
+        /// применял её к чужому тексту и ломался во всём окне.
+        let undoManager = UndoManager()
+
+        func undoManager(for view: NSTextView) -> UndoManager? {
+            undoManager
+        }
         /// Что было раскрыто при последней перекраске по движению курсора —
         /// см. MarkdownRenderer.revealedRanges.
         var lastRevealed: [NSRange]?
