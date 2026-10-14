@@ -74,29 +74,30 @@ enum MarkdownFormatting {
     }
 
     /// `[]`, `[ ]`, `- []`, `[x]` → стандартные `- [ ] ` / `- [x] `: так их
-    /// понимают Notion и другие Markdown-приложения. Правки идут с конца
-    /// текста (более ранние диапазоны не сдвигаются); `cursor` — где окажется
-    /// курсор после них: после маркера, если стоял в нём.
-    static func normalizedTaskMarkers(in text: String, cursor: Int) -> (edits: [(range: NSRange, marker: String)], cursor: Int) {
-        let ns = text as NSString
-        var edits: [(range: NSRange, marker: String)] = []
-        for paragraph in MarkdownStyler.parse(text) {
-            guard case .task(let done) = paragraph.block, let marker = paragraph.blockMarker else { continue }
-            let standard = done ? "- [x] " : "- [ ] "
-            if ns.substring(with: marker) != standard { edits.append((marker, standard)) }
+    /// понимают Notion и другие Markdown-приложения.
+    ///
+    /// Набор: пробел после `linePrefix` (всё от начала строки до курсора).
+    /// Если вместе с пробелом это нестандартный маркер — какой стандартный
+    /// вставить вместо префикса и пробела; иначе nil.
+    static func standardTaskMarker(typingSpaceAfter linePrefix: String) -> String? {
+        let candidate = linePrefix + " "
+        guard let match = candidate.range(of: MarkdownStyler.taskPattern, options: .regularExpression),
+              match.upperBound == candidate.endIndex else { return nil }
+        let standard = candidate.lowercased().contains("x") ? "- [x] " : "- [ ] "
+        return candidate == standard ? nil : standard
+    }
+
+    /// Вставка: нестандартные маркеры в начале строк вставляемого текста.
+    /// `atLineStart` — вставка в начало строки; иначе первая строка
+    /// продолжает чужую и её начало не трогается.
+    static func standardizingTaskMarkers(_ text: String, atLineStart: Bool) -> String {
+        var lines = text.components(separatedBy: "\n")
+        for index in lines.indices where index > 0 || atLineStart {
+            let line = lines[index]
+            guard let match = line.range(of: MarkdownStyler.taskPattern, options: .regularExpression) else { continue }
+            let standard = line[match].lowercased().contains("x") ? "- [x] " : "- [ ] "
+            lines[index] = standard + line[match.upperBound...]
         }
-        // С конца к началу: более поздние правки на позицию не влияют,
-        // более ранние сдвигают её — диапазоны в исходных координатах.
-        var newCursor = cursor
-        for edit in edits.reversed() {
-            let newLength = (edit.marker as NSString).length
-            if NSMaxRange(edit.range) <= newCursor {
-                newCursor += newLength - edit.range.length
-            } else if edit.range.location < newCursor {
-                newCursor = edit.range.location + newLength
-            }
-        }
-        return (edits.reversed(), newCursor)
+        return lines.joined(separator: "\n")
     }
 }
-

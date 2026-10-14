@@ -43,25 +43,20 @@ struct MarkdownFormattingTests {
         #expect(apply("*", "one\n\ntwo", "one\n\ntwo").text == "*one*\n\n*two*")
     }
 
-    private func normalized(_ text: String, cursor: Int) -> (text: String, cursor: Int) {
-        let result = MarkdownFormatting.normalizedTaskMarkers(in: text, cursor: cursor)
-        let ns = NSMutableString(string: text)
-        for edit in result.edits { ns.replaceCharacters(in: edit.range, with: edit.marker) }
-        return (ns as String, result.cursor)
+    @Test func typingSpaceExpandsTaskMarker() {
+        #expect(MarkdownFormatting.standardTaskMarker(typingSpaceAfter: "[]") == "- [ ] ")
+        #expect(MarkdownFormatting.standardTaskMarker(typingSpaceAfter: "[ ]") == "- [ ] ")
+        #expect(MarkdownFormatting.standardTaskMarker(typingSpaceAfter: "- []") == "- [ ] ")
+        #expect(MarkdownFormatting.standardTaskMarker(typingSpaceAfter: "[x]") == "- [x] ")
+        // Уже стандартный маркер и обычный текст — не трогаем.
+        #expect(MarkdownFormatting.standardTaskMarker(typingSpaceAfter: "- [ ]") == nil)
+        #expect(MarkdownFormatting.standardTaskMarker(typingSpaceAfter: "a []") == nil)
+        #expect(MarkdownFormatting.standardTaskMarker(typingSpaceAfter: "[] already") == nil)
     }
 
-    @Test func taskMarkersBecomeStandard() {
-        // Курсор сразу после только что набранного `[] ` — остаётся после маркера.
-        #expect(normalized("[] ", cursor: 3) == ("- [ ] ", 6))
-        // Несколько маркеров до курсора: сдвиг накапливается.
-        let text = "[] a\n[x] b\n- [] c"
-        let result = normalized(text, cursor: (text as NSString).length)
-        #expect(result.text == "- [ ] a\n- [x] b\n- [ ] c")
-        #expect(result.cursor == (result.text as NSString).length)
-        // Курсор перед маркерами не сдвигается.
-        #expect(normalized("x\n[] a", cursor: 1).cursor == 1)
-        // Стандартные маркеры не трогаются.
-        #expect(MarkdownFormatting.normalizedTaskMarkers(in: "- [ ] a\n- [x] b", cursor: 0).edits.isEmpty)
+    @Test func pastedTaskMarkersBecomeStandard() {
+        #expect(MarkdownFormatting.standardizingTaskMarkers("[] a\n[x] b\n- [ ] c", atLineStart: true) == "- [ ] a\n- [x] b\n- [ ] c")
+        // Вставка посреди строки: первая строка продолжает чужую — не трогаем.
+        #expect(MarkdownFormatting.standardizingTaskMarkers("[] a\n[] b", atLineStart: false) == "[] a\n- [ ] b")
     }
 }
-

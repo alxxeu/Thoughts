@@ -48,7 +48,9 @@ private final class CardNSTextView: NSTextView {
     // проверки формата. Просто ничего не делаем — вставки не происходит.
     override func paste(_ sender: Any?) {
         guard let plain = NSPasteboard.general.string(forType: .string) else { return }
-        insertText(plain, replacementRange: selectedRange())
+        let range = selectedRange()
+        let atLineStart = range.location == 0 || (string as NSString).character(at: range.location - 1) == 0x0A
+        insertText(MarkdownFormatting.standardizingTaskMarkers(plain, atLineStart: atLineStart), replacementRange: range)
     }
 
     // MARK: Format (⌘B, ⌘I, …) — меню шлёт эти действия по responder chain
@@ -691,28 +693,26 @@ struct CardTextView: NSViewRepresentable {
 
         func textDidChange(_ notification: Notification) {
             guard let textView = notification.object as? NSTextView else { return }
-            normalizeTaskMarkers(in: textView)
             CardTextView.restyle(textView, typography: typography)
             lastRevealed = nil // текст другой — при следующем движении курсора перекрасить
             parent.text = textView.string
             parent.onTextChange()
         }
 
-        /// Нестандартные маркеры чек-листа → `- [ ] ` / `- [x] ` (см.
-        /// MarkdownFormatting.normalizedTaskMarkers). Не во время IME-набора и не
-        /// во время ⌘Z/⇧⌘Z: иначе отмена тут же переписывалась бы заново, и
-        /// до правок раньше неё было не добраться.
-        private func normalizeTaskMarkers(in textView: NSTextView) {
-            guard !textView.hasMarkedText(),
-                  textView.undoManager?.isUndoing != true, textView.undoManager?.isRedoing != true,
-                  let storage = textView.textStorage else { return }
-            let result = MarkdownFormatting.normalizedTaskMarkers(in: textView.string, cursor: textView.selectedRange().location)
-            guard !result.edits.isEmpty else { return }
-            for edit in result.edits where textView.shouldChangeText(in: edit.range, replacementString: edit.marker) {
-                storage.replaceCharacters(in: edit.range, with: edit.marker)
-            }
-            textView.didChangeText()
-            textView.setSelectedRange(NSRange(location: min(result.cursor, storage.length), length: 0))
+        /// Пробел после `[]`, `[ ]`, `[x]`, `- []` в начале строки — вместо
+        /// него стандартный `- [ ] ` (см. MarkdownFormatting.standardTaskMarker).
+        /// Именно здесь, обычным вводом (insertText), а не правкой текста после
+        /// textDidChange: та ломала запись набора в истории отмен — ⌘Z то не
+        /// срабатывал, то оставлял обрывки вроде `- `.
+        func textView(_ textView: NSTextView, shouldChangeTextIn range: NSRange, replacementString: String?) -> Bool {
+            guard replacementString == " ", range.length == 0, !textView.hasMarkedText(),
+                  textView.undoManager?.isUndoing != true, textView.undoManager?.isRedoing != true else { return true }
+            let ns = textView.string as NSString
+            let lineStart = ns.lineRange(for: NSRange(location: range.location, length: 0)).location
+            let prefix = NSRange(location: lineStart, length: range.location - lineStart)
+            guard let standard = MarkdownFormatting.standardTaskMarker(typingSpaceAfter: ns.substring(with: prefix)) else { return true }
+            textView.insertText(standard, replacementRange: prefix)
+            return false
         }
 
         /// Курсор сдвинулся — показываем символы фрагмента, к которому он
