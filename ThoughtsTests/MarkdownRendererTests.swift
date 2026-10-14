@@ -110,4 +110,17 @@ struct MarkdownRendererTests {
         #expect(styled("```\n```").attribute(MarkdownRenderer.codeBlockKey, at: 0, effectiveRange: nil) == nil)
         #expect(styled("```\nx").attribute(MarkdownRenderer.codeBlockKey, at: 0, effectiveRange: nil) != nil)
     }
+
+    @Test func revealedRangesChangeOnlyNearSyntax() {
+        let text = "plain words here **bold** end"
+        let inPlain1 = MarkdownRenderer.revealedRanges(in: text, selection: NSRange(location: 2, length: 0))
+        let inPlain2 = MarkdownRenderer.revealedRanges(in: text, selection: NSRange(location: 8, length: 0))
+        let atBold = MarkdownRenderer.revealedRanges(in: text, selection: NSRange(location: 20, length: 0))
+        // Курсор ходит по обычному тексту — перекрашивать незачем.
+        #expect(inPlain1 == inPlain2)
+        // Подошёл к **bold** — раскрытое изменилось.
+        #expect(inPlain1 != atBold)
+        #expect(MarkdownRenderer.revealedRanges(in: text, selection: nil).isEmpty)
+    }
 }
+

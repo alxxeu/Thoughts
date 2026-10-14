@@ -537,6 +537,9 @@ struct CardTextView: NSViewRepresentable {
         /// Стиль, которым сейчас нарисован текст — см. updateNSView.
         var lastTypography: CardTypography?
         weak var textView: NSTextView?
+        /// Что было раскрыто при последней перекраске по движению курсора —
+        /// см. MarkdownRenderer.revealedRanges.
+        var lastRevealed: [NSRange]?
         private var typography: CardTypography { lastTypography ?? AppearanceSettings.shared.cardTypography }
 
         init(_ parent: CardTextView) {
@@ -690,6 +693,7 @@ struct CardTextView: NSViewRepresentable {
             guard let textView = notification.object as? NSTextView else { return }
             normalizeTaskMarkers(in: textView)
             CardTextView.restyle(textView, typography: typography)
+            lastRevealed = nil // текст другой — при следующем движении курсора перекрасить
             parent.text = textView.string
             parent.onTextChange()
         }
@@ -715,6 +719,10 @@ struct CardTextView: NSViewRepresentable {
         /// подошёл, и прячем у того, от которого ушёл.
         func textViewDidChangeSelection(_ notification: Notification) {
             guard let textView = notification.object as? NSTextView else { return }
+            let isFocused = textView.window?.firstResponder === textView
+            let revealed = MarkdownRenderer.revealedRanges(in: textView.string, selection: isFocused ? textView.selectedRange() : nil)
+            guard revealed != lastRevealed else { return }
+            lastRevealed = revealed
             CardTextView.restyle(textView, typography: typography)
             textView.needsDisplay = true
         }
@@ -730,6 +738,7 @@ struct CardTextView: NSViewRepresentable {
                 // Вне фокуса все служебные символы скрыты.
                 if let textView = self.textView {
                     CardTextView.restyle(textView, typography: self.typography)
+                    self.lastRevealed = nil
                 }
             }
         }

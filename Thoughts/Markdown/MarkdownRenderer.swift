@@ -202,6 +202,21 @@ enum MarkdownRenderer {
 
     private static let hiddenFont = NSFont.systemFont(ofSize: 0.1)
 
+    /// Что раскрыто при таком положении курсора — строки, блоки кода и
+    /// фрагменты, которых он касается (те же правила, что в style). Пока ответ
+    /// не меняется, перекрашивать при движении курсора незачем: перекраска
+    /// длинной карточки с перевёрсткой — около 10 мс на каждое нажатие стрелки.
+    static func revealedRanges(in text: String, selection: NSRange?) -> [NSRange] {
+        guard selection != nil else { return [] }
+        var result: [NSRange] = []
+        for paragraph in MarkdownStyler.parse(text) {
+            if touches(selection, paragraph.range) { result.append(paragraph.range) }
+            if let block = paragraph.codeBlock, touches(selection, block) { result.append(block) }
+            result += paragraph.spans.filter { touches(selection, $0) }
+        }
+        return result
+    }
+
     /// Курсор внутри диапазона или вплотную к нему (как в Bear: только что
     /// напечатанное `**жирное**` ещё показывает звёздочки).
     private static func touches(_ selection: NSRange?, _ range: NSRange) -> Bool {
