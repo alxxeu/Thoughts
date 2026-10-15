@@ -22,6 +22,18 @@ open canvas, exactly where they make sense to you.
 - **Backup & export** — full backups (optionally password-protected) and a readable Markdown export
 - **Liquid Glass** on macOS 26, with a graceful fallback look on macOS 14–25
 
+## Install
+
+- **Mac App Store** — [Thoughts on the App Store](https://apps.apple.com/app/id6809164763)
+- **Download** — [Thoughts.dmg](https://github.com/alxxeu/Thoughts/releases/latest/download/Thoughts.dmg), signed and notarized; it updates itself
+- **Homebrew**
+
+  ```bash
+  brew install alxxeu/tap/thoughts
+  ```
+
+Install one or the other, not both.
+
 ## What's new in 1.4
 
 Cards are now written in Markdown — with task lists, quotes and code
