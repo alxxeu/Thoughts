@@ -228,7 +228,9 @@ struct SpaceToolbar: View {
             y: max(0, (canvasSize.height - size.height) / 2)
         )
         withAnimation(spaceAISpring) {
-            _ = viewModel.addCard(at: origin, size: size, text: WhatsNew.markdown(for: note))
+            // Свечение по краям, как у карточки ответа AI, — до первого касания.
+            let card = viewModel.addCard(at: origin, size: size, text: WhatsNew.markdown(for: note))
+            viewModel.aiHighlightedCardIDs.insert(card.id)
             whatsNewNote = nil
         }
     }
