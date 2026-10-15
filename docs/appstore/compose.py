@@ -4,7 +4,7 @@
 raw/ holds full-screen captures (3600×2338) of the demo board
 (make-demo-board.py, Debug build with -demoBoard YES), the nine Spaces in
 raw/spaces/, SF Symbols exported to raw/sym/ and two hello wallpapers.
-1–3 are the screen as is, without the menu bar; 4 and 5 are composed here.
+Every shot gets a headline; 1–3 frame a screen capture without the menu bar.
 """
 import os
 from PIL import Image, ImageDraw, ImageFilter, ImageFont
@@ -43,9 +43,24 @@ def shadow(canvas, box, radius, blur=30, alpha=90, dy=16):
     canvas.paste(Image.new("RGB", canvas.size, (40, 30, 70)), (0, 0), layer.filter(ImageFilter.GaussianBlur(blur)))
 
 
-def headline(draw, title, subtitle, top=150):
-    draw.text((W / 2, top), title, font=font(112, "Bold"), fill=INK, anchor="mm")
-    draw.text((W / 2, top + 108), subtitle, font=font(50, "Regular"), fill=INK_SOFT, anchor="mm")
+def headline(draw, title, subtitle, top=150, light=False):
+    ink, soft = ((255, 255, 255), (215, 212, 230)) if light else (INK, INK_SOFT)
+    draw.text((W / 2, top), title, font=font(112, "Bold"), fill=ink, anchor="mm")
+    draw.text((W / 2, top + 108), subtitle, font=font(50, "Regular"), fill=soft, anchor="mm")
+
+
+def framed(shot, wall, title, subtitle):
+    """Заголовок на тёмных обоях и под ним снимок экрана в скруглённой рамке."""
+    canvas = Image.open(os.path.join(RAW, wall)).convert("RGB")
+    headline(ImageDraw.Draw(canvas), title, subtitle, light=True)
+    sh = H - 330 - 90
+    sw = round(sh * 1.6)
+    im = screen(os.path.join(RAW, shot)).resize((sw, sh), Image.LANCZOS)
+    x, y = (W - sw) // 2, 330
+    shadow(canvas, (x, y, x + sw, y + sh), 30, blur=40, alpha=160, dy=20)
+    canvas.paste(im, (x, y), rounded(im, 30))
+    ImageDraw.Draw(canvas).rounded_rectangle((x, y, x + sw - 1, y + sh - 1), 30, outline=(255, 255, 255), width=2)
+    return canvas
 
 
 def spaces_grid():
@@ -130,9 +145,12 @@ def features_grid():
 
 
 SHOTS = [
-    lambda: screen(os.path.join(RAW, "1-ideas.png")),
-    lambda: screen(os.path.join(RAW, "2-focus.png")),
-    lambda: screen(os.path.join(RAW, "3-locked.png")),
+    lambda: framed("1-ideas.png", "wall-purple-dark.png", "Your ideas, anywhere on the canvas",
+                   "Drag to create, tag by color, tidy up in one click."),
+    lambda: framed("2-focus.png", "wall-yellow-dark.png", "Write in focus",
+                   "Markdown that hides itself \u2014 just you and the words."),
+    lambda: framed("3-locked.png", "wall-silver-dark.png", "Lock a whole Space",
+                   "Private Spaces open only with your passcode or Touch ID."),
     spaces_grid,
     features_grid,
 ]
