@@ -753,6 +753,7 @@ final class BoardViewModel {
     }
 
     private func reindexSpotlight() {
+        guard !DemoMode.isActive else { return }
         // Space Lock — как и per-card Spoiler/Lock — не должен утекать через
         // системный поиск: карточки любого Space с isProtected == true
         // целиком исключаются из индекса, независимо от того, разблокирован

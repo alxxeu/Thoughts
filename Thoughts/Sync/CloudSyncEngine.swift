@@ -48,6 +48,7 @@ final class CloudSyncEngine: CKSyncEngineDelegate {
     /// Вызывается один раз при запуске (AppDelegate). Если синк был
     /// включён — поднимает движок с сохранённым состоянием.
     func start(viewModel: BoardViewModel) {
+        guard !DemoMode.isActive else { return }
         self.viewModel = viewModel
         viewModel.onLocalChanges = { [weak self] changes in
             self?.enqueue(changes)
