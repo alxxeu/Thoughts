@@ -23,7 +23,7 @@ struct ICloudSyncSection: View {
                         if settings.status == .syncing || isWorking {
                             ProgressView().controlSize(.small)
                         }
-                        Text(statusText)
+                        Text(settings.status.text)
                             .foregroundStyle(statusIsProblem ? AnyShapeStyle(.orange) : AnyShapeStyle(.secondary))
                             .multilineTextAlignment(.trailing)
                     }
@@ -47,16 +47,6 @@ struct ICloudSyncSection: View {
             Text(settings.isAvailableInBuild
                  ? "Cards, Spaces, tags, locks and formatting sync between your Macs, end-to-end encrypted in your iCloud. The Space Lock passcode and AI keys sync through iCloud Keychain. Appearance stays separate on each Mac."
                  : "iCloud sync isn\u{2019}t available in this build of Thoughts.")
-        }
-    }
-
-    private var statusText: String {
-        switch settings.status {
-        case .off: return "Off"
-        case .syncing: return "Syncing\u{2026}"
-        case .upToDate(let date): return "Up to date \u{00B7} \(date.formatted(date: .omitted, time: .shortened))"
-        case .unavailable(let message): return message
-        case .failed(let message): return "Couldn\u{2019}t sync: \(message)"
         }
     }
 

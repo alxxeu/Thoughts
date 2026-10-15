@@ -238,7 +238,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         if let viewModel {
             QuickCaptureController.shared.start(viewModel: viewModel)
             CloudSyncEngine.shared.askInitialSyncChoice = InitialSyncAlert.ask
-            CloudSyncEngine.shared.start(viewModel: viewModel)
+            CloudSyncEngine.shared.start(viewModel: viewModel.board)
             registerSpaceHotKeys(viewModel)
         }
         interactionMonitor = NSEvent.addLocalMonitorForEvents(

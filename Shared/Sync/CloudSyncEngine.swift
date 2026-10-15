@@ -1,6 +1,8 @@
 import CloudKit
 #if os(macOS)
 import AppKit
+#else
+import UIKit
 #endif
 
 /// Доска, которую синхронизирует движок (на Mac — BoardViewModel).
@@ -72,15 +74,17 @@ final class CloudSyncEngine: CKSyncEngineDelegate {
             self?.enqueue(changes)
         }
         #if os(macOS)
-        // shortcut: на iOS синк при активации не подписан, добавить с синком на iPhone.
+        let didBecomeActive = NSApplication.didBecomeActiveNotification
+        #else
+        let didBecomeActive = UIApplication.didBecomeActiveNotification
+        #endif
         activationObserver = NotificationCenter.default.addObserver(
-            forName: NSApplication.didBecomeActiveNotification,
+            forName: didBecomeActive,
             object: nil,
             queue: .main
         ) { [weak self] _ in
             Task { await self?.fetchChanges() }
         }
-        #endif
 
         guard settings.isEnabled else {
             settings.status = .off
@@ -188,6 +192,8 @@ final class CloudSyncEngine: CKSyncEngineDelegate {
         self.engine = engine
         #if os(macOS)
         NSApp.registerForRemoteNotifications()
+        #else
+        UIApplication.shared.registerForRemoteNotifications()
         #endif
         return engine
     }

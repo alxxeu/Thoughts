@@ -10,6 +10,16 @@ enum CloudSyncStatus: Equatable {
     case syncing
     case upToDate(Date)
     case failed(String)
+
+    var text: String {
+        switch self {
+        case .off: return "Off"
+        case .syncing: return "Syncing\u{2026}"
+        case .upToDate(let date): return "Up to date \u{00B7} \(date.formatted(date: .omitted, time: .shortened))"
+        case .unavailable(let message): return message
+        case .failed(let message): return "Couldn\u{2019}t sync: \(message)"
+        }
+    }
 }
 
 /// Настройка "Sync with iCloud" и текущий статус. Сам синк — CloudSyncEngine.

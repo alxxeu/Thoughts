@@ -717,6 +717,7 @@
 				CURRENT_PROJECT_VERSION = 1;
 				DEVELOPMENT_TEAM = QHST33HHWS;
 				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_FILE = "ThoughtsiOS-Info.plist";
 				INFOPLIST_KEY_CFBundleDisplayName = Thoughts;
 				INFOPLIST_KEY_ITSAppUsesNonExemptEncryption = NO;
 				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
@@ -750,6 +751,7 @@
 				CURRENT_PROJECT_VERSION = 1;
 				DEVELOPMENT_TEAM = QHST33HHWS;
 				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_FILE = "ThoughtsiOS-Info.plist";
 				INFOPLIST_KEY_CFBundleDisplayName = Thoughts;
 				INFOPLIST_KEY_ITSAppUsesNonExemptEncryption = NO;
 				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
@@ -782,6 +784,7 @@
 				CURRENT_PROJECT_VERSION = 1;
 				DEVELOPMENT_TEAM = QHST33HHWS;
 				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_FILE = "ThoughtsiOS-Info.plist";
 				INFOPLIST_KEY_CFBundleDisplayName = Thoughts;
 				INFOPLIST_KEY_ITSAppUsesNonExemptEncryption = NO;
 				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
