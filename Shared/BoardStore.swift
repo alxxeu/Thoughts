@@ -28,13 +28,21 @@ final class BoardStore {
     private(set) var unreadableFileURL: URL?
     private var hasReportedSaveError = false
 
-    private convenience init() {
-        let appSupport = FileManager.default.urls(
-            for: .applicationSupportDirectory,
-            in: .userDomainMask
-        ).first!
+    /// Папка данных: доска, Sync/, Backups/. Debug ходит в Development-
+    /// окружение CloudKit, App Store — в Production; общая папка смешала
+    /// бы их доски и состояние синка.
+    static let dataFolder: URL = {
+        #if DEBUG
+        let name = "Thoughts-Debug"
+        #else
+        let name = "Thoughts"
+        #endif
+        return FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first!
+            .appendingPathComponent(name, isDirectory: true)
+    }()
 
-        let folder = appSupport.appendingPathComponent("Thoughts", isDirectory: true)
+    private convenience init() {
+        let folder = Self.dataFolder
         try? FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
 
         self.init(fileURL: folder.appendingPathComponent(DemoMode.isActive ? "demo-board.json" : "board.json"))
