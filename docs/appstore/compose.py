@@ -49,13 +49,19 @@ def headline(draw, title, subtitle, top=150, light=False):
     draw.text((W / 2, top + 108), subtitle, font=font(50, "Regular"), fill=soft, anchor="mm")
 
 
-def framed(shot, wall, title, subtitle):
-    """Заголовок на тёмных обоях и под ним снимок экрана в скруглённой рамке."""
+def framed(shot, wall, title, subtitle, crop=None):
+    """Заголовок на тёмных обоях и под ним снимок экрана в скруглённой рамке.
+    crop — область 16:10 исходного снимка (x, y, w, h), чтобы показать крупнее."""
     canvas = Image.open(os.path.join(RAW, wall)).convert("RGB")
     headline(ImageDraw.Draw(canvas), title, subtitle, light=True)
     sh = H - 330 - 90
     sw = round(sh * 1.6)
-    im = screen(os.path.join(RAW, shot)).resize((sw, sh), Image.LANCZOS)
+    if crop:
+        x, y, w, h = crop
+        im = Image.open(os.path.join(RAW, shot)).convert("RGB").crop((x, y, x + w, y + h))
+    else:
+        im = screen(os.path.join(RAW, shot))
+    im = im.resize((sw, sh), Image.LANCZOS)
     x, y = (W - sw) // 2, 330
     shadow(canvas, (x, y, x + sw, y + sh), 30, blur=40, alpha=160, dy=20)
     canvas.paste(im, (x, y), rounded(im, 30))
@@ -63,29 +69,57 @@ def framed(shot, wall, title, subtitle):
     return canvas
 
 
-def spaces_grid():
+def perspective_coeffs(quad, w, h):
+    """Коэффициенты Image.PERSPECTIVE: точки quad (выход) → углы картинки w×h."""
+    src = [(0, 0), (w, 0), (w, h), (0, h)]
+    rows, rhs = [], []
+    for (x, y), (u, v) in zip(quad, src):
+        rows.append([x, y, 1, 0, 0, 0, -u * x, -u * y]); rhs.append(u)
+        rows.append([0, 0, 0, x, y, 1, -v * x, -v * y]); rhs.append(v)
+    n = 8
+    m = [r + [b] for r, b in zip(rows, rhs)]
+    for i in range(n):  # Гаусс с выбором главного элемента
+        p = max(range(i, n), key=lambda r: abs(m[r][i]))
+        m[i], m[p] = m[p], m[i]
+        for r in range(n):
+            if r != i:
+                k = m[r][i] / m[i][i]
+                m[r] = [a - k * b for a, b in zip(m[r], m[i])]
+    return [m[i][n] / m[i][i] for i in range(n)]
+
+
+def spaces_stack():
+    """Пять Spaces стопкой в перспективе: от ⌥5 сзади к ⌥1 спереди."""
     canvas = Image.open(os.path.join(RAW, "wall-purple-light.png")).convert("RGB")
     draw = ImageDraw.Draw(canvas)
     headline(draw, "Up to nine Spaces",
-             "A separate canvas for every part of your life — switch with ⌥1–9.")
-    names = ["Ideas", "Writing", "Launch", "Journal", "Travel", "Reading", "Recipes", "Finances", "Fitness"]
-    tw, gap = 680, 44
-    th = round(tw / 1.6)
-    left = (W - 3 * tw - 2 * gap) // 2
-    top = 360
-    label = font(34, "Semibold")
-    for i, name in enumerate(names):
-        x = left + (i % 3) * (tw + gap)
-        y = top + (i // 3) * (th + gap)
-        thumb = screen(os.path.join(RAW, "spaces", f"{i + 1}.png")).resize((tw, th), Image.LANCZOS)
-        shadow(canvas, (x, y, x + tw, y + th), 22, blur=22, alpha=70, dy=10)
-        canvas.paste(thumb, (x, y), rounded(thumb, 22))
-        text = f"⌥{i + 1}  {name}"
-        tx0, _, tx1, _ = draw.textbbox((0, 0), text, font=label)
-        pw, ph = tx1 - tx0 + 40, 58
-        px, py = x + 18, y + th - ph - 18
-        draw.rounded_rectangle((px, py, px + pw, py + ph), ph // 2, fill=(255, 255, 255))
-        draw.text((px + 20, py + ph / 2), text, font=label, fill=INK, anchor="lm")
+             "A separate canvas for every part of your life \u2014 switch with \u23251\u20139.")
+    names = {1: "Ideas", 2: "Writing", 3: "Launch", 4: "Journal", 5: "Travel"}
+    tw, th = 1600, 1000
+    left, step, top, height = 120, 340, 420, 1180  # левый край ближайший — самый высокий
+    width, inset = 1280, 170                       # правый край уходит вглубь
+    label = font(40, "Semibold")
+    for i, slot in enumerate([5, 4, 3, 2, 1]):
+        thumb = screen(os.path.join(RAW, "spaces", f"{slot}.png")).resize((tw, th), Image.LANCZOS)
+        d = ImageDraw.Draw(thumb)
+        text = f"\u2325{slot}  {names[slot]}"
+        tx0, _, tx1, _ = d.textbbox((0, 0), text, font=label)
+        pw, ph = tx1 - tx0 + 52, 76
+        d.rounded_rectangle((32, th - ph - 32, 32 + pw, th - 32), ph // 2, fill=(255, 255, 255))
+        d.text((58, th - 32 - ph / 2), text, font=label, fill=INK, anchor="lm")
+        # Правая часть темнеет — как свет, падающий слева.
+        shade = Image.linear_gradient("L").rotate(90, expand=True).resize((tw, th)).point(lambda v: int((255 - v) * 0.3))
+        thumb.paste(Image.new("RGB", (tw, th), (20, 16, 40)), (0, 0), shade)
+        mask = rounded(thumb, 40)
+
+        x0 = left + i * step
+        quad = [(x0, top), (x0 + width, top + inset), (x0 + width, top + height - inset), (x0, top + height)]
+        coeffs = perspective_coeffs(quad, tw, th)
+        warped = thumb.transform(canvas.size, Image.PERSPECTIVE, coeffs, Image.BICUBIC)
+        warped_mask = mask.transform(canvas.size, Image.PERSPECTIVE, coeffs, Image.BICUBIC)
+        shadow_mask = warped_mask.filter(ImageFilter.GaussianBlur(30)).point(lambda v: v * 0.5)
+        canvas.paste(Image.new("RGB", canvas.size, (40, 30, 70)), (-18, 18), shadow_mask)
+        canvas.paste(warped, (0, 0), warped_mask)
     return canvas
 
 
@@ -148,10 +182,10 @@ SHOTS = [
     lambda: framed("1-ideas.png", "wall-purple-dark.png", "Your ideas, anywhere on the canvas",
                    "Drag to create, tag by color, tidy up in one click."),
     lambda: framed("2-focus.png", "wall-yellow-dark.png", "Write in focus",
-                   "Markdown that hides itself \u2014 just you and the words."),
+                   "Markdown that hides itself \u2014 just you and the words.", crop=(800, 585, 2000, 1250)),
     lambda: framed("3-locked.png", "wall-silver-dark.png", "Lock a whole Space",
-                   "Private Spaces open only with your passcode or Touch ID."),
-    spaces_grid,
+                   "Private Spaces open only with your passcode or Touch ID.", crop=(1160, 752, 1280, 800)),
+    spaces_stack,
     features_grid,
 ]
 
