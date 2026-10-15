@@ -5,8 +5,10 @@
 
 const W = 402, H = 874, GAP = 120;
 const SHEET_TOP = 116; // над картой редактора видна полоса размытой ленты
-// true — пересобрать свои фреймы (только пока их не дорабатывали руками).
-const REBUILD = false;
+// Имена состояний, которые пересобрать (только если их не дорабатывали руками);
+// true — все.
+const REBUILD = [];
+const rebuilds = (name) => REBUILD === true || (Array.isArray(REBUILD) && REBUILD.includes(name));
 const C = {
   bg: '#F2F2F4', block: '#D9D9DE', dark: '#AEAEB4', line: '#C4C4CA',
   sys: '#C7C7CC', dim: '#8E8E93',
@@ -75,8 +77,10 @@ function settingsButton(f) {
 const CAPSULES = [72, 88, 64, 96, 80, 70, 90, 76, 84];
 const CURRENT = 2;
 
-// Spaces над полем: 'capsules' — лента капсул, 'dots' — схлопнуты в точки.
+// Spaces над полем: 'capsules' — лента капсул, 'dots' — схлопнуты в точки;
+// 'grabber' — при вводе: язычок, потянуть вверх → редактор (Р17).
 function spaces(f, y, mode) {
+  if (mode === 'grabber') { rect(f, (W - 40) / 2, y - 12, 40, 5, C.dim, 3).name = 'Grabber'; return y - 12; }
   if (mode === 'capsules') {
     let x = 16;
     CAPSULES.forEach((w, i) => {
@@ -142,8 +146,8 @@ const STATES = [
   ['S1 · Лента', (f) => { chrome(f); const top = settingsButton(f); const sy = composer(f, H - 34); feed(f, top, sy - 8, FEED); }],
   ['S1 · Пустой Space', (f) => { chrome(f); settingsButton(f); const sy = composer(f, H - 34); rect(f, (W - 180) / 2, sy - 60, 180, 10, C.line, 5); }],
   ['S1 · Прокрутка вверх (капсулы → точки)', (f) => { chrome(f); const top = settingsButton(f); const sy = composer(f, H - 34, { mode: 'dots' }); feed(f, top, sy - 8, [...FEED].reverse()); }],
-  ['S1 · Ввод (точки, кнопка в поле)', (f) => { chrome(f); const top = settingsButton(f); const ky = keyboard(f); const sy = composer(f, ky - 8, { typed: true, mode: 'dots' }); feed(f, top, sy - 8, FEED); }],
-  ['S1 · Длинный ввод', (f) => { chrome(f); const top = settingsButton(f); const ky = keyboard(f); const sy = composer(f, ky - 8, { typed: true, multiline: true, mode: 'dots' }); feed(f, top, sy - 8, FEED); }],
+  ['S1 · Ввод (язычок, кнопка в поле)', (f) => { chrome(f); const top = settingsButton(f); const ky = keyboard(f); const sy = composer(f, ky - 8, { typed: true, mode: 'grabber' }); feed(f, top, sy - 8, FEED); }],
+  ['S1 · Длинный ввод (язычок)', (f) => { chrome(f); const top = settingsButton(f); const ky = keyboard(f); const sy = composer(f, ky - 8, { typed: true, multiline: true, mode: 'grabber' }); feed(f, top, sy - 8, FEED); }],
   ['S2 · Карта', (f) => {
     s1Behind(f);
     const bar = H - 34 - 48;
@@ -189,14 +193,14 @@ run(async (log) => {
   const page = pageNamed('iOS — Wireframes');
   await page.loadAsync();
   let made = 0;
-  if (REBUILD) { // убрать свои фреймы состояний, которых больше нет в списке
+  { // убрать свои фреймы состояний, которых больше нет в списке (переименованные)
     const names = new Set(STATES.map(([n]) => `wf:${n}`));
     page.findAll((n) => n.getPluginData(MARK).startsWith('wf:') && !names.has(n.getPluginData(MARK))).forEach((n) => n.remove());
   }
   STATES.forEach(([name, draw], i) => {
     const key = `wf:${name}`;
     const old = findMarked(key, page);
-    if (old && REBUILD) old.remove();
+    if (old && rebuilds(name)) old.remove();
     else if (old) { log.push(`есть, не трогаю: ${name}`); return; }
     const f = mark(figma.createFrame(), key);
     page.appendChild(f);
