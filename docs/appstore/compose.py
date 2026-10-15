@@ -89,27 +89,32 @@ def perspective_coeffs(quad, w, h):
 
 
 def spaces_stack():
-    """Пять Spaces стопкой в перспективе: от ⌥5 сзади к ⌥1 спереди."""
+    """Пять Spaces стопкой в перспективе, снизу за край кадра; спереди ⌥1."""
     canvas = Image.open(os.path.join(RAW, "wall-purple-light.png")).convert("RGB")
     draw = ImageDraw.Draw(canvas)
     headline(draw, "Up to nine Spaces",
              "A separate canvas for every part of your life \u2014 switch with \u23251\u20139.")
-    names = {1: "Ideas", 2: "Writing", 3: "Launch", 4: "Journal", 5: "Travel"}
+    names = {1: "Ideas", 2: "Writing", 3: "Launch", 5: "Travel", 8: "Finances"}
     tw, th = 1600, 1000
-    left, step, top, height = 120, 340, 420, 1180  # левый край ближайший — самый высокий
-    width, inset = 1280, 170                       # правый край уходит вглубь
-    label = font(40, "Semibold")
-    for i, slot in enumerate([5, 4, 3, 2, 1]):
-        thumb = screen(os.path.join(RAW, "spaces", f"{slot}.png")).resize((tw, th), Image.LANCZOS)
-        d = ImageDraw.Draw(thumb)
-        text = f"\u2325{slot}  {names[slot]}"
-        tx0, _, tx1, _ = d.textbbox((0, 0), text, font=label)
-        pw, ph = tx1 - tx0 + 52, 76
-        d.rounded_rectangle((32, th - ph - 32, 32 + pw, th - 32), ph // 2, fill=(255, 255, 255))
-        d.text((58, th - 32 - ph / 2), text, font=label, fill=INK, anchor="lm")
+    left, step, top, height = 110, 345, 600, 1500  # низ уходит за край кадра
+    width, inset = 1300, 110                       # правый край уходит вглубь
+    label = font(34, "Semibold")
+    for i, slot in enumerate([5, 8, 3, 2, 1]):
+        if slot == 8:
+            # Закрытый Space — крупнее и со сдвигом, чтобы замок попал в видимую полосу.
+            thumb = Image.open(os.path.join(RAW, "3-locked.png")).convert("RGB").crop((1440, 590, 3240, 1715))
+        else:
+            thumb = screen(os.path.join(RAW, "spaces", f"{slot}.png"))
+        thumb = thumb.resize((tw, th), Image.LANCZOS)
         # Правая часть темнеет — как свет, падающий слева.
         shade = Image.linear_gradient("L").rotate(90, expand=True).resize((tw, th)).point(lambda v: int((255 - v) * 0.3))
         thumb.paste(Image.new("RGB", (tw, th), (20, 16, 40)), (0, 0), shade)
+        d = ImageDraw.Draw(thumb)
+        text = f"\u2325{slot}  {names[slot]}"
+        tx0, _, tx1, _ = d.textbbox((0, 0), text, font=label)
+        pw, ph = tx1 - tx0 + 44, 64
+        d.rounded_rectangle((32, 32, 32 + pw, 32 + ph), ph // 2, fill=(255, 255, 255))
+        d.text((54, 32 + ph / 2), text, font=label, fill=INK, anchor="lm")
         mask = rounded(thumb, 40)
 
         x0 = left + i * step
@@ -182,9 +187,9 @@ SHOTS = [
     lambda: framed("1-ideas.png", "wall-purple-dark.png", "Your ideas, anywhere on the canvas",
                    "Drag to create, tag by color, tidy up in one click."),
     lambda: framed("2-focus.png", "wall-yellow-dark.png", "Write in focus",
-                   "Markdown that hides itself \u2014 just you and the words.", crop=(800, 585, 2000, 1250)),
+                   "Markdown that hides itself \u2014 just you and the words.", crop=(400, 335, 2800, 1750)),
     lambda: framed("3-locked.png", "wall-silver-dark.png", "Lock a whole Space",
-                   "Private Spaces open only with your passcode or Touch ID.", crop=(1160, 752, 1280, 800)),
+                   "Private Spaces open only with your passcode or Touch ID.", crop=(600, 402, 2400, 1500)),
     spaces_stack,
     features_grid,
 ]
