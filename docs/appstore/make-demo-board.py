@@ -97,6 +97,9 @@ git commit --amend --no-edit
 *Perfect Days* — Wim Wenders""", 3, 2, at=(1000, 700)),
     card("""### Question
 Why do we keep notes we **never** read again?""", 4, 2, at=(1100, 950)),
+    card("Surprise for Mia's birthday: rooftop dinner on Saturday", 2, 2, privacy="spoiler", at=(250, 1000)),
+    card("Salary talk: ask for the senior role first, then the number", 2, 2, privacy="spoiler", at=(1450, 650)),
+    card("Studio Wi-Fi: sunflower-42-meadow", 2, 2, privacy="lock", at=(1500, 300)),
 ]
 
 # 2 — Writing: one long piece for Focus Mode.
