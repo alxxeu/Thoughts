@@ -501,7 +501,8 @@ struct ContentView: View {
                 viewModel: viewModel,
                 canvasSize: canvasSize,
                 topInset: effectiveTopInset,
-                isFocusModeActive: focusedCardID != nil
+                isFocusModeActive: focusedCardID != nil,
+                isOnboardingActive: onboardingViewModel.isActive
             )
             .padding(.top, workspacePillTopPadding)
             // В Focus Mode капсула Space скрыта целиком — она ломает

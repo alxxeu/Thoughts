@@ -104,3 +104,43 @@ struct ReleaseNotesView: View {
         .frame(width: 420, height: 440)
     }
 }
+
+/// Плашка «What’s new» после обновления — см. SpaceToolbar.whatsNewBanner.
+enum WhatsNew {
+    private static let lastSeenKey = "whatsNew.lastSeenVersion"
+
+    static var currentVersion: String {
+        Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? ""
+    }
+
+    /// Заметка текущей версии, если её ещё не показывали. Первая установка
+    /// (тур не пройден, версии не помнили) — не обновление: там онбординг,
+    /// версию просто запоминаем. Тур пройден, а версии нет — это
+    /// пользователь версии до появления плашки, ему показываем.
+    static func pendingNote(
+        defaults: UserDefaults = .standard,
+        version: String = currentVersion,
+        hasCompletedTour: Bool = OnboardingState.hasCompletedTour
+    ) -> ReleaseNote? {
+        let lastSeen = defaults.string(forKey: lastSeenKey)
+        if lastSeen == nil, !hasCompletedTour {
+            defaults.set(version, forKey: lastSeenKey)
+            return nil
+        }
+        guard lastSeen != version else { return nil }
+        return ReleaseNotes.all.first { $0.version == version }
+    }
+
+    static func markSeen(defaults: UserDefaults = .standard, version: String = currentVersion) {
+        defaults.set(version, forKey: lastSeenKey)
+    }
+
+    /// Текст карточки с заметкой — обычный Markdown карточек.
+    static func markdown(for note: ReleaseNote) -> String {
+        var lines = ["# What\u{2019}s new in \(note.version)"]
+        for section in note.sections {
+            lines += ["", "## \(section.title)"] + section.items.map { "- \($0)" }
+        }
+        return lines.joined(separator: "\n")
+    }
+}

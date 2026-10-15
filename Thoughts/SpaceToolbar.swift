@@ -10,6 +10,8 @@ struct SpaceToolbar: View {
     /// В Focus Mode плашка скрыта — открытая панель Ask AI закрывается,
     /// иначе она просто "вернулась" бы при выходе из фокуса.
     var isFocusModeActive: Bool
+    /// Во время онбординга плашка What’s new ждёт.
+    var isOnboardingActive: Bool
 
     @Environment(\.colorScheme) private var colorScheme
     /// Space, который сейчас переименовывают (nil — поле закрыто). Имя
@@ -32,6 +34,11 @@ struct SpaceToolbar: View {
     /// наведения (см. setToolbarHover), как обычные системные tooltips.
     @State private var tooltipVisibleLabel: String?
     @State private var tooltipTask: Task<Void, Never>?
+
+    /// Заметка для плашки What’s new; nil — плашки нет.
+    @State private var whatsNewNote = WhatsNew.pendingNote()
+    /// После ✕ плашка пару секунд подсказывает, где найти заметки.
+    @State private var isShowingWhatsNewHint = false
 
     private var isEditingWorkspaceName: Bool { renamingSlot != nil }
 
@@ -123,6 +130,8 @@ struct SpaceToolbar: View {
 
             if isAskingSpaceAI {
                 askAIPanel
+            } else if let whatsNewNote, !isOnboardingActive {
+                whatsNewBanner(whatsNewNote)
             }
         }
         .onReceive(NotificationCenter.default.publisher(for: .clearTextSelection)) { _ in
@@ -149,6 +158,89 @@ struct SpaceToolbar: View {
     }
 
     private var spaceAISpring: Animation { .spring(response: 0.4, dampingFraction: 0.76) }
+
+    /// Как у Arc: «обновились» + What’s new (карточка с заметками по центру
+    /// Space) или ✕ (подсказка, где заметки лежат, и плашка уходит).
+    private func whatsNewBanner(_ note: ReleaseNote) -> some View {
+        VStack(alignment: .leading, spacing: 8) {
+            if isShowingWhatsNewHint {
+                Text("Read it anytime in Settings \u{2192} About \u{2192} Release Notes.")
+                    .font(.system(size: 12))
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            } else {
+                HStack(alignment: .firstTextBaseline) {
+                    Text("Thoughts updated to \(note.version)")
+                        .font(.system(size: 13, weight: .semibold))
+                    Image(systemName: "sparkle")
+                        .font(.system(size: 10))
+                        .foregroundStyle(Color.accentColor)
+                    Spacer()
+                    Button {
+                        dismissWhatsNew()
+                    } label: {
+                        Image(systemName: "xmark")
+                            .font(.system(size: 11, weight: .semibold))
+                            .foregroundStyle(.secondary)
+                            .frame(width: 18, height: 18)
+                            .contentShape(Rectangle())
+                    }
+                    .buttonStyle(.plain)
+                    .help("Close")
+                }
+                Button {
+                    openWhatsNew(note)
+                } label: {
+                    HStack(spacing: 8) {
+                        Image(systemName: "gift")
+                        Text("What\u{2019}s new")
+                        Image(systemName: "arrow.right")
+                            .font(.system(size: 11, weight: .semibold))
+                        Spacer()
+                    }
+                    .font(.system(size: 13))
+                    .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+            }
+        }
+        .padding(.horizontal, 14)
+        .padding(.vertical, 10)
+        .frame(width: 240)
+        .background(
+            CardSurfaceBackground(
+                cornerRadius: 16,
+                usesGlassEffect: false,
+                tintOpacity: 0.15,
+                materialStyle: .thickMaterial,
+                lightMaterialStyle: .ultraThinMaterial,
+                lightTintOpacity: 0.2
+            )
+        )
+        .transition(.scale(scale: 0.8, anchor: .top).combined(with: .opacity))
+    }
+
+    private func openWhatsNew(_ note: ReleaseNote) {
+        WhatsNew.markSeen()
+        let size = CGSize(width: 360, height: 440)
+        let origin = CGPoint(
+            x: max(0, (canvasSize.width - size.width) / 2),
+            y: max(0, (canvasSize.height - size.height) / 2)
+        )
+        withAnimation(spaceAISpring) {
+            _ = viewModel.addCard(at: origin, size: size, text: WhatsNew.markdown(for: note))
+            whatsNewNote = nil
+        }
+    }
+
+    private func dismissWhatsNew() {
+        WhatsNew.markSeen()
+        withAnimation(.easeInOut(duration: 0.2)) { isShowingWhatsNewHint = true }
+        Task {
+            try? await Task.sleep(for: .seconds(3))
+            withAnimation(.easeIn(duration: 0.25)) { whatsNewNote = nil }
+        }
+    }
 
     /// Раскрывается/закрывается через insertion/removal с масштабом от
     /// верхнего края и пружиной на входе. В левом нижнем углу поля — выбор провайдера
