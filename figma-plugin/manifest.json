@@ -1,0 +1,22 @@
+{
+  "name": "Thoughts Builder",
+  "id": "thoughts-builder-local",
+  "api": "1.0.0",
+  "main": "code.js",
+  "editorType": [
+    "figma"
+  ],
+  "documentAccess": "dynamic-page",
+  "networkAccess": {
+    "allowedDomains": [
+      "none"
+    ],
+    "devAllowedDomains": [
+      "http://localhost:8377"
+    ],
+    "reasoning": "Dev only: sends step logs to a local log server"
+  },
+  "permissions": [
+    "teamlibrary"
+  ]
+}
