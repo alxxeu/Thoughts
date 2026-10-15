@@ -83,31 +83,31 @@ struct SettingsView: View {
                     }
                     .formStyle(.grouped)
                     .tabItem {
-                        Label("General", systemImage: "gearshape")
+                        Label("General", systemImage: "gearshape.fill")
                     }
                     .tag(SettingsNavigation.Tab.general)
 
                     AppearanceSettingsTab(settings: viewModel.appearanceSettings)
                         .tabItem {
-                            Label("Appearance", systemImage: "paintbrush")
+                            Label("Appearance", systemImage: "paintbrush.fill")
                         }
                         .tag(SettingsNavigation.Tab.appearance)
 
                     SecuritySettingsTab(viewModel: viewModel)
                         .tabItem {
-                            Label("Security", systemImage: "lock.shield")
+                            Label("Security", systemImage: "shield.lefthalf.filled")
                         }
                         .tag(SettingsNavigation.Tab.security)
 
                     ShortcutsSettingsTab()
                         .tabItem {
-                            Label("Shortcuts", systemImage: "keyboard")
+                            Label("Shortcuts", systemImage: "command.square.fill")
                         }
                         .tag(SettingsNavigation.Tab.shortcuts)
 
                     AISettingsTab()
                         .tabItem {
-                            Label("AI", systemImage: "sparkles")
+                            Label("AI", systemImage: Self.symbol("sparkles.2", fallback: "sparkles"))
                         }
                         .tag(SettingsNavigation.Tab.ai)
 
@@ -118,6 +118,7 @@ struct SettingsView: View {
                             SettingsRowButton(title: "Release Notes\u{2026}") {
                                 isShowingReleaseNotes = true
                             }
+                            CheckForUpdatesRow()
                         }
 
                         Section {
@@ -137,6 +138,16 @@ struct SettingsView: View {
                                         .foregroundStyle(.secondary)
                                 }
                             }
+                            Link(destination: URL(string: "mailto:alxxeu.dev@proton.me")!) {
+                                HStack {
+                                    Text("Email")
+                                    Spacer()
+                                    Text("alxxeu.dev@proton.me")
+                                        .foregroundStyle(.secondary)
+                                    Image(systemName: "arrow.up.right")
+                                        .foregroundStyle(.secondary)
+                                }
+                            }
                         } footer: {
                             Text("Follow for updates and release notes.")
                         }
@@ -146,7 +157,7 @@ struct SettingsView: View {
                         ReleaseNotesView()
                     }
                     .tabItem {
-                        Label("About", systemImage: "info.circle")
+                        Label("About", systemImage: Self.symbol("info.app.fill", fallback: "info.circle.fill"))
                     }
                     .tag(SettingsNavigation.Tab.about)
                 }
@@ -157,6 +168,12 @@ struct SettingsView: View {
 
     private var appVersion: String {
         Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "1.0"
+    }
+
+    /// sparkles.2 есть с macOS 26, info.app.fill — с macOS 27; на старых
+    /// системах вкладка осталась бы без иконки.
+    private static func symbol(_ name: String, fallback: String) -> String {
+        NSImage(systemSymbolName: name, accessibilityDescription: nil) != nil ? name : fallback
     }
 
     private var lockedPlaceholder: some View {
