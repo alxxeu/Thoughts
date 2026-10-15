@@ -269,6 +269,13 @@ struct ContentView: View {
         .onReceive(NotificationCenter.default.publisher(for: .cardWasResized)) { _ in
             onboardingViewModel.handle(.cardResized)
         }
+        .onReceive(NotificationCenter.default.publisher(for: .setCardTag)) { notification in
+            guard let id = textFocusedCardID ?? focusedCardID,
+                  let index = viewModel.cards.firstIndex(where: { $0.id == id }) else { return }
+            let color = notification.object as? CardTagColor
+            viewModel.cards[index].tagColor = color
+            if color != nil { onboardingViewModel.handle(.tagColorSet) }
+        }
         .onReceive(NotificationCenter.default.publisher(for: .cardTagColorWasSet)) { _ in
             onboardingViewModel.handle(.tagColorSet)
         }

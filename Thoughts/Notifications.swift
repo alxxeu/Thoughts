@@ -40,6 +40,8 @@ extension Notification.Name {
     static let cardWasResized = Notification.Name("CardWasResized")
     /// TagPopoverView — выбран настоящий цвет тега (не "без тега").
     static let cardTagColorWasSet = Notification.Name("CardTagColorWasSet")
+    /// object — CardTagColor или nil (снять тег).
+    static let setCardTag = Notification.Name("SetCardTag")
     /// TagPopoverView — privacyMode переключился ИМЕННО в .spoiler (не обратно в .none).
     static let cardDidBecomeSpoiler = Notification.Name("CardDidBecomeSpoiler")
 }

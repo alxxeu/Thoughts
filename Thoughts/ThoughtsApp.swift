@@ -65,6 +65,24 @@ struct ThoughtsApp: App {
                 formatButton("Underline", "markdownUnderline:", "u")
                 formatButton("Strikethrough", "markdownStrikethrough:", "x", modifiers: [.command, .shift])
                 formatButton("Highlight", "markdownHighlight:", "h", modifiers: [.command, .shift])
+
+                Divider()
+
+                // Тег карточки, в которой курсор (или открытой в Focus Mode) —
+                // см. ContentView, .setCardTag.
+                Menu("Tag") {
+                    ForEach(Array(CardTagColor.allCases.enumerated()), id: \.element) { index, color in
+                        Button(color.rawValue.capitalized) {
+                            NotificationCenter.default.post(name: .setCardTag, object: color)
+                        }
+                        .keyboardShortcut(KeyEquivalent(Character("\(index + 1)")), modifiers: .control)
+                    }
+                    Divider()
+                    Button("Remove Tag") {
+                        NotificationCenter.default.post(name: .setCardTag, object: nil)
+                    }
+                    .keyboardShortcut("0", modifiers: .control)
+                }
             }
             // Само удаление не отсюда — только запрос на подтверждение;
             // см. requestClearSpace/isShowingClearSpaceConfirmation в
