@@ -102,6 +102,31 @@ Why do we keep notes we **never** read again?""", 4, 2, at=(1100, 950)),
     card("Studio Wi-Fi: sunflower-42-meadow", 2, 2, privacy="lock", at=(1500, 300)),
 ]
 
+# Для видео: меньше карточек и пустой центр — там создаётся новая.
+ideas_video = [
+    card("""# Thoughts 2.0
+What if cards could **link** to each other?""", 4, 2, "red", at=(140, 150)),
+    card("""## Pricing
+- Free canvas, forever
+- **Pro**: sync and AI""", 3, 3, "red", at=(520, 140)),
+    card("""## Reading list
+1. Make Something Wonderful
+2. ~~Deep Work~~""", 3, 3, "blue", at=(1340, 140)),
+    card("""> The best way to have a good idea is to have lots of ideas.""", 3, 2, "blue", at=(1380, 470)),
+    card("""## Groceries
+- [ ] Oat milk
+- [x] Coffee beans
+- [ ] Basil""", 3, 3, "green", at=(160, 520)),
+    card("""### Command I keep forgetting
+```
+git commit --amend --no-edit
+```""", 4, 2, at=(200, 880)),
+    card("Surprise for Mia's birthday: rooftop dinner on Saturday", 2, 2, privacy="spoiler", at=(1240, 860)),
+    card("Studio Wi-Fi: sunflower-42-meadow", 2, 2, privacy="lock", at=(1460, 820)),
+]
+if "video" in __import__("sys").argv:
+    ideas = ideas_video
+
 # 2 — Writing: one long piece for Focus Mode.
 writing = flow([
     card("""# The quiet desk
