@@ -7,7 +7,7 @@ import AppKit
 /// Ask Again.
 ///
 /// Вставка и замена идут через сам NSTextView (insertText:replacementRange:)
-/// — работает ⌘Z, а card.text/formattingData синхронизируются обычным путём
+/// — работает ⌘Z, а card.text синхронизируется обычным путём
 /// через textDidChange (см. CardTextView.Coordinator).
 final class AskAIPopoverController: NSObject, NSPopoverDelegate {
     /// Открыт не больше одного popover за раз.
@@ -36,8 +36,7 @@ final class AskAIPopoverController: NSObject, NSPopoverDelegate {
         let hasSelection = range.length > 0 && NSMaxRange(range) <= text.length
         let context = hasSelection ? text.substring(with: range) : textView.string
         model = AskAIModel(
-            // Разделитель — символ-заглушка U+FFFC, AI он ни к чему.
-            context: context.replacingOccurrences(of: "\u{FFFC}", with: "---"),
+            context: context,
             isAboutSelection: hasSelection
         )
         super.init()
@@ -115,13 +114,12 @@ final class AskAIModel {
         let isAboutSelection = isAboutSelection
         Task {
             do {
-                let service = try AITextServiceFactory.makeActiveService()
-                let label = isAboutSelection ? "Selected text from a note" : "Note"
-                let userText = context.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
-                    ? question
-                    : "\(label):\n\(context)\n\nRequest: \(question)"
-                let result = try await service.generate(systemPrompt: AICardPrompt.systemPrompt, userText: userText)
-                answer = result
+                answer = try await AITextServiceFactory.ask(
+                    question,
+                    context: context,
+                    contextLabel: isAboutSelection ? "Selected text from a note" : "Note",
+                    systemPrompt: AICardPrompt.systemPrompt
+                )
             } catch {
                 errorMessage = error.localizedDescription
             }
@@ -224,7 +222,7 @@ private struct AskAIPopoverView: View {
                 .truncationMode(.tail)
 
             ScrollView {
-                Text(answer)
+                Text(.aiAnswerPreview(answer))
                     .font(.system(size: 13))
                     .lineSpacing(3)
                     .textSelection(.enabled)

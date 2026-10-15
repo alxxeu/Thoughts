@@ -13,7 +13,6 @@ enum BoardMerger {
 
         if other.contentModifiedAt > base.contentModifiedAt {
             result.text = other.text
-            result.formattingData = other.formattingData
             result.contentModifiedAt = other.contentModifiedAt
         }
         if other.geometryModifiedAt > base.geometryModifiedAt {

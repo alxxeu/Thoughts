@@ -15,7 +15,7 @@ enum AICardPrompt {
     followed by the user's request. Either answer the question or carry \
     out the instruction, and reply with only the result — no preamble, no \
     quotes around it. If the note doesn't contain what the request needs, \
-    say so briefly rather than making things up. \(AISystemPromptRules.noMarkdown)
+    say so briefly rather than making things up. \(AISystemPromptRules.markdown)
     """
 
     /// Примеры запросов, подставляемые в пустое поле как placeholder —

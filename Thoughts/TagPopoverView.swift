@@ -109,7 +109,6 @@ private struct TagCircleButton: View {
         .buttonStyle(.plain)
         .onHover { inside in
             isHovered = inside
-            if inside { NSCursor.pointingHand.set() } else { NSCursor.arrow.set() }
         }
         .animation(.spring(response: 0.2, dampingFraction: 0.7), value: isHovered)
     }
@@ -149,7 +148,6 @@ private struct PrivacyActionButton: View {
             withAnimation(.easeInOut(duration: 0.15)) {
                 isHovered = inside
             }
-            if inside { NSCursor.pointingHand.set() } else { NSCursor.arrow.set() }
         }
     }
 }

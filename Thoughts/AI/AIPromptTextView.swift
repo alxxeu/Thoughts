@@ -66,6 +66,9 @@ struct AIPromptTextView: NSViewRepresentable {
         textView.drawsBackground = false
         textView.backgroundColor = .clear
         textView.isRichText = false
+        // Своя история отмен (по умолчанию у NSTextView из кода её нет): иначе
+        // ⌘Z уходил к менеджеру отмен окна и отменял правку в карточке.
+        textView.allowsUndo = true
         textView.font = font
         textView.textColor = textColor
         textView.insertionPointColor = textColor
@@ -86,6 +89,9 @@ struct AIPromptTextView: NSViewRepresentable {
     func updateNSView(_ nsView: NSScrollView, context: Context) {
         guard let textView = nsView.documentView as? AIPromptNSTextView else { return }
         if textView.string != text {
+            // Записи отмен хранят позиции в прежнем тексте (например, до
+            // очистки поля после отправки) — к новому их применять нельзя.
+            context.coordinator.undoManager.removeAllActions()
             textView.string = text
         }
         textView.onSend = onSend
@@ -136,6 +142,13 @@ struct AIPromptTextView: NSViewRepresentable {
         var parent: AIPromptTextView
         var didRequestFocus = false
         var isFocusRequestPending = false
+        /// Своя история отмен — не общая с карточками (см.
+        /// CardTextView.Coordinator.undoManager).
+        let undoManager = UndoManager()
+
+        func undoManager(for view: NSTextView) -> UndoManager? {
+            undoManager
+        }
 
         init(_ parent: AIPromptTextView) {
             self.parent = parent

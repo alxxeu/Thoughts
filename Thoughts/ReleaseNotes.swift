@@ -16,6 +16,25 @@ struct ReleaseNote: Identifiable {
 
 enum ReleaseNotes {
     static let all: [ReleaseNote] = [
+        ReleaseNote(version: "1.4", sections: [
+            .init(title: "New", items: [
+                "**Markdown** \u{2014} write cards in Markdown: headings, **bold**, *italic*, ~underline~, ~~strikethrough~~, ==highlight==, `code`, links and lists. The formatting characters show next to the cursor and hide everywhere else. Markdown pasted from Notion and other apps arrives formatted.",
+                "**Task lists, quotes and code blocks** \u{2014} check off tasks with a click and copy a code block with one button.",
+                "**AI answers** arrive formatted in Markdown.",
+                "**Tags from the keyboard** \u{2014} \u{2303}1\u{2013}7 color the card you\u{2019}re editing, \u{2303}0 removes the tag.",
+                "**Switch Spaces from any app** with \u{2303}\u{2325}1\u{2013}9 \u{2014} Thoughts comes forward on that Space.",
+                "A redesigned **Shortcuts** section in Settings, with an example of every Markdown style.",
+                "**What\u{2019}s new** after an update, and **Check for Updates** in Settings \u{2192} About."
+            ]),
+            .init(title: "Improved", items: [
+                "Improved everything we could \u{2014} *faster, smoother and more reliable*.",
+                "Improved security."
+            ]),
+            .init(title: "Note", items: [
+                "Update Thoughts on all your Macs: older versions show Markdown characters in cards edited here. Your cards were converted automatically, and a copy of the previous data is kept in the Backups folder.",
+                "Thoughts has a new text engine, so some elements in existing cards may look a little different."
+            ])
+        ]),
         ReleaseNote(version: "1.3", sections: [
             .init(title: "New", items: [
                 "iCloud sync \u{2014} your Spaces and cards stay in sync across your Macs, end-to-end encrypted. The Space Lock passcode and AI keys sync through iCloud Keychain.",
@@ -58,7 +77,8 @@ struct ReleaseNotesView: View {
                                         HStack(alignment: .firstTextBaseline, spacing: 8) {
                                             Text("\u{2022}")
                                                 .foregroundStyle(.secondary)
-                                            Text(item)
+                                            // Пункты — в Markdown карточек (для What’s new), здесь без разметки.
+                                            Text(MarkdownStyler.plainText(item))
                                                 .fixedSize(horizontal: false, vertical: true)
                                         }
                                         .font(.system(size: 13))
@@ -84,5 +104,48 @@ struct ReleaseNotesView: View {
             .padding(12)
         }
         .frame(width: 420, height: 440)
+    }
+}
+
+/// Плашка «What’s new» после обновления — см. SpaceToolbar.whatsNewBanner.
+enum WhatsNew {
+    private static let lastSeenKey = "whatsNew.lastSeenVersion"
+
+    static var currentVersion: String {
+        Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? ""
+    }
+
+    /// Заметка текущей версии, если её ещё не показывали. Первая установка
+    /// (тур не пройден, версии не помнили) — не обновление: там онбординг,
+    /// версию просто запоминаем. Тур пройден, а версии нет — это
+    /// пользователь версии до появления плашки, ему показываем.
+    static func pendingNote(
+        defaults: UserDefaults = .standard,
+        version: String = currentVersion,
+        hasCompletedTour: Bool = OnboardingState.hasCompletedTour
+    ) -> ReleaseNote? {
+        let lastSeen = defaults.string(forKey: lastSeenKey)
+        if lastSeen == nil, !hasCompletedTour {
+            defaults.set(version, forKey: lastSeenKey)
+            return nil
+        }
+        guard lastSeen != version else { return nil }
+        return ReleaseNotes.all.first { $0.version == version }
+    }
+
+    static func markSeen(defaults: UserDefaults = .standard, version: String = currentVersion) {
+        defaults.set(version, forKey: lastSeenKey)
+    }
+
+    /// Текст карточки с заметкой — обычный Markdown карточек: разделы через
+    /// разделитель, Note — цитатой.
+    static func markdown(for note: ReleaseNote) -> String {
+        let sections = note.sections.map { section in
+            // Цитата сама говорит, что это заметка, — без заголовка.
+            section.title == "Note"
+                ? section.items.map { "> \($0)" }.joined(separator: "\n")
+                : (["## \(section.title)"] + section.items.map { "- \($0)" }).joined(separator: "\n")
+        }
+        return "# What\u{2019}s new in \(note.version)\n\n" + sections.joined(separator: "\n\n--\n\n")
     }
 }

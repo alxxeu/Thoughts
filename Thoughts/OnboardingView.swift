@@ -98,7 +98,7 @@ private let onboardingSteps: [OnboardingStep] = [
     ),
     OnboardingStep(
         title: "Desktop Overlay",
-        description: "Turn on Desktop Overlay in Settings to have Thoughts live right on your Desktop, above the icons. Press \u{2325}D to reveal the Desktop; switch to any Space to come back.",
+        description: "Turn on Desktop Overlay in Settings to have Thoughts live right on your Desktop, above the icons. Press \u{2325}D to reveal the Desktop; switch to any Space to come back. From any other app, add \u{2303}: \u{2303}\u{2325}D, \u{2303}\u{2325}1\u{2013}9.",
         hint: "\u{2325}D",
         kind: .informational,
         icon: .symbol("macwindow.on.rectangle")

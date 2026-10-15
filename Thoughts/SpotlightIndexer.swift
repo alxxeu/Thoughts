@@ -33,12 +33,21 @@ nonisolated enum SpotlightIndexer {
     /// у пользователя мало (личный борд, максимум 9 спэйсов), поэтому
     /// diff-логика (отдельно add/remove/update) только усложнила бы код
     /// ради незаметной экономии — проще снести и построить заново.
+    @MainActor private static var lastReindex: Task<Void, Never>?
+
+    @MainActor
     static func reindexAll(_ cards: [SpotlightCardSnapshot]) {
-        let index = CSSearchableIndex.default()
-        index.deleteSearchableItems(withDomainIdentifiers: [domainIdentifier]) { _ in
+        // Строго по очереди: иначе "удалить всё" следующего вызова могло
+        // выполниться раньше "добавить" предыдущего, и в Spotlight оставалась
+        // удалённая или только что заблокированная карточка.
+        let previous = lastReindex
+        lastReindex = Task {
+            await previous?.value
+            let index = CSSearchableIndex.default()
+            try? await index.deleteSearchableItems(withDomainIdentifiers: [domainIdentifier])
             let items = cards.compactMap(searchableItem(for:))
             guard !items.isEmpty else { return }
-            index.indexSearchableItems(items)
+            try? await index.indexSearchableItems(items)
         }
     }
 
@@ -48,8 +57,7 @@ nonisolated enum SpotlightIndexer {
         // приватности, которую пользователь явно включил.
         guard card.privacyMode == .none else { return nil }
 
-        let content = card.text
-            .replacingOccurrences(of: "\u{FFFC}", with: "\n") // плейсхолдер разделителя
+        let content = MarkdownStyler.plainText(card.text)
             .trimmingCharacters(in: .whitespacesAndNewlines)
         guard !content.isEmpty else { return nil }
 

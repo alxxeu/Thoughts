@@ -80,7 +80,7 @@ final class CloudSyncEngine: CKSyncEngineDelegate {
         AutomaticBackups.write(viewModel.makeSnapshot(), reason: "before-icloud-sync")
         stateStore.reset()
         settings.isEnabled = true
-        KeychainSync.reconcile(showNotices: true)
+        KeychainSync.reconcile(uploadLocal: true, showNotices: true)
         settings.status = .syncing
 
         let engine = makeEngine(container: container, state: nil)
@@ -138,6 +138,14 @@ final class CloudSyncEngine: CKSyncEngineDelegate {
         await sendChanges()
     }
 
+    /// Перед выходом: очередь движка сохраняется на диск событием stateUpdate
+    /// позже, чем приложение успевает выйти, — правка из последнего
+    /// сохранения иначе не дошла бы до iCloud никогда.
+    func flushBeforeQuit() async {
+        guard let engine, !engine.state.pendingRecordZoneChanges.isEmpty else { return }
+        await sendChanges()
+    }
+
     // MARK: - Private: engine
 
     private func makeContainer() -> CKContainer {
@@ -169,7 +177,7 @@ final class CloudSyncEngine: CKSyncEngineDelegate {
             return
         }
         _ = makeEngine(container: container, state: state)
-        KeychainSync.reconcile(showNotices: true)
+        KeychainSync.reconcile(uploadLocal: false, showNotices: true)
         await syncNow()
     }
 

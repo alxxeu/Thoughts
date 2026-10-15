@@ -19,8 +19,9 @@ struct WorkspaceRecord: Codable, Equatable {
 struct CardRecord: Codable, Equatable {
     var id: UUID
     var workspaceSlot: Int
+    /// Markdown. Записи старого формата (бэкапы и iCloud со старых версий)
+    /// переводятся при чтении — см. init(from:) и RecordMapping.
     var text: String
-    var formattingData: Data?
     var x: Double
     var y: Double
     var width: Double
@@ -41,7 +42,6 @@ extension CardRecord {
         id = card.id
         workspaceSlot = slot
         text = card.text
-        formattingData = card.formattingData
         x = card.position.x
         y = card.position.y
         width = card.size.width
@@ -59,7 +59,6 @@ extension CardRecord {
     /// идентичность — открытая CardView не пересоздаётся) или в новую.
     func apply(to card: Card) {
         if card.text != text { card.text = text }
-        if card.formattingData != formattingData { card.formattingData = formattingData }
         let position = CGPoint(x: x, y: y)
         if card.position != position { card.position = position }
         let size = CGSize(width: width, height: height)
@@ -81,6 +80,54 @@ extension CardRecord {
         let card = Card(id: id, position: CGPoint(x: x, y: y), size: CGSize(width: width, height: height))
         apply(to: card)
         return card
+    }
+}
+
+extension CardRecord {
+    private enum CodingKeys: String, CodingKey {
+        case id, workspaceSlot, text, textFormat, formattingData, x, y, width, height, raisedAt
+        case tagColor, privacyMode, isAIGenerated, contentModifiedAt, geometryModifiedAt, metaModifiedAt
+    }
+
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        id = try c.decode(UUID.self, forKey: .id)
+        workspaceSlot = try c.decode(Int.self, forKey: .workspaceSlot)
+        let rawText = try c.decode(String.self, forKey: .text)
+        let format = try c.decodeIfPresent(Int.self, forKey: .textFormat) ?? MarkdownMigration.legacyFormat
+        text = format < MarkdownMigration.markdownFormat
+            ? MarkdownMigration.markdown(text: rawText, formattingData: try c.decodeIfPresent(Data.self, forKey: .formattingData))
+            : rawText
+        x = try c.decode(Double.self, forKey: .x)
+        y = try c.decode(Double.self, forKey: .y)
+        width = try c.decode(Double.self, forKey: .width)
+        height = try c.decode(Double.self, forKey: .height)
+        raisedAt = try c.decode(Date.self, forKey: .raisedAt)
+        tagColor = try c.decodeIfPresent(String.self, forKey: .tagColor)
+        privacyMode = try c.decode(String.self, forKey: .privacyMode)
+        isAIGenerated = try c.decode(Bool.self, forKey: .isAIGenerated)
+        contentModifiedAt = try c.decode(Date.self, forKey: .contentModifiedAt)
+        geometryModifiedAt = try c.decode(Date.self, forKey: .geometryModifiedAt)
+        metaModifiedAt = try c.decode(Date.self, forKey: .metaModifiedAt)
+    }
+
+    func encode(to encoder: Encoder) throws {
+        var c = encoder.container(keyedBy: CodingKeys.self)
+        try c.encode(id, forKey: .id)
+        try c.encode(workspaceSlot, forKey: .workspaceSlot)
+        try c.encode(text, forKey: .text)
+        try c.encode(MarkdownMigration.markdownFormat, forKey: .textFormat)
+        try c.encode(x, forKey: .x)
+        try c.encode(y, forKey: .y)
+        try c.encode(width, forKey: .width)
+        try c.encode(height, forKey: .height)
+        try c.encode(raisedAt, forKey: .raisedAt)
+        try c.encodeIfPresent(tagColor, forKey: .tagColor)
+        try c.encode(privacyMode, forKey: .privacyMode)
+        try c.encode(isAIGenerated, forKey: .isAIGenerated)
+        try c.encode(contentModifiedAt, forKey: .contentModifiedAt)
+        try c.encode(geometryModifiedAt, forKey: .geometryModifiedAt)
+        try c.encode(metaModifiedAt, forKey: .metaModifiedAt)
     }
 }
 

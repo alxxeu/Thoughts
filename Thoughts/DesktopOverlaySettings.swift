@@ -1,9 +1,8 @@
 import Foundation
 
 /// Опциональный режим, в котором окно Thoughts сидит поверх рабочего стола
-/// (чуть выше иконок, ниже обычных окон приложений) — см. план в
-/// buzzing-squishing-wombat.md. Persist через UserDefaults, тот же стиль
-/// ключей, что в AppearanceSettings.
+/// (чуть выше иконок, ниже обычных окон приложений). Persist через
+/// UserDefaults, тот же стиль ключей, что в AppearanceSettings.
 @Observable
 final class DesktopOverlaySettings {
     static let shared = DesktopOverlaySettings()
@@ -18,7 +17,7 @@ final class DesktopOverlaySettings {
         }
     }
 
-    /// Desktop mode — однонаправленное действие (⌥D входит, ⌥1–9 выходит),
+    /// Desktop mode — однонаправленное действие (⌥D/⌃⌥D входит, ⌥1–9/⌃⌥1–9 выходит),
     /// не тумблер. Runtime-only: при каждом запуске приложения стартует
     /// false, даже если isEnabled персистентно true.
     var isDesktopModeActive: Bool = false

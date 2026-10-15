@@ -1,5 +1,4 @@
 import SwiftUI
-import Carbon.HIToolbox
 
 struct CornerBracket: Shape {
     var corner: EdgeHint.Corner
@@ -105,7 +104,6 @@ private struct WindowAccessor: NSViewRepresentable {
 
 struct ContentView: View {
     var viewModel: BoardViewModel
-    @Environment(\.colorScheme) private var colorScheme
     /// Отдаётся в SettingsNavigation — см. комментарий там.
     @Environment(\.openSettings) private var openSettings
     @State private var creationStart: CGPoint?
@@ -113,12 +111,8 @@ struct ContentView: View {
     @State private var placementPreview: CGRect?
     @State private var edgeHints: [EdgeHint] = []
     @State private var newlyCreatedCardID: UUID? = nil
-    @State private var isWindowResizing = false
-    @State private var resizeDebounceTask: Task<Void, Never>?
+    @State private var placementPreviewTask: Task<Void, Never>?
     @State private var isPlacementPreviewVisible = false
-    @State private var isEditingWorkspaceName = false
-    @State private var workspaceNameDraft = ""
-    @FocusState private var isWorkspaceNameFieldFocused: Bool
 
     // Focus Mode (Cmd+F) — чистое состояние отображения, ничего не
     // персистится: position/size самой карточки не трогаются, фокус лишь
@@ -136,22 +130,8 @@ struct ContentView: View {
     @State private var focusTransitionCardID: UUID?
     @State private var focusTransitionTask: Task<Void, Never>?
 
-    // AI для всего Space — Ask AI под pill с названием. См. Thoughts/AI.
-    // Результат — новая карточка на канве.
-    @State private var isAskingSpaceAI = false
-    @State private var spaceAIQuestion = ""
-    @State private var isSpaceAIBusy = false
-    @State private var spaceAIErrorMessage: String?
-    /// Название функции, над иконкой которой сейчас курсор — управляет
-    /// мгновенной подсветкой самой иконки.
-    @State private var hoveredToolbarLabel: String?
-    /// В отличие от hoveredToolbarLabel выше — не мгновенно: всплывающая
-    /// подсказка под иконкой появляется только после небольшой задержки
-    /// наведения (см. setToolbarHover), как обычные системные tooltips.
-    @State private var tooltipVisibleLabel: String?
-    @State private var tooltipTask: Task<Void, Never>?
-    // Актуальный размер канвы — нужен вне GeometryReader, чтобы новая
-    // AI-карточка могла стартовать анимацию из-под нотча к центру экрана.
+    // Актуальный размер канвы — нужен вне GeometryReader: плашке Space
+    // (Tidy Cards и место для новой AI-карточки).
     @State private var canvasSize: CGSize = .zero
     
     // Подсказка пустого спэйса — статичная (без holdFor), держится, пока
@@ -168,18 +148,7 @@ struct ContentView: View {
     // после явного подтверждения, а не по одному нажатию пункта меню.
     @State private var isShowingClearSpaceConfirmation = false
 
-    // Desktop Overlay — фрейм окна до включения режима, чтобы вернуть его
-    // ровно как было при выключении в Settings. thoughtsWindow — конкретно
-    // окно, хостящее этот canvas (не Settings/QuitGuard), см. WindowAccessor
-    // ниже; NSApp.keyWindow ненадёжен здесь, так как Settings-окно вполне
-    // может быть открыто и фокусно ровно в момент переключения тумблера.
-    @State private var savedWindowFrame: NSRect?
-    @State private var thoughtsWindow: NSWindow?
-    @State private var chromeReapplyObservers: [NSObjectProtocol] = []
-    @State private var isDesktopOverlayActivationPendingFullScreenExit = false
-    /// Только хоткеи Desktop Overlay — снимаются при его выключении, не
-    /// трогая глобальный хоткей Quick Capture (см. GlobalHotKeyManager).
-    @State private var overlayHotKeyTokens: [HotKeyToken] = []
+    @State private var overlayWindow = DesktopOverlayWindowController()
 
     var body: some View {
         Group {
@@ -227,75 +196,19 @@ struct ContentView: View {
                     .transition(.opacity)
             }
         }
-        // Плавные переходы между Spaces (обычное переключение, Desktop
-        // Overlay туда-обратно, лок/анлок) — раньше карточки/оверлеи
-        // сразу переключались без анимации, топорно. Пружина вместо
-        // плоского easeOut — привычная по ощущению кривая для macOS,
-        // а не линейное затухание.
+        // Плавные переходы: Desktop mode туда-обратно, лок/анлок.
         .animation(.easeOut(duration: 0.2), value: viewModel.desktopOverlay.isDesktopModeActive)
         .animation(.easeOut(duration: 0.2), value: viewModel.isActiveSpaceLocked)
-        // Смена Space сама по себе — без общего id/transition на весь
-        // блок: не имитируем это одним общим кросс-фейдом. Вместо этого,
-        // как у Floatspace, анимируется только УХОД старых карточек
-        // (asymmetric-transition на каждой CardView ниже), новые
-        // появляются сразу без входной анимации, а pill с названием
-        // просто меняет текст — так выглядит собраннее, а не "будто всё
-        // тает одним пятном".
+        // Смена Space — без общего кросс-фейда всего блока: заметно
+        // анимируется только уход старых карточек (asymmetric-transition на
+        // каждой CardView ниже), а не "всё тает одним пятном".
         .animation(.easeOut(duration: 0.1), value: viewModel.activeSlot)
         .animation(.easeOut(duration: 0.25), value: onboardingViewModel.isActive)
         .onAppear {
             SettingsNavigation.shared.openSettingsAction = openSettings
         }
         .background(
-            WindowAccessor { window in
-                guard thoughtsWindow == nil else { return }
-                thoughtsWindow = window
-                allowWindowToBecomeKey(window)
-                applyDesktopOverlayWindowState(
-                    isEnabled: viewModel.desktopOverlay.isEnabled,
-                    isDesktopModeActive: viewModel.desktopOverlay.isDesktopModeActive
-                )
-                // AppKit иногда сам переигрывает styleMask/title окна на
-                // переходах фокуса (например, relock() Space Lock делает
-                // makeFirstResponder(nil)) — тот же класс проблемы, что уже
-                // решён для VisualEffectBlur ниже в этом файле через
-                // переприменение после нотификаций, а не один раз. Здесь —
-                // то же самое для chrome-настроек Desktop Overlay.
-                for name: Notification.Name in [
-                    NSWindow.didBecomeKeyNotification,
-                    NSWindow.didResignKeyNotification,
-                    NSWindow.didChangeOcclusionStateNotification
-                ] {
-                    chromeReapplyObservers.append(
-                        NotificationCenter.default.addObserver(forName: name, object: window, queue: .main) { _ in
-                            guard viewModel.desktopOverlay.isEnabled else { return }
-                            applyDesktopOverlayWindowState(
-                                isEnabled: true,
-                                isDesktopModeActive: viewModel.desktopOverlay.isDesktopModeActive
-                            )
-                        }
-                    )
-                }
-                // Довершает включение Desktop Overlay, если оно было
-                // отложено из-за того, что окно было в нативном fullscreen
-                // (см. guard в applyDesktopOverlayWindowState) — level/frame
-                // нельзя было применить, пока переход не завершился.
-                chromeReapplyObservers.append(
-                    NotificationCenter.default.addObserver(
-                        forName: NSWindow.didExitFullScreenNotification,
-                        object: window,
-                        queue: .main
-                    ) { _ in
-                        guard isDesktopOverlayActivationPendingFullScreenExit else { return }
-                        isDesktopOverlayActivationPendingFullScreenExit = false
-                        guard viewModel.desktopOverlay.isEnabled else { return }
-                        applyDesktopOverlayWindowState(
-                            isEnabled: true,
-                            isDesktopModeActive: viewModel.desktopOverlay.isDesktopModeActive
-                        )
-                    }
-                )
-            }
+            WindowAccessor { overlayWindow.attach($0) }
         )
         // Привязано напрямую к состоянию, которое реально коррелирует с
         // проблемой (подтверждено вручную): переход в/из заблокированного
@@ -306,24 +219,21 @@ struct ContentView: View {
         // гадания, какая именно AppKit-нотификация выстрелит.
         .onChange(of: viewModel.isActiveSpaceLocked) { _, _ in
             guard viewModel.desktopOverlay.isEnabled else { return }
-            applyDesktopOverlayWindowState(
-                isEnabled: true,
-                isDesktopModeActive: viewModel.desktopOverlay.isDesktopModeActive
-            )
+            overlayWindow.apply()
         }
         // Синк с iCloud откладывает удалённые правки текста этой карточки,
         // пока в ней курсор (см. BoardViewModel.editingCardID).
         .onChange(of: textFocusedCardID) { _, id in
             viewModel.editingCardID = id
         }
-        .onChange(of: viewModel.desktopOverlay.isEnabled) { _, isEnabled in
-            applyDesktopOverlayWindowState(isEnabled: isEnabled, isDesktopModeActive: viewModel.desktopOverlay.isDesktopModeActive)
+        .onChange(of: viewModel.desktopOverlay.isEnabled) { _, _ in
+            overlayWindow.apply()
         }
-        .onChange(of: viewModel.desktopOverlay.isDesktopModeActive) { _, isActive in
-            applyDesktopOverlayWindowState(isEnabled: viewModel.desktopOverlay.isEnabled, isDesktopModeActive: isActive)
+        .onChange(of: viewModel.desktopOverlay.isDesktopModeActive) { _, _ in
+            overlayWindow.apply()
         }
         .onReceive(NotificationCenter.default.publisher(for: .switchWorkspace)) { notification in
-            if let slot = notification.object as? Int {
+            if let slot = notification.object as? Int, slot != viewModel.activeSlot {
                 // Нельзя оставить "зависший" фокус на карточке со Space, с
                 // которого только что ушли.
                 setFocusedCard(nil)
@@ -348,9 +258,6 @@ struct ContentView: View {
                 setFocusedCard(nil)
             } else if let textFocusedCardID {
                 setFocusedCard(textFocusedCardID)
-                // Капсула Space в фокусе скрыта целиком — иначе открытая
-                // Space-панель Ask AI просто "вернулась" бы при выходе.
-                isAskingSpaceAI = false
             }
         }
         .onReceive(NotificationCenter.default.publisher(for: .replayOnboarding)) { _ in
@@ -362,6 +269,13 @@ struct ContentView: View {
         .onReceive(NotificationCenter.default.publisher(for: .cardWasResized)) { _ in
             onboardingViewModel.handle(.cardResized)
         }
+        .onReceive(NotificationCenter.default.publisher(for: .setCardTag)) { notification in
+            guard let id = textFocusedCardID ?? focusedCardID,
+                  let index = viewModel.cards.firstIndex(where: { $0.id == id }) else { return }
+            let color = notification.object as? CardTagColor
+            viewModel.cards[index].tagColor = color
+            if color != nil { onboardingViewModel.handle(.tagColorSet) }
+        }
         .onReceive(NotificationCenter.default.publisher(for: .cardTagColorWasSet)) { _ in
             onboardingViewModel.handle(.tagColorSet)
         }
@@ -372,7 +286,7 @@ struct ContentView: View {
             isShowingClearSpaceConfirmation = true
         }
         .alert(
-            "Clear \u{201C}\(viewModel.activeWorkspace?.name ?? Workspace.defaultName(forSlot: viewModel.activeSlot))\u{201D}?",
+            "Clear \u{201C}\(viewModel.activeWorkspaceName)\u{201D}?",
             isPresented: $isShowingClearSpaceConfirmation
         ) {
             Button("Cancel", role: .cancel) {}
@@ -430,7 +344,7 @@ struct ContentView: View {
                         onRequestExitFocus: { setFocusedCard(nil) },
                         isFocusTransitioning: card.id == focusTransitionCardID,
                         onPlacementPreviewChange: { preview in
-                            resizeDebounceTask?.cancel()
+                            placementPreviewTask?.cancel()
                             
                             if let preview {
                                 var transaction = Transaction()
@@ -439,7 +353,7 @@ struct ContentView: View {
                                     placementPreview = preview
                                 }
                                 
-                                resizeDebounceTask = Task {
+                                placementPreviewTask = Task {
                                     try? await Task.sleep(for: .seconds(0.05))
                                     guard !Task.isCancelled else { return }
                                     withAnimation(.easeOut(duration: 0.2)) {
@@ -454,10 +368,9 @@ struct ContentView: View {
                         onEdgeHintsChange: { edgeHints = $0 }
                     )
                     .frame(width: displaySize.width, height: displaySize.height, alignment: .topLeading)
-                    // Подсказка над карточкой — снизу теперь живёт кнопка
-                    // Ask AI и её панель (см. CardView). Привязка к НИЖНЕМУ
-                    // краю со сдвигом на высоту карточки — не зависит от
-                    // собственной высоты подписи.
+                    // Подсказка над карточкой — снизу кнопка Ask AI и её
+                    // панель (см. CardView). Привязка к НИЖНЕМУ краю со
+                    // сдвигом на высоту карточки — не зависит от высоты подписи.
                     .overlay(alignment: .bottom) {
                         if isFocused && focusExitHint.isVisible {
                             // HintLabel фиксированно белый в обеих темах:
@@ -574,16 +487,8 @@ struct ContentView: View {
             .animation(.easeInOut(duration: 0.28), value: focusedCardID)
 
             .onChange(of: proxy.size) { _, newValue in
-                isWindowResizing = true
                 canvasSize = newValue
                 viewModel.lastCanvasSize = newValue
-
-                resizeDebounceTask?.cancel()
-                resizeDebounceTask = Task {
-                    try? await Task.sleep(for: .seconds(0.15))
-                    guard !Task.isCancelled else { return }
-                    isWindowResizing = false
-                }
             }
             .onAppear {
                 canvasSize = proxy.size
@@ -592,128 +497,13 @@ struct ContentView: View {
         }
         .background(Color.clear)
         .overlay(alignment: .top) {
-            VStack(spacing: 6) {
-                HStack(spacing: 10) {
-                    Group {
-                        if isEditingWorkspaceName {
-                            TextField("Space name", text: $workspaceNameDraft)
-                                .textFieldStyle(.plain)
-                                .font(.system(size: 11, weight: .semibold))
-                                .foregroundStyle(Color.white.opacity(0.85))
-                                .multilineTextAlignment(.center)
-                                .frame(width: 100)
-                                .focused($isWorkspaceNameFieldFocused)
-                                .onSubmit { commitWorkspaceRename() }
-                                .onExitCommand { cancelWorkspaceRename() }
-                                .onChange(of: isWorkspaceNameFieldFocused) { _, focused in
-                                    if !focused { commitWorkspaceRename() }
-                                }
-                                .onChange(of: workspaceNameDraft) { _, newValue in
-                                    if newValue.count > BoardViewModel.maxWorkspaceNameLength {
-                                        workspaceNameDraft = String(newValue.prefix(BoardViewModel.maxWorkspaceNameLength))
-                                    }
-                                }
-                        } else {
-                            Text(viewModel.activeWorkspace?.name ?? Workspace.defaultName(forSlot: viewModel.activeSlot))
-                                .font(.system(size: 11, weight: .semibold))
-                                .foregroundStyle(Color.white.opacity(0.9))
-                        }
-                    }
-                    .contentShape(Rectangle())
-                    .onTapGesture {
-                        if !isEditingWorkspaceName {
-                            dismissToolbarTooltip()
-                            startWorkspaceRename()
-                        }
-                    }
-                    .onHover { inside in
-                        guard !isEditingWorkspaceName else { return }
-                        setToolbarHover(inside, "Rename")
-                    }
-                    .overlay(alignment: .top) { toolbarTooltip("Rename") }
-
-                    // Иконки-действия пристёгнуты к тому же pill'у, что и
-                    // название — не отдельные капсулы под ним, чтобы новая
-                    // функция была ещё одной иконкой в этом же ряду, а не
-                    // ещё одной строкой вниз.
-                    if !isEditingWorkspaceName {
-                        Rectangle()
-                            .fill(Color.white.opacity(0.15))
-                            .frame(width: 1, height: 14)
-
-                        Button {
-                            dismissToolbarTooltip()
-                            // Если в этот момент печатали в какой-то карточке,
-                            // её текстовое поле удерживает first responder —
-                            // панель Ask AI должна явно получить его, а не
-                            // соревноваться за фокус в тот же момент. Тот же
-                            // вызов, что уже используется при тапе по пустому
-                            // холсту для снятия фокуса с редактируемой карточки.
-                            NSApp.keyWindow?.makeFirstResponder(nil)
-                            withAnimation(spaceAISpring) { isAskingSpaceAI.toggle() }
-                        } label: {
-                            Image(systemName: "sparkle")
-                                // Развёрнутая на 45° звёздочка читается как
-                                // крестик — понятная подсказка "нажми ещё
-                                // раз, чтобы закрыть".
-                                .rotationEffect(.degrees(isAskingSpaceAI ? 45 : 0))
-                        }
-                        .buttonStyle(.plain)
-                        .foregroundStyle(Color.white.opacity(isAskingSpaceAI || hoveredToolbarLabel == "Ask AI" ? 1 : 0.85))
-                        .font(.system(size: 15))
-                        .onHover { setToolbarHover($0, "Ask AI") }
-                        .overlay(alignment: .top) { toolbarTooltip("Ask AI") }
-
-                        Button {
-                            dismissToolbarTooltip()
-                            withAnimation(.spring(response: 0.4, dampingFraction: 0.8)) {
-                                viewModel.tidyCards(canvasSize: canvasSize, topInset: effectiveTopInset)
-                            }
-                        } label: {
-                            Image(systemName: "square.grid.2x2.fill")
-                        }
-                        .buttonStyle(.plain)
-                        .foregroundStyle(Color.white.opacity(hoveredToolbarLabel == "Tidy Cards" ? 1 : 0.85))
-                        .font(.system(size: 15))
-                        .disabled(viewModel.cards.isEmpty)
-                        .onHover { setToolbarHover($0, "Tidy Cards") }
-                        .overlay(alignment: .top) { toolbarTooltip("Tidy Cards") }
-
-                        Button {
-                            dismissToolbarTooltip()
-                            NotificationCenter.default.post(name: .requestClearSpace, object: nil)
-                        } label: {
-                            Image(systemName: "trash.fill")
-                        }
-                        .buttonStyle(.plain)
-                        .foregroundStyle(Color.white.opacity(hoveredToolbarLabel == "Clear Space" ? 1 : 0.85))
-                        .font(.system(size: 15))
-                        .disabled(viewModel.cards.isEmpty)
-                        .onHover { setToolbarHover($0, "Clear Space") }
-                        .overlay(alignment: .top) { toolbarTooltip("Clear Space") }
-                    }
-                }
-                .padding(.horizontal, 14)
-                .padding(.vertical, 5)
-                // Название/иконки поверх — фиксированно белые в обеих темах.
-                // Раньше здесь был чистый Color.black.opacity(...) без
-                // материала — плоская краска, а не блюр, поэтому на цветных
-                // обоях (реальный десктоп через полупрозрачное окно) она не
-                // блендится с фоном, а просто грязно его гасит. Материал
-                // снизу даёт настоящее размытие/vibrancy, тон сверху —
-                // только чтобы белый текст оставался читаемым, и в Light
-                // Mode он ощутимо легче, чем раньше (0.35 давало ту же
-                // "грязь", просто через материал).
-                .background(
-                    Capsule()
-                        .fill(.ultraThinMaterial)
-                        .overlay(Capsule().fill(Color.black.opacity(colorScheme == .dark ? 0.1 : 0.18)))
-                )
-
-                if isAskingSpaceAI {
-                    askAIPanel
-                }
-            }
+            SpaceToolbar(
+                viewModel: viewModel,
+                canvasSize: canvasSize,
+                topInset: effectiveTopInset,
+                isFocusModeActive: focusedCardID != nil,
+                isOnboardingActive: onboardingViewModel.isActive
+            )
             .padding(.top, workspacePillTopPadding)
             // В Focus Mode капсула Space скрыта целиком — она ломает
             // ощущение погружения, а её действия относятся ко всему Space,
@@ -722,17 +512,9 @@ struct ContentView: View {
             .opacity(focusedCardID == nil ? 1 : 0)
             .allowsHitTesting(focusedCardID == nil)
             .animation(.easeInOut(duration: 0.28), value: focusedCardID)
-            .onReceive(NotificationCenter.default.publisher(for: .clearTextSelection)) { _ in
-                // Клик по свободному холсту закрывает панель Ask AI, но
-                // только если в поле ещё ничего не напечатано — не хотим
-                // терять черновик вопроса случайным кликом мимо.
-                guard isAskingSpaceAI, spaceAIQuestion.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return }
-                withAnimation(spaceAISpring) { isAskingSpaceAI = false }
-            }
         }
         .overlay(alignment: .center) {
-            // Подсказка на пустом Space — по центру канвы, а не под
-            // pill'ом сверху (там раньше был просто тусклый текст). Та же
+            // Подсказка на пустом Space — по центру канвы. Та же
             // анимация "курсор растягивает карточку", что в шаге 1
             // интерактивного онбординга (см. CreateCardGestureIcon) —
             // единый визуальный язык, не два разных объяснения одного
@@ -770,155 +552,6 @@ struct ContentView: View {
             guard newValue != nil else { return }
             focusExitHint.show(afterDelay: 3)
         }
-        .alert("AI Error", isPresented: Binding(
-            get: { spaceAIErrorMessage != nil },
-            set: { if !$0 { spaceAIErrorMessage = nil } }
-        )) {
-            Button("OK") { spaceAIErrorMessage = nil }
-        } message: {
-            Text(spaceAIErrorMessage ?? "")
-        }
-    }
-
-    private var spaceAISpring: Animation { .spring(response: 0.4, dampingFraction: 0.76) }
-
-    /// Раскрывается/закрывается через insertion/removal (не морфинг pill'а
-    /// — sparkle теперь просто иконка в кластере рядом с названием, см.
-    /// .overlay(alignment: .top) в body), с масштабом от верхнего края и
-    /// пружиной на входе. В левом нижнем углу поля — выбор провайдера
-    /// (AIProviderMenu), как во всех панелях Ask AI; если выбранный
-    /// недоступен, вместо поля — AIUnavailableNotice.
-    private var askAIPanel: some View {
-        Group {
-            if viewModel.aiSettings.hasKey(for: viewModel.aiSettings.selectedProvider) {
-                spaceAIPrompt
-            } else {
-                AIUnavailableNotice(showsProviderMenu: true)
-                    .frame(height: 130)
-            }
-        }
-        .padding(6)
-        .frame(width: 300)
-        .background(
-            CardSurfaceBackground(
-                cornerRadius: 16,
-                usesGlassEffect: false,
-                tintOpacity: 0.15,
-                materialStyle: .thickMaterial,
-                lightMaterialStyle: .ultraThinMaterial,
-                lightTintOpacity: 0.2
-            )
-        )
-        .transition(
-            .asymmetric(
-                insertion: .scale(scale: 0.5, anchor: .top).combined(with: .opacity)
-                    .animation(spaceAISpring),
-                removal: .scale(scale: 0.5, anchor: .top).combined(with: .opacity)
-                    .animation(.easeIn(duration: 0.15))
-            )
-        )
-    }
-
-    private var spaceAIPrompt: some View {
-        AIPromptTextView(text: $spaceAIQuestion, shouldFocus: isAskingSpaceAI) {
-            askSpaceAI()
-        }
-        .frame(maxWidth: .infinity)
-        .frame(height: 130)
-        .onExitCommand {
-            withAnimation(spaceAISpring) { isAskingSpaceAI = false }
-            spaceAIQuestion = ""
-        }
-        // NSTextView не даёт placeholder "из коробки" (в отличие от
-        // NSTextField/SwiftUI TextField) — просто текст поверх, скрытый,
-        // как только начали печатать. Отступы подобраны под
-        // textContainerInset (6) + дефолтный lineFragmentPadding NSTextView (5).
-        .overlay(alignment: .topLeading) {
-            if spaceAIQuestion.isEmpty {
-                Text("Ask about your project…")
-                    .font(.system(size: 13))
-                    .foregroundStyle(Color.white.opacity(0.35))
-                    .padding(.leading, 11)
-                    .padding(.top, 6)
-                    .allowsHitTesting(false)
-            }
-        }
-        .overlay(alignment: .bottomLeading) {
-            HStack(spacing: 12) {
-                AIProviderMenu()
-
-                if isSpaceAIBusy {
-                    ProgressView()
-                        .controlSize(.small)
-                        .tint(.white)
-                }
-            }
-            .padding(6)
-        }
-        .overlay(alignment: .bottomTrailing) {
-            Button {
-                askSpaceAI()
-            } label: {
-                Image(systemName: "arrow.up.circle.fill")
-                    .font(.system(size: 20))
-            }
-            .buttonStyle(.plain)
-            .foregroundStyle(Color.white.opacity(0.85))
-            .disabled(isSpaceAIBusy || spaceAIQuestion.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
-            .padding(5)
-        }
-    }
-
-    private func spaceAIContextText() -> String {
-        viewModel.cards
-            .filter { $0.privacyMode == .none && !$0.text.isEmpty }
-            .map(\.text)
-            .joined(separator: "\n---\n")
-    }
-
-    private func askSpaceAI() {
-        let question = spaceAIQuestion.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !question.isEmpty, !isSpaceAIBusy else { return }
-        let context = spaceAIContextText()
-        isSpaceAIBusy = true
-        Task {
-            do {
-                let service = try AITextServiceFactory.makeActiveService()
-                let userText = context.isEmpty ? question : "Notes:\n\(context)\n\nQuestion: \(question)"
-                let result = try await service.generate(
-                    systemPrompt: AISpaceAction.askSystemPrompt,
-                    userText: userText
-                )
-                await MainActor.run {
-                    insertAIResultCard(result)
-                    spaceAIQuestion = ""
-                    withAnimation(spaceAISpring) { isAskingSpaceAI = false }
-                    isSpaceAIBusy = false
-                }
-            } catch {
-                await MainActor.run {
-                    spaceAIErrorMessage = error.localizedDescription
-                    isSpaceAIBusy = false
-                }
-            }
-        }
-    }
-
-    /// Не выставляет newlyCreatedCardID — та карточка сразу получает фокус
-    /// текстового ввода (.focusNewCard), что фактически "активирует" её и
-    /// сразу же снимало бы постоянную AI-подсветку (см. aiHighlightedCardIDs
-    /// и CardView) прежде, чем пользователь вообще успеет её заметить.
-    private func insertAIResultCard(_ text: String) {
-        let size = CGSize(width: 280, height: 220)
-        let origin = CGPoint(
-            x: max(0, (canvasSize.width - size.width) / 2),
-            y: max(0, (canvasSize.height - size.height) / 2)
-        )
-        let card = viewModel.addCard(at: origin, size: size)
-        card.text = text
-        card.isAIGenerated = true
-        viewModel.saveImmediately()
-        viewModel.aiHighlightedCardIDs.insert(card.id)
     }
 
     private func updateEmptyHintState() {
@@ -935,12 +568,7 @@ struct ContentView: View {
         emptyHint.show(afterDelay: 2.5)
     }
 
-    /// Применяет/откатывает уровень, collectionBehavior, ignoresMouseEvents
-    /// и фрейм окна для Desktop Overlay — см. план в
-    /// buzzing-squishing-wombat.md. Значение уровня подобрано эмпирически
-    /// (публичной константы "чуть выше иконок, чуть ниже виджетов" у Apple
-    /// нет) и может понадобиться донастроить.
-    /// В обычном окне — прежняя маленькая граница. В Desktop Overlay окно
+    /// В обычном окне — маленькая граница. В Desktop Overlay окно
     /// растянуто на весь экран, и карточки не должны упираться в самый
     /// верх/вырез камеры — там, где обычно сидят системные виджеты.
     private var effectiveTopInset: CGFloat {
@@ -950,130 +578,10 @@ struct ContentView: View {
     /// Плашка с именем Space — обычный SwiftUI-оверлей этой же канвы (не
     /// chrome окна), так что отступ под неё можно менять независимо от
     /// самого окна/frame — без компромисса с покрытием экрана, в отличие
-    /// от системных элементов. В обычном окне — как раньше, 10pt.
+    /// от системных элементов.
     private var workspacePillTopPadding: CGFloat {
         guard viewModel.desktopOverlay.isEnabled else { return 10 }
         return (NSScreen.main?.safeAreaInsets.top ?? 0) + 12
-    }
-
-    private func applyDesktopOverlayWindowState(isEnabled: Bool, isDesktopModeActive: Bool) {
-        guard let window = thoughtsWindow else { return }
-
-        // Нативный fullscreen — отдельная macOS Space, level/frame внутри
-        // неё игнорируются композитором (а styleMask-правки — нет, отсюда
-        // рассинхрон: кнопки/pill уже перестроились, а окно так и не легло
-        // на уровень иконок стола). Сначала выходим из fullscreen и ждём
-        // завершения перехода (didExitFullScreenNotification, см. ниже),
-        // и только потом применяем остальную конфигурацию.
-        if isEnabled, window.styleMask.contains(.fullScreen) {
-            isDesktopOverlayActivationPendingFullScreenExit = true
-            window.toggleFullScreen(nil)
-            return
-        }
-
-        if isEnabled {
-            if savedWindowFrame == nil {
-                savedWindowFrame = window.frame
-            }
-            // Уровень асимметричный между режимами — подтверждено реальным
-            // кодом Floatspace (native_desktop.rs): Desktop mode ниже
-            // иконок стола (окно совсем не мешает, даже не "прозрачно
-            // мешает"), Workspace mode выше иконок, но по-прежнему ниже
-            // обычных окон приложений. Раньше здесь был один и тот же
-            // фиксированный уровень в обоих режимах — работало, но не
-            // совпадало с проверенным эталоном без явной причины.
-            let desktopIconLevel = Int(CGWindowLevelForKey(.desktopIconWindow))
-            window.level = NSWindow.Level(
-                rawValue: isDesktopModeActive ? desktopIconLevel - 1 : desktopIconLevel + 1
-            )
-            window.collectionBehavior = [.ignoresCycle]
-            // В обычном режиме "прозрачность" фона держится целиком на
-            // VisualEffectBlur (живой блюр того, что позади окна) — само
-            // NSWindow остаётся непрозрачным по умолчанию. В Desktop mode
-            // блюр скрыт вместе с карточками (см. body/ThoughtsApp.swift), и
-            // без явного isOpaque/backgroundColor = .clear вместо настоящего
-            // стола был виден сплошной непрозрачный фон окна.
-            window.isOpaque = false
-            window.backgroundColor = .clear
-            window.hasShadow = false
-            // Floatspace на Tauri создаёт окно изначально безрамочным, ему
-            // это не нужно. WindowGroup в SwiftUI всегда рождает titled-окно
-            // (hiddenTitleBar прячет только полосу, не сами traits) — без
-            // явного снятия traits из styleMask курсор у верхнего края
-            // показывает настоящие traffic-light кнопки на весь экран.
-            // .titled — не только сами кнопки, но и причина зазора под
-            // menu bar: у titled-окон AppKit сам поджимает frame ниже
-            // строки меню, даже если явно попросить Y=0 через setFrame.
-            // Полностью безрамочное окно (как у Floatspace, создаваемого
-            // borderless с самого начала) это ограничение не имеет.
-            window.styleMask.remove([.closable, .miniaturizable, .resizable, .titled])
-            window.titleVisibility = .hidden
-            window.title = ""
-            // Плавающий title pill позиционируется относительно верхнего
-            // края фрейма окна (подтверждено эмпирически), поэтому подвинуть
-            // его ниже без потери полного покрытия экрана сверху невозможно
-            // — эти две вещи завязаны на один и тот же frame. Полное
-            // покрытие приоритетнее (явно попросили не обрезать снова),
-            // так что фрейм всегда во весь экран, начиная с Y=0.
-            if let screen = window.screen ?? NSScreen.main {
-                window.setFrame(screen.frame, display: true, animate: false)
-            }
-            registerDesktopOverlayHotKeys()
-        } else {
-            isDesktopOverlayActivationPendingFullScreenExit = false
-            unregisterDesktopOverlayHotKeys()
-            window.level = .normal
-            window.collectionBehavior = []
-            window.hasShadow = true
-            window.styleMask.insert([.closable, .miniaturizable, .resizable, .titled])
-            window.titleVisibility = .visible
-            window.title = "Thoughts"
-            if let savedWindowFrame {
-                window.setFrame(savedWindowFrame, display: true, animate: false)
-            }
-            savedWindowFrame = nil
-        }
-
-        window.ignoresMouseEvents = isEnabled && isDesktopModeActive
-    }
-
-    /// ⌥D и ⌥1–9 как глобальные хоткеты (см. GlobalHotKeyManager) — должны
-    /// срабатывать, даже когда активное приложение не Thoughts, а Finder
-    /// (ровно так и есть в Desktop mode после клика по иконке на столе).
-    /// Виртуальные keyCode — физические позиции клавиш на ANSI-клавиатуре,
-    /// не зависят от активной раскладки (в отличие от charactersIgnoring-
-    /// Modifiers, который для той же клавиши на русской раскладке вернул бы
-    /// не "1"–"9"/"d").
-    private func registerDesktopOverlayHotKeys() {
-        unregisterDesktopOverlayHotKeys()
-        let optionMask = UInt32(optionKey)
-        var tokens: [HotKeyToken] = []
-
-        if case .success(let token) = GlobalHotKeyManager.shared.register(keyCode: 2 /* kVK_ANSI_D */, modifiers: optionMask, action: {
-            // Иначе зажатое ⌥D (авто-повтор клавиши) непрерывно шлёт один
-            // и тот же вход в Desktop mode заново.
-            guard !viewModel.desktopOverlay.isDesktopModeActive else { return }
-            viewModel.desktopOverlay.isDesktopModeActive = true
-        }) {
-            tokens.append(token)
-        }
-
-        let digitKeyCodes: [UInt32] = [18, 19, 20, 21, 23, 22, 26, 28, 25] // kVK_ANSI_1...9
-        for (index, keyCode) in digitKeyCodes.enumerated() {
-            let slot = index + 1
-            if case .success(let token) = GlobalHotKeyManager.shared.register(keyCode: keyCode, modifiers: optionMask, action: {
-                viewModel.desktopOverlay.isDesktopModeActive = false
-                NotificationCenter.default.post(name: .switchWorkspace, object: slot)
-            }) {
-                tokens.append(token)
-            }
-        }
-        overlayHotKeyTokens = tokens
-    }
-
-    private func unregisterDesktopOverlayHotKeys() {
-        GlobalHotKeyManager.shared.unregister(overlayHotKeyTokens)
-        overlayHotKeyTokens = []
     }
 
     private func canvasDragGesture(in canvasSize: CGSize) -> some Gesture {
@@ -1106,76 +614,9 @@ struct ContentView: View {
                 defer { creationStart = nil; draftFrame = nil }
                 guard let frame = draftFrame else { return }
                 
-                viewModel.addCard(at: frame.origin, size: frame.size)
+                newlyCreatedCardID = viewModel.addCard(at: frame.origin, size: frame.size).id
                 onboardingViewModel.handle(.cardCreated)
-
-                if let newCard = viewModel.cards.last {
-                    newlyCreatedCardID = newCard.id
-                }
             }
-    }
-
-    /// Не просто `hoveredToolbarLabel = inside ? label : nil` — если курсор
-    /// уходит с одной иконки сразу на соседнюю, exit-событие первой может
-    /// прийти ПОСЛЕ enter-события второй, и голое присваивание стёрло бы
-    /// уже выставленный новый label. Очищаем только если он всё ещё
-    /// принадлежит этой же иконке.
-    private func setToolbarHover(_ inside: Bool, _ label: String) {
-        if inside {
-            hoveredToolbarLabel = label
-        } else if hoveredToolbarLabel == label {
-            hoveredToolbarLabel = nil
-        }
-
-        tooltipTask?.cancel()
-        if inside {
-            tooltipTask = Task {
-                try? await Task.sleep(for: .seconds(0.45))
-                guard !Task.isCancelled else { return }
-                withAnimation(.easeIn(duration: 0.1)) {
-                    tooltipVisibleLabel = label
-                }
-            }
-        } else if tooltipVisibleLabel == label {
-            withAnimation(.easeOut(duration: 0.08)) {
-                tooltipVisibleLabel = nil
-            }
-        }
-    }
-
-    /// Отдельно от setToolbarHover — щёлкая по кнопке, курсор физически
-    /// остаётся на месте (onHover не получает "мышь ушла"), так что без
-    /// явной отмены подсказка осталась бы висеть поверх уже открытой панели.
-    private func dismissToolbarTooltip() {
-        tooltipTask?.cancel()
-        tooltipVisibleLabel = nil
-    }
-
-    @ViewBuilder
-    private func toolbarTooltip(_ label: String) -> some View {
-        if tooltipVisibleLabel == label {
-            Text(label)
-                .font(.system(size: 10, weight: .medium))
-                .foregroundStyle(Color.white.opacity(0.9))
-                .padding(.horizontal, 8)
-                .padding(.vertical, 4)
-                // Обычный Color.black.opacity(...) на и без того тёмном
-                // фоне канвы визуально неотличим от полностью непрозрачного
-                // — настоящий материал реально размывает/пропускает то,
-                // что под ним, а не просто гасит альфой поверх тёмного.
-                // Сам материал светлый в Light Mode — белый текст поверх
-                // него без тона нечитаем, поэтому дотемняем чёрным тоном
-                // (в Dark Mode тон не нужен — материал и так тёмный).
-                .background(
-                    Capsule()
-                        .fill(.ultraThinMaterial.opacity(0.9))
-                        .overlay(Capsule().fill(Color.black.opacity(colorScheme == .dark ? 0 : 0.18)))
-                )
-                .fixedSize()
-                .allowsHitTesting(false)
-                .offset(y: 24)
-                .transition(.opacity)
-        }
     }
 
     /// Единственная точка смены фокуса. Флаг перехода обязан меняться в
@@ -1194,23 +635,6 @@ struct ContentView: View {
         }
     }
 
-    private func startWorkspaceRename() {
-        workspaceNameDraft = viewModel.activeWorkspace?.name ?? Workspace.defaultName(forSlot: viewModel.activeSlot)
-        isEditingWorkspaceName = true
-        DispatchQueue.main.async {
-            isWorkspaceNameFieldFocused = true
-        }
-    }
-
-    private func commitWorkspaceRename() {
-        guard isEditingWorkspaceName else { return }
-        viewModel.renameActiveWorkspace(to: workspaceNameDraft)
-        isEditingWorkspaceName = false
-    }
-
-    private func cancelWorkspaceRename() {
-        isEditingWorkspaceName = false
-    }
 }
 
 #Preview {

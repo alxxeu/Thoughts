@@ -60,14 +60,16 @@ struct SyncableKeychainItem {
     /// другого Mac) — оно побеждает и копируется локально; иначе локальное
     /// выгружается в iCloud.
     @discardableResult
-    func reconcile() -> Reconciliation {
+    func reconcile(uploadLocal: Bool) -> Reconciliation {
         let local = read(synchronizable: false)
         if let synced = read(synchronizable: true) {
             guard synced != local else { return .nothing }
             write(synced, synchronizable: false)
             return .adoptedFromICloud(replacedDifferentValue: local != nil)
         }
-        guard let local else { return .nothing }
+        // Только при включении синка: на обычном запуске пустой iCloud может
+        // значить "удалили на другом Mac", и выгрузка вернула бы удалённое.
+        guard uploadLocal, let local else { return .nothing }
         return write(local, synchronizable: true) ? .uploaded : .nothing
     }
 

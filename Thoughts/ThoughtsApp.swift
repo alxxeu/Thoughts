@@ -1,6 +1,7 @@
 import SwiftUI
 import AppKit
 import CoreSpotlight
+import Carbon.HIToolbox
 
 @main
 struct ThoughtsApp: App {
@@ -56,7 +57,33 @@ struct ThoughtsApp: App {
                 }
                 .keyboardShortcut("q", modifiers: .command)
             }
-            TextFormattingCommands()
+            // Своё меню Format: только то, что хранится в Markdown (системное
+            // давало шрифт, цвет и размер, которые терялись бы при сохранении).
+            CommandGroup(replacing: .textFormatting) {
+                formatButton("Bold", "markdownBold:", "b")
+                formatButton("Italic", "markdownItalic:", "i")
+                formatButton("Underline", "markdownUnderline:", "u")
+                formatButton("Strikethrough", "markdownStrikethrough:", "x", modifiers: [.command, .shift])
+                formatButton("Highlight", "markdownHighlight:", "h", modifiers: [.command, .shift])
+
+                Divider()
+
+                // Тег карточки, в которой курсор (или открытой в Focus Mode) —
+                // см. ContentView, .setCardTag.
+                Menu("Tag") {
+                    ForEach(Array(CardTagColor.allCases.enumerated()), id: \.element) { index, color in
+                        Button(color.rawValue.capitalized) {
+                            NotificationCenter.default.post(name: .setCardTag, object: color)
+                        }
+                        .keyboardShortcut(KeyEquivalent(Character("\(index + 1)")), modifiers: .control)
+                    }
+                    Divider()
+                    Button("Remove Tag") {
+                        NotificationCenter.default.post(name: .setCardTag, object: nil)
+                    }
+                    .keyboardShortcut("0", modifiers: .control)
+                }
+            }
             // Само удаление не отсюда — только запрос на подтверждение;
             // см. requestClearSpace/isShowingClearSpaceConfirmation в
             // ContentView, где и происходит реальный вызов
@@ -160,6 +187,9 @@ struct ThoughtsApp: App {
                         KeyEquivalent(Character("\(workspace.slot)")),
                         modifiers: .option
                     )
+                    // Текущий Space выключен: зажатый ⌥N иначе повторял переход
+                    // на автоповторе. Из Desktop mode ⌥N по-прежнему выводит.
+                    .disabled(workspace.slot == viewModel.activeSlot && !viewModel.desktopOverlay.isDesktopModeActive)
                 }
             }
         }
@@ -167,6 +197,15 @@ struct ThoughtsApp: App {
             SettingsView(viewModel: viewModel)
                 .preferredColorScheme(preferredColorScheme)
         }
+    }
+
+    /// Пункт Format: действие уходит в карточку с курсором (CardNSTextView);
+    /// вне карточки — никто не отвечает, ничего не происходит.
+    private func formatButton(_ title: String, _ action: String, _ key: KeyEquivalent, modifiers: SwiftUI.EventModifiers = .command) -> some View {
+        Button(title) {
+            NSApp.sendAction(Selector(action), to: nil, from: nil)
+        }
+        .keyboardShortcut(key, modifiers: modifiers)
     }
 
     private var preferredColorScheme: ColorScheme? {
@@ -196,6 +235,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         if let viewModel {
             QuickCaptureController.shared.start(viewModel: viewModel)
             CloudSyncEngine.shared.start(viewModel: viewModel)
+            registerSpaceHotKeys(viewModel)
         }
         interactionMonitor = NSEvent.addLocalMonitorForEvents(
             matching: [
@@ -205,7 +245,50 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             ]
         ) { [weak self] event in
             self?.viewModel?.recordInteraction()
+            if event.type == .keyDown, self?.handleSpaceKey(event) == true { return nil }
             return event
+        }
+        if let unreadable = BoardStore.shared.unreadableFileURL {
+            showUnreadableBoardAlert(unreadable)
+        }
+    }
+
+    /// Текст сохраняется с задержкой (scheduleDebouncedSave) — без этого
+    /// последние слова перед ⌘Q/выходом из системы терялись бы. С синком
+    /// ещё и отправляем очередь в iCloud, но ждём не дольше 2 с.
+    func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
+        viewModel?.flushPendingSave()
+        guard CloudSyncSettings.shared.isEnabled else { return .terminateNow }
+
+        var hasReplied = false
+        func reply() {
+            guard !hasReplied else { return }
+            hasReplied = true
+            NSApp.reply(toApplicationShouldTerminate: true)
+        }
+        Task {
+            await CloudSyncEngine.shared.flushBeforeQuit()
+            reply()
+        }
+        DispatchQueue.main.asyncAfter(deadline: .now() + 2) { reply() }
+        return .terminateLater
+    }
+
+    private func showUnreadableBoardAlert(_ url: URL) {
+        let alert = NSAlert()
+        alert.alertStyle = .critical
+        alert.messageText = "Thoughts couldn\u{2019}t read your saved cards"
+        if url.lastPathComponent == "board.json" {
+            alert.informativeText = "The file couldn\u{2019}t be moved aside, so Thoughts won\u{2019}t save anything until it\u{2019}s fixed. "
+                + "You can restore a backup with File \u{2192} Import Backup\u{2026}"
+        } else {
+            alert.informativeText = "The unreadable file was kept as \u{201C}\(url.lastPathComponent)\u{201D}. "
+                + "You can restore a backup with File \u{2192} Import Backup\u{2026}"
+        }
+        alert.addButton(withTitle: "OK")
+        alert.addButton(withTitle: "Show in Finder")
+        if alert.runModal() == .alertSecondButtonReturn {
+            NSWorkspace.shared.activateFileViewerSelecting([url])
         }
     }
 
@@ -220,13 +303,63 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             return false
         }
 
+        showMainWindow()
+        viewModel?.focusOnCard(id: cardID)
+        return true
+    }
+
+    private func showMainWindow() {
         NSApp.activate(ignoringOtherApps: true)
         if let window = NSApp.windows.first {
             if window.isMiniaturized { window.deminiaturize(nil) }
             window.makeKeyAndOrderFront(nil)
         }
-        viewModel?.focusOnCard(id: cardID)
+    }
+
+    /// ⌃⌥1–9 из любого приложения: переключают Space и выводят Thoughts
+    /// вперёд. С ⌃, а не голым ⌥, как в меню: глобальный ⌥+цифра забирал
+    /// бы эти клавиши у всех приложений (на немецкой раскладке ⌥5–9 печатают
+    /// `[ ] | { }`). keyCode — физические клавиши, от раскладки не зависят.
+    /// Регистрируются на всё время работы приложения; занятое другим
+    /// приложением сочетание просто не сработает.
+    /// ⌥1–9 — здесь, а не только шорткатом пункта меню: через меню каждое
+    /// нажатие подсвечивало меню, перерисовывало Space синхронно внутри
+    /// подсветки, а на частых нажатиях AppKit ещё и притормаживал повторы —
+    /// быстрые переключения копились до «радужного курсора». Отсюда
+    /// переключения между кадрами сливаются в одну перерисовку. Пункты меню
+    /// остаются — для вида и для клика мышью.
+    private func handleSpaceKey(_ event: NSEvent) -> Bool {
+        guard let viewModel,
+              event.modifierFlags.intersection([.command, .control, .option, .shift]) == .option,
+              let slot = Self.digitKeyCodes.firstIndex(of: UInt32(event.keyCode)).map({ $0 + 1 }) else { return false }
+        // В тексте ⌥1–9 печатают символы (¡, ™, £…) — как и до перехвата.
+        guard !(event.window?.firstResponder is NSTextView) else { return false }
+        // Зажатая клавиша (автоповтор) не переключает снова.
+        guard !event.isARepeat else { return true }
+        let overlay = viewModel.desktopOverlay
+        guard slot != viewModel.activeSlot || overlay.isDesktopModeActive else { return true }
+        overlay.isDesktopModeActive = false
+        NotificationCenter.default.post(name: .switchWorkspace, object: slot)
         return true
+    }
+
+    private static let digitKeyCodes: [UInt32] = [18, 19, 20, 21, 23, 22, 26, 28, 25] // kVK_ANSI_1...9
+
+    private func registerSpaceHotKeys(_ viewModel: BoardViewModel) {
+        for (index, keyCode) in Self.digitKeyCodes.enumerated() {
+            let slot = index + 1
+            GlobalHotKeyManager.shared.register(keyCode: keyCode, modifiers: UInt32(controlKey | optionKey)) { [weak self] in
+                let overlay = viewModel.desktopOverlay
+                // Уже на этом Space и он на экране — зажатый хоткей ничего не повторяет.
+                if slot == viewModel.activeSlot, !overlay.isDesktopModeActive,
+                   overlay.isEnabled || NSApp.isActive { return }
+                // В Overlay окно живёт на уровне стола — активировать нечего,
+                // достаточно выйти из Desktop mode.
+                if !overlay.isEnabled { self?.showMainWindow() }
+                overlay.isDesktopModeActive = false
+                NotificationCenter.default.post(name: .switchWorkspace, object: slot)
+            }
+        }
     }
 }
 

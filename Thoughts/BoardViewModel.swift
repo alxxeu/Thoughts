@@ -60,6 +60,10 @@ final class BoardViewModel {
         workspaces.first { $0.slot == activeSlot }
     }
 
+    var activeWorkspaceName: String {
+        activeWorkspace?.name ?? Workspace.defaultName(forSlot: activeSlot)
+    }
+
     private let store = BoardStore.shared
     private var saveTask: Task<Void, Never>?
     /// См. BoardChangeTracker. Не наблюдается: это служебное состояние, не UI.
@@ -215,19 +219,20 @@ final class BoardViewModel {
     }
 
 
-    func renameActiveWorkspace(to name: String) {
-        guard let index = workspaces.firstIndex(where: { $0.slot == activeSlot }) else { return }
+    func renameWorkspace(slot: Int, to name: String) {
+        guard let index = workspaces.firstIndex(where: { $0.slot == slot }) else { return }
         let trimmed = name.trimmingCharacters(in: .whitespacesAndNewlines)
         let limited = String(trimmed.prefix(Self.maxWorkspaceNameLength))
-        workspaces[index].name = limited.isEmpty ? Workspace.defaultName(forSlot: activeSlot) : limited
+        workspaces[index].name = limited.isEmpty ? Workspace.defaultName(forSlot: slot) : limited
         saveImmediately()
     }
 
     @discardableResult
-    func addCard(at origin: CGPoint, size: CGSize) -> Card {
+    func addCard(at origin: CGPoint, size: CGSize, slot: Int? = nil, text: String = "", isAIGenerated: Bool = false) -> Card {
         let snapped = CGSize(width: Self.snap(size.width), height: Self.snap(size.height))
-        let card = Card(position: origin, size: snapped)
-        cards.append(card)
+        let card = Card(position: origin, size: snapped, text: text)
+        card.isAIGenerated = isAIGenerated
+        cardsByWorkspace[slot ?? activeSlot, default: []].append(card)
         saveImmediately()
         return card
     }
@@ -250,10 +255,8 @@ final class BoardViewModel {
             ? (NSScreen.main?.visibleFrame.size ?? CGSize(width: 900, height: 600))
             : lastCanvasSize
         let origin = Self.firstFreeOrigin(size: size, among: cards, canvasSize: canvasSize, topInset: topInset)
-        let card = addCard(at: origin, size: size)
-        card.text = text
-        saveImmediately()
-        return card
+        // Чек-листы — в стандартный `- [ ] `, как при наборе в карточке.
+        return addCard(at: origin, size: size, text: MarkdownFormatting.standardizingTaskMarkers(text, atLineStart: true))
     }
 
     /// Обходит канву рядами сверху-вниз, слева-направо с шагом
@@ -657,10 +660,9 @@ final class BoardViewModel {
             let local = CardRecord(card, slot: slot)
             var merged = BoardMerger.merge(local, remote)
             if card.id == editingCardID,
-               merged.text != local.text || merged.formattingData != local.formattingData {
+               merged.text != local.text {
                 deferredRemoteContent[card.id] = remote
                 merged.text = local.text
-                merged.formattingData = local.formattingData
                 merged.contentModifiedAt = local.contentModifiedAt
             }
 

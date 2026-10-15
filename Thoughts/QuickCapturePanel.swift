@@ -244,6 +244,6 @@ private struct QuickCaptureView: View {
 
     private var spaceName: String {
         guard let viewModel else { return "" }
-        return viewModel.activeWorkspace?.name ?? Workspace.defaultName(forSlot: viewModel.activeSlot)
+        return viewModel.activeWorkspaceName
     }
 }
