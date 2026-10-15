@@ -18,19 +18,17 @@ enum ReleaseNotes {
     static let all: [ReleaseNote] = [
         ReleaseNote(version: "1.4", sections: [
             .init(title: "New", items: [
-                "Markdown \u{2014} cards are now written in Markdown: # headings, **bold**, *italic*, ~underline~, ~~strikethrough~~, ==highlight==, `code`, links, lists and dividers (a line of -- or more dashes). The formatting characters show while you edit a word and hide when you move on. Markdown pasted from Notion and other apps appears formatted.",
-                "Switch Spaces from any app with \u{2303}\u{2325}1\u{2013}9 \u{2014} Thoughts comes forward on that Space."
+                "Markdown \u{2014} write cards in Markdown: headings, bold, italic, underline, strikethrough, highlight, links and lists. The formatting characters show next to the cursor and hide everywhere else. Markdown pasted from Notion and other apps arrives formatted.",
+                "Task lists, quotes and code blocks \u{2014} check off tasks with a click and copy a code block with one button.",
+                "AI answers arrive formatted in Markdown.",
+                "Tags from the keyboard \u{2014} \u{2303}1\u{2013}7 color the card you\u{2019}re editing, \u{2303}0 removes the tag.",
+                "Switch Spaces from any app with \u{2303}\u{2325}1\u{2013}9 \u{2014} Thoughts comes forward on that Space.",
+                "A redesigned Shortcuts section in Settings, with an example of every Markdown style.",
+                "What\u{2019}s new after an update, and Check for Updates in Settings \u{2192} About."
             ]),
             .init(title: "Improved", items: [
-                "\u{2318}B, \u{2318}I, \u{2318}U, \u{21E7}\u{2318}X and \u{21E7}\u{2318}H format the selection; press again to remove.",
-                "Desktop Overlay shortcuts from other apps now use \u{2303}\u{2325}, so they no longer block typing \u{2325} characters in other apps.",
-                "A revealed Spoiler or Lock card locks again 5 seconds after you switch to another app.",
-                "A clear explanation when a Space has too much text for Apple Intelligence."
-            ]),
-            .init(title: "Fixed", items: [
-                "Your last words are saved \u{2014} and sent to iCloud \u{2014} even if you quit right after typing.",
-                "A damaged data file is kept aside instead of being overwritten.",
-                "Renaming a Space and switching Spaces at the same time no longer renames the wrong one."
+                "Improved everything we could \u{2014} faster, smoother and more reliable.",
+                "Improved security."
             ]),
             .init(title: "Note", items: [
                 "Update Thoughts on all your Macs: older versions show Markdown characters in cards edited here. Your cards were converted automatically, and a copy of the previous data is kept in the Backups folder."
