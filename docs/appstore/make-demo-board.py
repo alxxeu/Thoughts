@@ -47,11 +47,11 @@ Adds staged changes to the last commit."""),
 — Linus Pauling""", tag="yellow"),
     card(790, 400, 2, 2, "Gift idea for Sam: the green fountain pen from the shop on Elm Street", tag="purple", privacy="spoiler"),
     card(970, 400, 2, 2, "Studio Wi-Fi: sunflower-42-meadow", privacy="lock"),
-    card(1220, 130, 5, 4, """## Summary of this Space
+    card(1150, 130, 4, 4, """## Summary of this Space
 - A weekend **app idea** with a clear must-have list
 - A reading list, *one book finished*
 - Next step: ==sketch the widget==""", ai=True),
-    card(1220, 490, 3, 3, """## Groceries
+    card(1150, 490, 3, 3, """## Groceries
 - [ ] Oat milk
 - [x] Coffee beans
 - [ ] Lemons
@@ -79,6 +79,16 @@ launch = [
 - [x] iCloud sync""", tag="green"),
     card(990, 130, 4, 3, """### Launch tweet
 Thoughts 1.4 is out — **Markdown**, task lists and tags right from the keyboard."""),
+    card(990, 400, 4, 2, """### Countdown
+==3 days== to launch"""),
+    card(120, 490, 4, 3, """## Ideas for 1.5
+- Widgets
+- iPhone companion
+- *Shared* Spaces""", tag="purple"),
+    card(500, 490, 4, 3, """## Press kit
+- [x] Icon
+- [ ] Screenshots
+- [ ] Preview video""", tag="blue"),
 ]
 
 journal = [

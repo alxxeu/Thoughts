@@ -15,3 +15,7 @@ Thoughts.xcodeproj/xcshareddata/xcodecloud/
 # Локальные заметки по процессу разработки — не для публичного репозитория
 BACKLOG.md
 EXECUTE.md
+
+# Скриншоты App Store: исходники и готовые кадры (собираются docs/appstore/compose.py)
+docs/appstore/raw/
+docs/appstore/out/
