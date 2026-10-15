@@ -5,6 +5,17 @@ private struct BoardData: Codable {
     var cardsByWorkspace: [Int: [Card]]
 }
 
+/// Только в Debug: запуск с `-demoBoard YES` — отдельная доска
+/// demo-board.json для скриншотов и видео App Store, без iCloud и Spotlight,
+/// чтобы демо-карточки не смешались с настоящими.
+enum DemoMode {
+    #if DEBUG
+    static let isActive = UserDefaults.standard.bool(forKey: "demoBoard")
+    #else
+    static let isActive = false
+    #endif
+}
+
 final class BoardStore {
     static let shared = BoardStore()
 
@@ -23,7 +34,7 @@ final class BoardStore {
         let folder = appSupport.appendingPathComponent("Thoughts", isDirectory: true)
         try? FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
 
-        self.init(fileURL: folder.appendingPathComponent("board.json"))
+        self.init(fileURL: folder.appendingPathComponent(DemoMode.isActive ? "demo-board.json" : "board.json"))
     }
 
     init(fileURL: URL) {
