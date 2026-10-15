@@ -4,7 +4,7 @@
 // доработать руками); пересобрать — удалить фрейм в Figma и запустить снова.
 
 const W = 402, H = 874, GAP = 120;
-const SHEET_TOP = 116; // карта редактора — ниже заголовка Space, он виден размытым
+const SHEET_TOP = 116; // над картой редактора видна полоса размытой ленты
 // true — пересобрать свои фреймы (только пока их не дорабатывали руками).
 const REBUILD = false;
 const C = {
@@ -66,16 +66,37 @@ function card(f, y, h, kind) {
   return y + h;
 }
 
-// Заголовок Space + Settings.
-function header(f, collapsed = false) {
-  if (collapsed) { rect(f, (W - 120) / 2, 64, 120, 16, C.dark, 8); circle(f, W - 38, 72, 32, C.sys); return 96; }
-  rect(f, 16, 70, 170, 32, C.dark, 8);
-  circle(f, W - 38, 86, 40, C.sys);
-  return 120;
+// Плавающая кнопка Settings справа сверху (заголовка нет — Р12).
+function settingsButton(f) {
+  circle(f, W - 36, 76, 36, C.sys).name = 'Settings';
+  return 60; // лента идёт от верха, кнопка плавает над ней
 }
 
-// Поле ввода (+ точки Spaces над ним). typed — с кнопкой отправки внутри поля.
-function composer(f, bottom, { typed = false, dots = true, multiline = false } = {}) {
+const CAPSULES = [72, 88, 64, 96, 80, 70, 90, 76, 84];
+const CURRENT = 2;
+
+// Spaces над полем: 'capsules' — лента капсул, 'dots' — схлопнуты в точки.
+function spaces(f, y, mode) {
+  if (mode === 'capsules') {
+    let x = 16;
+    CAPSULES.forEach((w, i) => {
+      rect(f, x, y - 46, w, 36, i === CURRENT ? C.dark : C.block, 18).name = `Space capsule ${i + 1}`;
+      rect(f, x + 16, y - 32, w - 32, 8, i === CURRENT ? C.dim : C.line, 4);
+      x += w + 8;
+    });
+    return y - 46;
+  }
+  const n = 9, d = 6, gap = 10, total = n * d + (n - 1) * gap + 10;
+  let x = (W - total) / 2;
+  for (let i = 0; i < n; i++) {
+    if (i === CURRENT) { rect(f, x, y - 18, 16, d, C.dim, 3); x += 16 + gap; continue; }
+    circle(f, x + d / 2, y - 18 + d / 2, d, C.dark); x += d + gap;
+  }
+  return y - 18;
+}
+
+// Поле ввода; typed — кнопка отправки внутри поля справа (появляется с первым символом, Р14).
+function composer(f, bottom, { typed = false, multiline = false, mode = 'capsules' } = {}) {
   const h = multiline ? 96 : 48;
   const y = bottom - h;
   rect(f, 16, y, W - 32, h, C.block, 24).name = 'Composer';
@@ -85,15 +106,7 @@ function composer(f, bottom, { typed = false, dots = true, multiline = false } =
   } else {
     rect(f, 36, y + 20, 140, 8, C.line, 4);           // плейсхолдер
   }
-  if (dots) {
-    const n = 9, d = 6, gap = 10, total = n * d + (n - 1) * gap + 10;
-    let x = (W - total) / 2;
-    for (let i = 0; i < n; i++) {
-      if (i === 2) { rect(f, x, y - 18, 16, d, C.dim, 3); x += 16 + gap; continue; } // текущий Space
-      circle(f, x + d / 2, y - 18 + d / 2, d, C.dark); x += d + gap;
-    }
-  }
-  return y;
+  return spaces(f, y, mode);
 }
 
 function keyboard(f) {
@@ -118,22 +131,21 @@ const FEED = [[64, 'text'], [150, 'long'], [64, 'lock'], [96, 'task'], [110, 'sp
 
 // ---- состояния
 
+// Лента под картой редактора (размыта и притемнена).
+function s1Behind(f) {
+  chrome(f); const top = settingsButton(f); const sy = composer(f, H - 34);
+  feed(f, top, sy - 8, FEED);
+  rect(f, 0, 0, W, H, C.dim, 0, 0.35);
+}
+
 const STATES = [
-  ['S1 · Лента', (f) => { chrome(f); const top = header(f); const cy = composer(f, H - 34); feed(f, top, cy - 28, FEED); }],
-  ['S1 · Пустой Space', (f) => { chrome(f); header(f); const cy = composer(f, H - 34); rect(f, (W - 180) / 2, cy - 80, 180, 10, C.line, 5); }],
-  ['S1 · Прокрутка вверх (заголовок сжат)', (f) => { chrome(f); const top = header(f, true); const cy = composer(f, H - 34); feed(f, top, cy - 28, [...FEED].reverse()); }],
-  ['S1 · Ввод (клавиатура, кнопка в поле)', (f) => { chrome(f); const top = header(f); const ky = keyboard(f); const cy = composer(f, ky - 8, { typed: true }); feed(f, top, cy - 28, FEED); }],
-  ['S1 · Длинный ввод', (f) => { chrome(f); const top = header(f); const ky = keyboard(f); const cy = composer(f, ky - 8, { typed: true, multiline: true }); feed(f, top, cy - 28, FEED); }],
-  ['S1 · Список Spaces (свайп вниз)', (f) => {
-    chrome(f); const top = header(f); const cy = composer(f, H - 34, { dots: false });
-    feed(f, top, cy - 28, FEED);
-    rect(f, 0, 0, W, H, C.dim, 0, 0.25);
-    const ph = 9 * 44 + 16, py = cy - 12 - ph;
-    rect(f, 16, py, W - 32, ph, C.block, 24).name = 'Spaces list';
-    for (let i = 0; i < 9; i++) { circle(f, 40, py + 30 + i * 44, 8, i === 2 ? C.dim : C.dark); rect(f, 56, py + 26 + i * 44, 120 + (i % 3) * 30, 8, C.line, 4); }
-  }],
+  ['S1 · Лента', (f) => { chrome(f); const top = settingsButton(f); const sy = composer(f, H - 34); feed(f, top, sy - 8, FEED); }],
+  ['S1 · Пустой Space', (f) => { chrome(f); settingsButton(f); const sy = composer(f, H - 34); rect(f, (W - 180) / 2, sy - 60, 180, 10, C.line, 5); }],
+  ['S1 · Прокрутка вверх (капсулы → точки)', (f) => { chrome(f); const top = settingsButton(f); const sy = composer(f, H - 34, { mode: 'dots' }); feed(f, top, sy - 8, [...FEED].reverse()); }],
+  ['S1 · Ввод (точки, кнопка в поле)', (f) => { chrome(f); const top = settingsButton(f); const ky = keyboard(f); const sy = composer(f, ky - 8, { typed: true, mode: 'dots' }); feed(f, top, sy - 8, FEED); }],
+  ['S1 · Длинный ввод', (f) => { chrome(f); const top = settingsButton(f); const ky = keyboard(f); const sy = composer(f, ky - 8, { typed: true, multiline: true, mode: 'dots' }); feed(f, top, sy - 8, FEED); }],
   ['S2 · Карта', (f) => {
-    chrome(f); header(f); rect(f, 0, 0, W, H, C.dim, 0, 0.35); // размытый Space сверху
+    s1Behind(f);
     const bar = H - 34 - 48;
     rect(f, 12, SHEET_TOP, W - 24, bar - 12 - SHEET_TOP, C.block, 28).name = 'Card sheet';
     circle(f, 40, SHEET_TOP + 28, 16, C.dark); circle(f, W - 44, SHEET_TOP + 28, 32, C.sys);
@@ -141,7 +153,7 @@ const STATES = [
     [[16, 120], [144, 118], [270, 116]].forEach(([x, w]) => rect(f, x, bar, w, 44, C.block, 22)); // тег · Spoiler · Lock
   }],
   ['S2 · Правка (клавиатура + Markdown)', (f) => {
-    chrome(f); header(f); rect(f, 0, 0, W, H, C.dim, 0, 0.35);
+    s1Behind(f);
     const ky = keyboard(f);
     const tb = ky - 52;
     rect(f, 8, tb, W - 16, 44, C.block, 22).name = 'Markdown toolbar';
@@ -152,7 +164,7 @@ const STATES = [
     rect(f, 32, SHEET_TOP + 60 + 5 * 22 - 4, 2, 16, C.dim); // курсор
   }],
   ['S2 · Выбор тега', (f) => {
-    chrome(f); header(f); rect(f, 0, 0, W, H, C.dim, 0, 0.35);
+    s1Behind(f);
     const bar = H - 34 - 48;
     rect(f, 12, SHEET_TOP, W - 24, bar - 12 - SHEET_TOP, C.block, 28);
     circle(f, 40, SHEET_TOP + 28, 16, C.dark); circle(f, W - 44, SHEET_TOP + 28, 32, C.sys);
@@ -162,7 +174,7 @@ const STATES = [
     [[16, 120], [144, 118], [270, 116]].forEach(([x, w]) => rect(f, x, bar, w, 44, C.block, 22));
   }],
   ['S2 · Меню «…»', (f) => {
-    chrome(f); header(f); rect(f, 0, 0, W, H, C.dim, 0, 0.35);
+    s1Behind(f);
     const bar = H - 34 - 48;
     rect(f, 12, SHEET_TOP, W - 24, bar - 12 - SHEET_TOP, C.block, 28);
     circle(f, 40, SHEET_TOP + 28, 16, C.dark); circle(f, W - 44, SHEET_TOP + 28, 32, C.sys);
@@ -177,6 +189,10 @@ run(async (log) => {
   const page = pageNamed('iOS — Wireframes');
   await page.loadAsync();
   let made = 0;
+  if (REBUILD) { // убрать свои фреймы состояний, которых больше нет в списке
+    const names = new Set(STATES.map(([n]) => `wf:${n}`));
+    page.findAll((n) => n.getPluginData(MARK).startsWith('wf:') && !names.has(n.getPluginData(MARK))).forEach((n) => n.remove());
+  }
   STATES.forEach(([name, draw], i) => {
     const key = `wf:${name}`;
     const old = findMarked(key, page);
