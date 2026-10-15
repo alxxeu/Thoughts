@@ -1,0 +1,544 @@
+{
+  "components": {
+    "Status bar - iPhone 17 Pro": {
+      "component": "Status bar - iPhone 17 Pro",
+      "key": "e01a1714aeec1a5a0a6453485bf16e975008b282",
+      "remote": true,
+      "set": null,
+      "setKey": null,
+      "variant": null,
+      "properties": {
+        "Time#5466:4": "TEXT"
+      },
+      "size": [
+        402,
+        62
+      ],
+      "fillStyle": null,
+      "effectStyle": null
+    },
+    "Status bar - iPhone Duo": {
+      "component": "Type=Vertical",
+      "key": "135029d4d1fc9531da7ec302da693c0caee3d327",
+      "remote": true,
+      "set": "Status bar - iPhone Duo",
+      "setKey": "4d9a643c0a0c3a00bc4a752f784b5d09fa102c53",
+      "variant": {
+        "Type": "Vertical"
+      },
+      "properties": {
+        "Time#12884:1": "TEXT",
+        "Type": [
+          "Horizontal",
+          "Vertical"
+        ]
+      },
+      "size": [
+        48,
+        86
+      ],
+      "fillStyle": null,
+      "effectStyle": null
+    },
+    "Status bar and Menu bar- iPad": {
+      "component": "Full Screen=True,Menu Expanded=False,Background=Light",
+      "key": "ca9b1267ef2a18b831e0cbc71d3e383712e4678a",
+      "remote": true,
+      "set": "Status bar and Menu bar- iPad",
+      "setKey": "ac231e0931df69af6728faf287ffb89e1e1fdf27",
+      "variant": {
+        "Full Screen": "True",
+        "Menu Expanded": "False",
+        "Background": "Light"
+      },
+      "properties": {
+        "Menubar#10465:122": "SLOT",
+        "Full Screen": [
+          "True",
+          "False"
+        ],
+        "Menu Expanded": [
+          "True",
+          "False"
+        ],
+        "Background": [
+          "Light"
+        ]
+      },
+      "size": [
+        1210,
+        32
+      ],
+      "fillStyle": null,
+      "effectStyle": null
+    },
+    "Keyboard": {
+      "component": "Type=Upper Case",
+      "key": "f6b8b5978d489c1cd6665c6bd43b493159e389e1",
+      "remote": true,
+      "set": "Keyboard",
+      "setKey": "69590385da35b3bf05f28c7ab8acffdb44cebf58",
+      "variant": {
+        "Type": "Upper Case"
+      },
+      "properties": {
+        "Show suggestions#6238:0": "BOOLEAN",
+        "Type": [
+          "Lower Case",
+          "Upper Case",
+          "Punctuation",
+          "Numeric",
+          "Web",
+          "URL",
+          "Email",
+          "Number Pad",
+          "Emoji"
+        ]
+      },
+      "size": [
+        402,
+        332
+      ],
+      "fillStyle": null,
+      "effectStyle": null
+    },
+    "Accessory Bar - iPhone/Toolbar": {
+      "component": "Mode=Light, Type=Button",
+      "key": "ca74e64456a537e4b1278ca3931e72cfbdc744f0",
+      "remote": true,
+      "set": "Accessory Bar - iPhone/Toolbar",
+      "setKey": "ddc4a2baa488ac2e2db5e84a99a4c6f10289e235",
+      "variant": {
+        "Mode": "Light",
+        "Type": "Button"
+      },
+      "properties": {
+        "Buttons#10460:30": "SLOT",
+        "Mode": [
+          "Light",
+          "Dark"
+        ],
+        "Type": [
+          "Button Group",
+          "Button"
+        ]
+      },
+      "size": [
+        72,
+        48
+      ],
+      "fillStyle": null,
+      "effectStyle": null
+    },
+    "Liquid Glass - Clear": {
+      "component": "Liquid Glass - Clear",
+      "key": "d4329693a2e3bfe2a2c6e9cf065bdc648df64d18",
+      "remote": true,
+      "set": null,
+      "setKey": null,
+      "variant": null,
+      "properties": {},
+      "size": [
+        160,
+        160
+      ],
+      "fillStyle": null,
+      "effectStyle": null
+    },
+    "Liquid Glass - Regular - Large": {
+      "component": "Mode=Light",
+      "key": "749b99b0c9d3f350dbca65eb37a1b679de7bf6d9",
+      "remote": true,
+      "set": "Liquid Glass - Regular - Large",
+      "setKey": "21192d87803d003edf62c19cd1e6841a009cb08f",
+      "variant": {
+        "Mode": "Light"
+      },
+      "properties": {
+        "Mode": [
+          "Light",
+          "Dark"
+        ]
+      },
+      "size": [
+        160,
+        160
+      ],
+      "fillStyle": null,
+      "effectStyle": null
+    },
+    "Liquid Glass - Regular - Medium": {
+      "component": "Mode=Light",
+      "key": "e7675fc62b4fcd0a0f1733aa26496aef0d129641",
+      "remote": true,
+      "set": "Liquid Glass - Regular - Medium",
+      "setKey": "2316ea02d2c6f4d68337fdcc3ad54fa34bd1f29b",
+      "variant": {
+        "Mode": "Light"
+      },
+      "properties": {
+        "Mode": [
+          "Light",
+          "Dark"
+        ]
+      },
+      "size": [
+        160,
+        160
+      ],
+      "fillStyle": null,
+      "effectStyle": null
+    },
+    "Liquid Glass - Regular - Small": {
+      "component": "Mode=Light, Active=True, Prominent=False",
+      "key": "ff4a969f040b5a6792dfc749051dfa10b3e603be",
+      "remote": true,
+      "set": "Liquid Glass - Regular - Small",
+      "setKey": "2ce2a0ecbf38d9ce2bfe50c3bf99cc28eb52d7b3",
+      "variant": {
+        "Mode": "Light",
+        "Active": "True",
+        "Prominent": "False"
+      },
+      "properties": {
+        "Mode": [
+          "Light",
+          "Dark"
+        ],
+        "Active": [
+          "True",
+          "False"
+        ],
+        "Prominent": [
+          "False",
+          "True"
+        ]
+      },
+      "size": [
+        48,
+        48
+      ],
+      "fillStyle": null,
+      "effectStyle": null
+    },
+    "Scroll Edge Effect - Hard": {
+      "component": "Mode=Light, Edge=Top",
+      "key": "55401619dda17627e29d8847495780c659c0452e",
+      "remote": true,
+      "set": "Scroll Edge Effect - Hard",
+      "setKey": "e650ac9f8a51efbe593a89217866a6ca33d31a39",
+      "variant": {
+        "Mode": "Light",
+        "Edge": "Top"
+      },
+      "properties": {
+        "Mode": [
+          "Light",
+          "Dark"
+        ],
+        "Edge": [
+          "Bottom",
+          "Top"
+        ]
+      },
+      "size": [
+        200,
+        200
+      ],
+      "fillStyle": null,
+      "effectStyle": null
+    },
+    "Scroll Edge Effect - Soft": {
+      "component": "Edge=Top",
+      "key": "6e25dcd4cd49ebac61a8ea5e61e3a4e7f4b01013",
+      "remote": true,
+      "set": "Scroll Edge Effect - Soft",
+      "setKey": "be7fe56f07532afb3000aeb679252bd0d3c235b6",
+      "variant": {
+        "Edge": "Top"
+      },
+      "properties": {
+        "Edge": [
+          "Bottom",
+          "Top"
+        ]
+      },
+      "size": [
+        200,
+        200
+      ],
+      "fillStyle": null,
+      "effectStyle": null
+    },
+    "Menu": {
+      "component": "Mode=Light",
+      "key": "97db31b1542b215b1736e1f73fddfd1d9c9a5db2",
+      "remote": true,
+      "set": "Menu",
+      "setKey": "05a77c017ecd555207ab56a1cf529b6cc0b7b54d",
+      "variant": {
+        "Mode": "Light"
+      },
+      "properties": {
+        "Menu Items#10448:16": "SLOT",
+        "Mode": [
+          "Dark",
+          "Light"
+        ]
+      },
+      "size": [
+        238,
+        578
+      ],
+      "fillStyle": null,
+      "effectStyle": null
+    },
+    "Button - Content Area": {
+      "component": "Size=Small, Style=Bordered - Prominent, Label Style=Title and Icon, Is Enabled=True, Destructive=False",
+      "key": "658801b619f39a3663aada7d4e3d43ba1611dd99",
+      "remote": true,
+      "set": "Button - Content Area",
+      "setKey": "bba76d7e88d66c8704a07953ccc6056a185022b0",
+      "variant": {
+        "Size": "Small",
+        "Style": "Bordered - Prominent",
+        "Label Style": "Title and Icon",
+        "Is Enabled": "True",
+        "Destructive": "False"
+      },
+      "properties": {
+        "Label#488:0": "TEXT",
+        "Symbol#5473:145": "TEXT",
+        "Size": [
+          "Small",
+          "Medium",
+          "Large"
+        ],
+        "Style": [
+          "Bordered - Prominent",
+          "Bordered",
+          "Borderless"
+        ],
+        "Label Style": [
+          "Title and Icon",
+          "Icon only",
+          "Title only"
+        ],
+        "Is Enabled": [
+          "True",
+          "False"
+        ],
+        "Destructive": [
+          "True",
+          "False"
+        ]
+      },
+      "size": [
+        66,
+        28
+      ],
+      "fillStyle": null,
+      "effectStyle": null
+    },
+    "Button - Liquid Glass - Symbol": {
+      "component": "Style=Glass Prominent, Is Enabled=True, Destructive=False",
+      "key": "678a406607f1f1a6afdd436cd2aa74b57308e3b8",
+      "remote": true,
+      "set": "Button - Liquid Glass - Symbol",
+      "setKey": "36df7438d67ed37c94488fd11d425899f1a902ba",
+      "variant": {
+        "Style": "Glass Prominent",
+        "Is Enabled": "True",
+        "Destructive": "False"
+      },
+      "properties": {
+        "Style": [
+          "Glass Prominent",
+          "Glass"
+        ],
+        "Is Enabled": [
+          "True",
+          "False"
+        ],
+        "Destructive": [
+          "True",
+          "False"
+        ]
+      },
+      "size": [
+        50,
+        50
+      ],
+      "fillStyle": null,
+      "effectStyle": null
+    },
+    "Button - Liquid Glass - Text": {
+      "component": "Size=Large, Style=Glass Prominent, Is Enabled=True, Destructive=False",
+      "key": "0f21abb06a19a1d7f7a3a1bff791f988b0558418",
+      "remote": true,
+      "set": "Button - Liquid Glass - Text",
+      "setKey": "ef3d6a20d3f2a68057fe34363705c157e0b806c4",
+      "variant": {
+        "Size": "Large",
+        "Style": "Glass Prominent",
+        "Is Enabled": "True",
+        "Destructive": "False"
+      },
+      "properties": {
+        "Size": [
+          "Small",
+          "Medium",
+          "Large"
+        ],
+        "Style": [
+          "Glass Prominent",
+          "Glass"
+        ],
+        "Is Enabled": [
+          "True",
+          "False"
+        ],
+        "Destructive": [
+          "True",
+          "False"
+        ]
+      },
+      "size": [
+        85,
+        50
+      ],
+      "fillStyle": null,
+      "effectStyle": null
+    },
+    "Text Field": {
+      "component": "State=Placeholder",
+      "key": "4634239707f6374c6d41617154c168e827707a29",
+      "remote": true,
+      "set": "Text Field",
+      "setKey": "38117a30dd18e50d4c086b01121258a32567f920",
+      "variant": {
+        "State": "Placeholder"
+      },
+      "properties": {
+        "Value#519:17": "TEXT",
+        "State": [
+          "Placeholder",
+          "Focused",
+          "Typing",
+          "Value Entered"
+        ]
+      },
+      "size": [
+        402,
+        52
+      ],
+      "fillStyle": null,
+      "effectStyle": null
+    },
+    "Toolbar - Bottom - iPhone": {
+      "component": "Type=Buttons",
+      "key": "069c7ad050eab401dc3fd25b88d0a48119cdcc61",
+      "remote": true,
+      "set": "Toolbar - Bottom - iPhone",
+      "setKey": "c89c023d8dafc9e40e826f12778214d2db217534",
+      "variant": {
+        "Type": "Buttons"
+      },
+      "properties": {
+        "Buttons Leading#10464:54": "SLOT",
+        "Buttons Trailing#10464:61": "SLOT",
+        "Type": [
+          "Buttons",
+          "Buttons + Page Dots",
+          "Search",
+          "Search with Focus",
+          "Search + Trailing Item",
+          "Search + Leading Item"
+        ]
+      },
+      "size": [
+        402,
+        84
+      ],
+      "fillStyle": null,
+      "effectStyle": null
+    },
+    "Toolbar - Top - iPhone": {
+      "component": "Style=Default",
+      "key": "fadf5b0f719f98980d21abdc15e5d03d0dc7c999",
+      "remote": true,
+      "set": "Toolbar - Top - iPhone",
+      "setKey": "5a5c7f4643552b05f680c5ee9b1c085a942881cc",
+      "variant": {
+        "Style": "Default"
+      },
+      "properties": {
+        "Show Subtitle#5561:8": "BOOLEAN",
+        "Leading#10464:71": "SLOT",
+        "Trailing#10464:77": "SLOT",
+        "Style": [
+          "Default",
+          "Compact Large",
+          "Large Title",
+          "Title 2 Line",
+          "Title 2 Line Left"
+        ]
+      },
+      "size": [
+        402,
+        54
+      ],
+      "fillStyle": null,
+      "effectStyle": null
+    },
+    "Grabber": {
+      "component": "Mode=Light",
+      "key": "0596a2d7e8bc0bfeb5b3e25af31e3d54a0964bd5",
+      "remote": true,
+      "set": "Grabber",
+      "setKey": "0b1c0562ee2a67a0e4e87c555c900cffcaa6fdf0",
+      "variant": {
+        "Mode": "Light"
+      },
+      "properties": {
+        "Mode": [
+          "Light",
+          "Dark"
+        ]
+      },
+      "size": [
+        60,
+        4
+      ],
+      "fillStyle": null,
+      "effectStyle": null
+    },
+    "Sheet - iPhone": {
+      "component": "Detent=Medium",
+      "key": "f28f54a2dabb63b1c973de7954dd39ad8706b236",
+      "remote": true,
+      "set": "Sheet - iPhone",
+      "setKey": "b638240e95811750ac62526a67cc8e1d81a2c820",
+      "variant": {
+        "Detent": "Medium"
+      },
+      "properties": {
+        "Show Grabber#10525:0": "BOOLEAN",
+        "Show Dimming Layer#10525:4": "BOOLEAN",
+        "Content#10525:8": "SLOT",
+        "Detent": [
+          "Medium",
+          "Large",
+          "Large (Stacked)"
+        ]
+      },
+      "size": [
+        402,
+        874
+      ],
+      "fillStyle": null,
+      "effectStyle": null
+    }
+  },
+  "styles": {}
+}
