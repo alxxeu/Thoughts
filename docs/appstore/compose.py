@@ -101,7 +101,12 @@ def spaces_stack():
     width, inset = 1560, 90                        # правый край уходит вглубь
     label = font(34, "Semibold")
     for i, slot in enumerate([5, 4, 3, 2, 1]):
-        thumb = screen(os.path.join(RAW, "spaces", f"{slot}.png")).resize((tw, th), Image.LANCZOS)
+        if slot == 4:
+            # Под ⌥4 — снимок закрытого Space, крупнее и со сдвигом, чтобы замок попал в видимую полосу.
+            thumb = Image.open(os.path.join(RAW, "3-locked.png")).convert("RGB").crop((1440, 590, 3240, 1715))
+        else:
+            thumb = screen(os.path.join(RAW, "spaces", f"{slot}.png"))
+        thumb = thumb.resize((tw, th), Image.LANCZOS)
         # Правая часть темнеет — как свет, падающий слева.
         shade = Image.linear_gradient("L").rotate(90, expand=True).resize((tw, th)).point(lambda v: int((255 - v) * 0.3))
         thumb.paste(Image.new("RGB", (tw, th), (20, 16, 40)), (0, 0), shade)
