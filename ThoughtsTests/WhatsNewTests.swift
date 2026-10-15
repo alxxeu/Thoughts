@@ -30,6 +30,6 @@ struct WhatsNewTests {
             .init(title: "New", items: ["**A**", "B"]),
             .init(title: "Note", items: ["C", "D"])
         ])
-        #expect(WhatsNew.markdown(for: note) == "# What\u{2019}s new in 2.0\n\n## New\n- **A**\n- B\n\n--\n\n## Note\n> C\n> D")
+        #expect(WhatsNew.markdown(for: note) == "# What\u{2019}s new in 2.0\n\n## New\n- **A**\n- B\n\n--\n\n> C\n> D")
     }
 }

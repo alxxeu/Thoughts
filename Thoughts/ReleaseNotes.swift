@@ -141,10 +141,10 @@ enum WhatsNew {
     /// разделитель, Note — цитатой.
     static func markdown(for note: ReleaseNote) -> String {
         let sections = note.sections.map { section in
-            let items = section.title == "Note"
-                ? section.items.map { "> \($0)" }
-                : section.items.map { "- \($0)" }
-            return (["## \(section.title)"] + items).joined(separator: "\n")
+            // Цитата сама говорит, что это заметка, — без заголовка.
+            section.title == "Note"
+                ? section.items.map { "> \($0)" }.joined(separator: "\n")
+                : (["## \(section.title)"] + section.items.map { "- \($0)" }).joined(separator: "\n")
         }
         return "# What\u{2019}s new in \(note.version)\n\n" + sections.joined(separator: "\n\n--\n\n")
     }
