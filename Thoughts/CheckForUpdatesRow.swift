@@ -1,4 +1,13 @@
 import SwiftUI
+#if DIRECT
+import Sparkle
+
+/// Сборка вне App Store (GitHub, Homebrew, сайт): обновления ставит Sparkle —
+/// лента appcast.xml в релизах GitHub, см. scripts/release-direct.sh.
+enum DirectUpdater {
+    static let controller = SPUStandardUpdaterController(updaterDelegate: nil, userDriverDelegate: nil)
+}
+#endif
 
 /// Обновления ставит App Store — свой механизм обновлений там запрещён
 /// (правило 2.4.5). Здесь только узнаём версию в App Store и ведём на
@@ -29,6 +38,15 @@ nonisolated enum AppStoreVersion {
     }
 }
 
+#if DIRECT
+struct CheckForUpdatesRow: View {
+    var body: some View {
+        SettingsRowButton(title: "Check for Updates\u{2026}") {
+            DirectUpdater.controller.checkForUpdates(nil)
+        }
+    }
+}
+#else
 struct CheckForUpdatesRow: View {
     private enum Status {
         case idle, checking, upToDate, failed
@@ -94,3 +112,4 @@ struct CheckForUpdatesRow: View {
         }
     }
 }
+#endif

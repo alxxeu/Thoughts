@@ -19,3 +19,7 @@ EXECUTE.md
 # Скриншоты App Store: исходники и готовые кадры (собираются docs/appstore/compose.py)
 docs/appstore/raw/
 docs/appstore/out/
+
+# Sparkle (scripts/fetch-sparkle.sh), сборки для GitHub
+Vendor/
+build/

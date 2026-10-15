@@ -231,6 +231,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     /// централизованно, независимо от того, какой конкретно View/NSView
     /// их обработал.
     func applicationDidFinishLaunching(_ notification: Notification) {
+        #if DIRECT
+        _ = DirectUpdater.controller // запускает Sparkle и его автопроверку
+        #endif
         NSApp.windows.first?.acceptsMouseMovedEvents = true
         if let viewModel {
             QuickCaptureController.shared.start(viewModel: viewModel)
