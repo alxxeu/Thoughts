@@ -150,8 +150,8 @@ enum BackupCodec {
             let numbers = [card.x, card.y, card.width, card.height]
             guard numbers.allSatisfy(\.isFinite) else { return nil }
             var card = card
-            card.width = max(card.width, BoardViewModel.minCardSize)
-            card.height = max(card.height, BoardViewModel.minCardSize)
+            card.width = max(card.width, Card.minSize)
+            card.height = max(card.height, Card.minSize)
             return card
         }
         return BoardSnapshot(workspaces: workspaces, cards: cards)

@@ -237,6 +237,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         NSApp.windows.first?.acceptsMouseMovedEvents = true
         if let viewModel {
             QuickCaptureController.shared.start(viewModel: viewModel)
+            CloudSyncEngine.shared.askInitialSyncChoice = InitialSyncAlert.ask
             CloudSyncEngine.shared.start(viewModel: viewModel)
             registerSpaceHotKeys(viewModel)
         }

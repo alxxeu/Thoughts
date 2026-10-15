@@ -1,4 +1,8 @@
+#if os(macOS)
 import AppKit
+#else
+import UIKit
+#endif
 
 /// Разовый перевод текста карточки из старого формата (обычная строка +
 /// архив NSAttributedString в formattingData) в Markdown. Применяется к
@@ -64,17 +68,24 @@ enum MarkdownMigration {
 
     private static func markdown(from attributed: NSAttributedString) -> String {
         var result = ""
-        let manager = NSFontManager.shared
         let ns = attributed.string as NSString
         attributed.enumerateAttributes(in: NSRange(location: 0, length: attributed.length)) { attributes, range, _ in
             if attributes[.attachment] is DividerAttachment {
                 result += "---"
                 return
             }
-            let traits = (attributes[.font] as? NSFont).map { manager.traits(of: $0) } ?? []
+            #if os(macOS)
+            let traits = (attributes[.font] as? NSFont).map { NSFontManager.shared.traits(of: $0) } ?? []
+            let isBold = traits.contains(.boldFontMask), isItalic = traits.contains(.italicFontMask)
+            #else
+            // Архив с Mac может не прочитаться на iOS — тогда выше остаётся
+            // просто текст; Mac мигрирует свои карточки сам при запуске.
+            let traits = (attributes[.font] as? UIFont)?.fontDescriptor.symbolicTraits ?? []
+            let isBold = traits.contains(.traitBold), isItalic = traits.contains(.traitItalic)
+            #endif
             var open = ""
-            if traits.contains(.boldFontMask) { open += "**" }
-            if traits.contains(.italicFontMask) { open += "*" }
+            if isBold { open += "**" }
+            if isItalic { open += "*" }
             if (attributes[.strikethroughStyle] as? Int ?? 0) != 0 { open += "~~" }
             if (attributes[.underlineStyle] as? Int ?? 0) != 0, attributes[.link] == nil { open += "~" }
             let close = String(open.reversed())

@@ -129,3 +129,19 @@ final class Card: Identifiable, Codable {
         try container.encode(raisedAt, forKey: .raisedAt)
     }
 }
+
+/// Сетка размеров карточек на холсте Mac; минимальный размер нужен и ядру
+/// (BackupCodec чинит карточки меньше него).
+extension Card {
+    static let sizeStep: CGFloat = 60
+    /// Зазор между стыкующимися карточками — тот же, что использует
+    /// placementPreview при стековке. Обе величины обязаны идти из одной
+    /// константы: card-size формула size(k) = k*sizeStep - gap
+    /// устроена так, что любые две стыкующиеся карточки (k1 и k2 тайлов)
+    /// с этим зазором между ними в сумме дают ровно size(k1+k2) — то есть
+    /// колонка из нескольких карточек всегда идеально совпадает по краю
+    /// с одной карточкой такой же суммарной "тайловости", как у нативных
+    /// виджетов macOS (medium = 2 tile + 1 gap, а не просто 2 tile).
+    static let gap: CGFloat = 16
+    static let minSize: CGFloat = 2 * sizeStep - gap
+}

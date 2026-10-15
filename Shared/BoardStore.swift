@@ -1,4 +1,7 @@
+import Foundation
+#if os(macOS)
 import AppKit
+#endif
 
 private struct BoardData: Codable {
     var workspaces: [Workspace]
@@ -133,6 +136,8 @@ final class BoardStore {
         print("Couldn't save board.json: \(error)")
         guard !hasReportedSaveError else { return }
         hasReportedSaveError = true
+        #if os(macOS)
+        // shortcut: на iOS ошибка сохранения только в лог, алерт — с UI компаньона.
         DispatchQueue.main.async {
             let alert = NSAlert()
             alert.alertStyle = .critical
@@ -142,6 +147,7 @@ final class BoardStore {
             alert.addButton(withTitle: "OK")
             alert.runModal()
         }
+        #endif
     }
 
     private func defaultWorkspaces() -> [Workspace] {

@@ -1,5 +1,20 @@
-import AppKit
 import CloudKit
+#if os(macOS)
+import AppKit
+#endif
+
+/// Доска, которую синхронизирует движок (на Mac — BoardViewModel).
+@MainActor
+protocol SyncableBoard: AnyObject {
+    var onLocalChanges: ((BoardChangeSet) -> Void)? { get set }
+    var isBoardEmpty: Bool { get }
+    func makeSnapshot() -> BoardSnapshot
+    func applyRemote(cards: [CardRecord], deletedCardIDs: Set<UUID>, workspaces: [WorkspaceRecord])
+    func replaceWithRemote(_ snapshot: BoardSnapshot)
+}
+
+/// Выбор при первом синке, когда данные есть и в iCloud, и здесь.
+enum InitialSyncChoice { case merge, useCloud, useThisDevice }
 
 /// Синк доски с приватной базой iCloud через CKSyncEngine (macOS 14+).
 ///
@@ -29,7 +44,10 @@ final class CloudSyncEngine: CKSyncEngineDelegate {
 
     private let settings = CloudSyncSettings.shared
     private let stateStore = SyncStateStore()
-    private weak var viewModel: BoardViewModel?
+    private weak var viewModel: SyncableBoard?
+    /// Спрашивает пользователя при первом синке (алерт приложения);
+    /// задаётся до `start`. Без него — Merge: он ничего не теряет.
+    var askInitialSyncChoice: (_ remote: BoardSnapshot, _ local: BoardSnapshot) -> InitialSyncChoice = { _, _ in .merge }
     private var engine: CKSyncEngine?
     private var container: CKContainer?
 
@@ -47,12 +65,14 @@ final class CloudSyncEngine: CKSyncEngineDelegate {
 
     /// Вызывается один раз при запуске (AppDelegate). Если синк был
     /// включён — поднимает движок с сохранённым состоянием.
-    func start(viewModel: BoardViewModel) {
+    func start(viewModel: SyncableBoard) {
         guard !DemoMode.isActive else { return }
         self.viewModel = viewModel
         viewModel.onLocalChanges = { [weak self] changes in
             self?.enqueue(changes)
         }
+        #if os(macOS)
+        // shortcut: на iOS синк при активации не подписан, добавить с синком на iPhone.
         activationObserver = NotificationCenter.default.addObserver(
             forName: NSApplication.didBecomeActiveNotification,
             object: nil,
@@ -60,6 +80,7 @@ final class CloudSyncEngine: CKSyncEngineDelegate {
         ) { [weak self] _ in
             Task { await self?.fetchChanges() }
         }
+        #endif
 
         guard settings.isEnabled else {
             settings.status = .off
@@ -81,7 +102,9 @@ final class CloudSyncEngine: CKSyncEngineDelegate {
         AutomaticBackups.write(viewModel.makeSnapshot(), reason: "before-icloud-sync")
         stateStore.reset()
         settings.isEnabled = true
+        #if os(macOS)
         KeychainSync.reconcile(uploadLocal: true, showNotices: true)
+        #endif
         settings.status = .syncing
 
         let engine = makeEngine(container: container, state: nil)
@@ -163,7 +186,9 @@ final class CloudSyncEngine: CKSyncEngineDelegate {
         )
         let engine = CKSyncEngine(configuration)
         self.engine = engine
+        #if os(macOS)
         NSApp.registerForRemoteNotifications()
+        #endif
         return engine
     }
 
@@ -178,7 +203,9 @@ final class CloudSyncEngine: CKSyncEngineDelegate {
             return
         }
         _ = makeEngine(container: container, state: state)
+        #if os(macOS)
         KeychainSync.reconcile(uploadLocal: false, showNotices: true)
+        #endif
         await syncNow()
     }
 
@@ -265,7 +292,7 @@ final class CloudSyncEngine: CKSyncEngineDelegate {
             return
         }
 
-        switch askInitialSyncChoice(remote: remote, local: viewModel.makeSnapshot()) {
+        switch askInitialSyncChoice(remote, viewModel.makeSnapshot()) {
         case .merge:
             viewModel.applyRemote(cards: remote.cards, deletedCardIDs: [], workspaces: remote.workspaces)
             // Объединение должно оказаться и в iCloud: карточки, которые
@@ -273,28 +300,11 @@ final class CloudSyncEngine: CKSyncEngineDelegate {
             enqueueEverythingLocal()
         case .useCloud:
             viewModel.replaceWithRemote(remote)
-        case .useThisMac:
+        case .useThisDevice:
             let localIDs = Set(viewModel.makeSnapshot().cards.map(\.id))
             let remoteOnly = remote.cards.map(\.id).filter { !localIDs.contains($0) }
             engine.state.add(pendingRecordZoneChanges: remoteOnly.map { .deleteRecord(RecordMapping.recordID(forCard: $0)) })
             enqueueEverythingLocal()
-        }
-    }
-
-    private enum InitialChoice { case merge, useCloud, useThisMac }
-
-    private func askInitialSyncChoice(remote: BoardSnapshot, local: BoardSnapshot) -> InitialChoice {
-        let alert = NSAlert()
-        alert.messageText = "Your Thoughts are already in iCloud"
-        alert.informativeText = "iCloud has \(remote.cards.count) card\(remote.cards.count == 1 ? "" : "s") and this Mac has \(local.cards.count). "
-            + "Merge keeps everything from both. A copy of this Mac\u{2019}s data has been saved as a backup."
-        alert.addButton(withTitle: "Merge")
-        alert.addButton(withTitle: "Use iCloud")
-        alert.addButton(withTitle: "Use This Mac")
-        switch alert.runModal() {
-        case .alertSecondButtonReturn: return .useCloud
-        case .alertThirdButtonReturn: return .useThisMac
-        default: return .merge
         }
     }
 

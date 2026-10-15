@@ -37,11 +37,16 @@ final class CloudSyncSettings {
     }
 
     private static func hasCloudKitEntitlement() -> Bool {
+        #if os(iOS)
+        // На iOS SecTask недоступен; приложение всегда подписано с iCloud.
+        return true
+        #else
         guard let task = SecTaskCreateFromSelf(nil) else { return false }
         let services = SecTaskCopyValueForEntitlement(task, "com.apple.developer.icloud-services" as CFString, nil)
         let containers = SecTaskCopyValueForEntitlement(task, "com.apple.developer.icloud-container-identifiers" as CFString, nil)
         let hasCloudKit = (services as? [String])?.contains("CloudKit") ?? false
         let hasContainer = (containers as? [String])?.contains(RecordMapping.containerIdentifier) ?? false
         return hasCloudKit && hasContainer
+        #endif
     }
 }

@@ -11,7 +11,7 @@ enum EdgeHint: Equatable {
 }
 
 @Observable
-final class BoardViewModel {
+final class BoardViewModel: SyncableBoard {
     var workspaces: [Workspace] = []
     var activeSlot: Int = 1
     private var cardsByWorkspace: [Int: [Card]] = [:]
@@ -71,17 +71,9 @@ final class BoardViewModel {
     /// Изменения после каждого сохранения — сюда подписывается синк с iCloud.
     @ObservationIgnored var onLocalChanges: ((BoardChangeSet) -> Void)?
 
-    static let cardSizeStep: CGFloat = 60
-    /// Зазор между стыкующимися карточками — тот же, что использует
-    /// placementPreview при стековке. Обе величины обязаны идти из одной
-    /// константы: card-size формула size(k) = k*cardSizeStep - cardGap
-    /// устроена так, что любые две стыкующиеся карточки (k1 и k2 тайлов)
-    /// с этим зазором между ними в сумме дают ровно size(k1+k2) — то есть
-    /// колонка из нескольких карточек всегда идеально совпадает по краю
-    /// с одной карточкой такой же суммарной "тайловости", как у нативных
-    /// виджетов macOS (medium = 2 tile + 1 gap, а не просто 2 tile).
-    static let cardGap: CGFloat = 16
-    static let minCardSize: CGFloat = 2 * cardSizeStep - cardGap
+    static let cardSizeStep = Card.sizeStep
+    static let cardGap = Card.gap
+    static let minCardSize = Card.minSize
     static let canvasSidePadding: CGFloat = 24
     static let topCreationLimit: CGFloat = 40
     static let maxWorkspaceNameLength = 30
