@@ -96,8 +96,9 @@ def spaces_stack():
              "A separate canvas for every part of your life \u2014 switch with \u23251\u20139.")
     names = {1: "Ideas", 2: "Writing", 3: "Launch", 5: "Travel", 8: "Finances"}
     tw, th = 1600, 1000
-    left, step, top, height = 110, 345, 600, 1500  # низ уходит за край кадра
-    width, inset = 1300, 110                       # правый край уходит вглубь
+    # Пропорции 16:10 с поправкой на поворот; стопка выходит за края кадра.
+    left, step, top, height = -40, 420, 600, 1260
+    width, inset = 1560, 90                        # правый край уходит вглубь
     label = font(34, "Semibold")
     for i, slot in enumerate([5, 8, 3, 2, 1]):
         if slot == 8:
