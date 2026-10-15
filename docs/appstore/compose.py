@@ -1,32 +1,19 @@
 #!/usr/bin/env python3
-"""App Store screenshots: a headline over a crop of each raw screen capture.
+"""App Store screenshots, 2880×1800 (the largest Mac App Store size).
 
-raw/<name>.png — full-screen captures (3600×2338) of the demo board
-(make-demo-board.py, Debug build with -demoBoard YES). Output: out/<n>.png,
-2880×1800 — the largest Mac App Store size.
+raw/ holds full-screen captures (3600×2338) of the demo board
+(make-demo-board.py, Debug build with -demoBoard YES), the nine Spaces in
+raw/spaces/, SF Symbols exported to raw/sym/ and two hello wallpapers.
+1–3 are the screen as is, without the menu bar; 4 and 5 are composed here.
 """
 import os
 from PIL import Image, ImageDraw, ImageFilter, ImageFont
 
 HERE = os.path.dirname(os.path.abspath(__file__))
+RAW = os.path.join(HERE, "raw")
 W, H = 2880, 1800
 FONT = "/System/Library/Fonts/SFNS.ttf"
-
-# name, crop (x, y, w, h) in raw pixels, headline, subtitle
-SHOTS = [
-    ("raw-1-overview", (60, 70, 3120, 1950), "Your ideas, anywhere on the canvas",
-     "No folders, no lists — just space to think."),
-    ("raw-2-markdown", (800, 600, 2000, 1250), "Write in Markdown",
-     "Formatting shows next to the cursor and hides when you move on."),
-    ("raw-4-spaces", (60, 70, 3120, 1950), "A Space for every project",
-     "Switch instantly with ⌥1–9 — or ⌃⌥1–9 from any app."),
-    ("raw-3-tags", (194, 760, 2095, 1309), "Tag, blur or lock any card",
-     "Color tags right from the keyboard. Spoiler and Lock keep private notes private."),
-    ("raw-5-ai", (996, 70, 2028, 1268), "Ask AI about your notes",
-     "Apple Intelligence on your Mac, or ChatGPT and Claude with your own key."),
-    ("raw-6-shortcuts", (630, 815, 2000, 1250), "Every shortcut, with a preview",
-     "See what each Markdown style looks like before you use it."),
-]
+INK, INK_SOFT = (29, 29, 31), (72, 72, 80)
 
 
 def font(size, weight):
@@ -35,51 +22,123 @@ def font(size, weight):
     return f
 
 
-def background():
-    # Вертикальный градиент в цветах иконки: глубокий индиго → фиолетовый.
-    top, bottom = (22, 16, 58), (58, 38, 150)
-    bg = Image.new("RGB", (W, H))
-    draw = ImageDraw.Draw(bg)
-    for y in range(H):
-        t = y / (H - 1)
-        draw.line([(0, y), (W, y)], fill=tuple(round(a + (b - a) * t) for a, b in zip(top, bottom)))
-    return bg
+def screen(path):
+    """Full-screen capture without the menu bar, as 16:10."""
+    im = Image.open(path).convert("RGB")
+    w, h = im.size
+    keep = round(w / 1.6)
+    return im.crop((0, h - keep, w, h)).resize((W, H), Image.LANCZOS)
 
 
-def compose(name, crop, title, subtitle):
-    x, y, w, h = crop
-    shot = Image.open(os.path.join(HERE, "raw", name + ".png")).convert("RGB").crop((x, y, x + w, y + h))
+def rounded(im, radius):
+    mask = Image.new("L", im.size, 0)
+    ImageDraw.Draw(mask).rounded_rectangle((0, 0, im.width - 1, im.height - 1), radius, fill=255)
+    return mask
 
-    canvas = background()
+
+def shadow(canvas, box, radius, blur=30, alpha=90, dy=16):
+    layer = Image.new("L", canvas.size, 0)
+    x0, y0, x1, y1 = box
+    ImageDraw.Draw(layer).rounded_rectangle((x0, y0 + dy, x1, y1 + dy), radius, fill=alpha)
+    canvas.paste(Image.new("RGB", canvas.size, (40, 30, 70)), (0, 0), layer.filter(ImageFilter.GaussianBlur(blur)))
+
+
+def headline(draw, title, subtitle, top=150):
+    draw.text((W / 2, top), title, font=font(112, "Bold"), fill=INK, anchor="mm")
+    draw.text((W / 2, top + 108), subtitle, font=font(50, "Regular"), fill=INK_SOFT, anchor="mm")
+
+
+def spaces_grid():
+    canvas = Image.open(os.path.join(RAW, "wall-purple-light.png")).convert("RGB")
     draw = ImageDraw.Draw(canvas)
-    title_font, sub_font = font(112, "Bold"), font(52, "Regular")
-    draw.text((W / 2, 150), title, font=title_font, fill="white", anchor="mm")
-    draw.text((W / 2, 262), subtitle, font=sub_font, fill=(205, 198, 240), anchor="mm")
-
-    # Снимок по ширине до 2440 и по высоте до свободного места под текстом.
-    top_space, bottom_margin = 350, 90
-    scale = min(2440 / w, (H - top_space - bottom_margin) / h)
-    sw, sh = round(w * scale), round(h * scale)
-    shot = shot.resize((sw, sh), Image.LANCZOS)
-    left, top = (W - sw) // 2, top_space
-
-    radius = 34
-    mask = Image.new("L", (sw, sh), 0)
-    ImageDraw.Draw(mask).rounded_rectangle((0, 0, sw - 1, sh - 1), radius, fill=255)
-
-    shadow = Image.new("L", (W, H), 0)
-    ImageDraw.Draw(shadow).rounded_rectangle((left, top + 24, left + sw, top + sh + 24), radius, fill=150)
-    shadow = shadow.filter(ImageFilter.GaussianBlur(40))
-    canvas.paste(Image.new("RGB", (W, H), (8, 6, 24)), (0, 0), shadow)
-
-    canvas.paste(shot, (left, top), mask)
-    ImageDraw.Draw(canvas).rounded_rectangle((left, top, left + sw - 1, top + sh - 1), radius,
-                                            outline=(96, 84, 170), width=2)
+    headline(draw, "Up to nine Spaces",
+             "A separate canvas for every part of your life — switch with ⌥1–9.")
+    names = ["Ideas", "Writing", "Launch", "Journal", "Travel", "Reading", "Recipes", "Finances", "Fitness"]
+    tw, gap = 680, 44
+    th = round(tw / 1.6)
+    left = (W - 3 * tw - 2 * gap) // 2
+    top = 360
+    label = font(34, "Semibold")
+    for i, name in enumerate(names):
+        x = left + (i % 3) * (tw + gap)
+        y = top + (i // 3) * (th + gap)
+        thumb = screen(os.path.join(RAW, "spaces", f"{i + 1}.png")).resize((tw, th), Image.LANCZOS)
+        shadow(canvas, (x, y, x + tw, y + th), 22, blur=22, alpha=70, dy=10)
+        canvas.paste(thumb, (x, y), rounded(thumb, 22))
+        text = f"⌥{i + 1}  {name}"
+        tx0, _, tx1, _ = draw.textbbox((0, 0), text, font=label)
+        pw, ph = tx1 - tx0 + 40, 58
+        px, py = x + 18, y + th - ph - 18
+        draw.rounded_rectangle((px, py, px + pw, py + ph), ph // 2, fill=(255, 255, 255))
+        draw.text((px + 20, py + ph / 2), text, font=label, fill=INK, anchor="lm")
     return canvas
 
 
+FEATURES = [
+    ("sparkles", (124, 77, 255), "Ask AI", "Apple Intelligence, ChatGPT or Claude — about a card or a whole Space."),
+    ("tag.fill", (255, 149, 0), "Color tags", "Seven colors, right from the keyboard with ⌃1–7."),
+    ("sparkles.square.filled.on.square", (88, 86, 214), "Spoiler", "Blur a card until you’re ready to look."),
+    ("lock.square.fill", (52, 120, 246), "Locked cards", "Hide a card behind your passcode or Touch ID."),
+    ("icloud.fill", (10, 132, 255), "iCloud sync", "Your Spaces on every Mac, end-to-end encrypted."),
+    ("externaldrive.fill", (52, 199, 89), "Backups", "Password-protected backups and Markdown export."),
+    ("bolt.fill", (255, 179, 0), "Quick Capture", "Jot down a card from any app with one shortcut."),
+    ("magnifyingglass", (142, 142, 147), "Spotlight", "Find any card from anywhere on your Mac."),
+]
+
+
+def tint(symbol, color, size):
+    alpha = Image.open(os.path.join(RAW, "sym", symbol + ".png")).getchannel("A").resize((size, size), Image.LANCZOS)
+    icon = Image.new("RGBA", (size, size), color + (0,))
+    icon.putalpha(alpha)
+    return icon
+
+
+def wrap(draw, text, fnt, width):
+    lines, line = [], ""
+    for word in text.split():
+        trial = (line + " " + word).strip()
+        if draw.textlength(trial, font=fnt) <= width:
+            line = trial
+        else:
+            lines.append(line)
+            line = word
+    return lines + [line]
+
+
+def features_grid():
+    canvas = Image.open(os.path.join(RAW, "wall-yellow-light.png")).convert("RGB")
+    draw = ImageDraw.Draw(canvas)
+    headline(draw, "Private, synced and smart", "Everything around your notes, built in.", top=200)
+    cols, tw, th, gap = 4, 620, 520, 44
+    left = (W - cols * tw - (cols - 1) * gap) // 2
+    top = 430
+    title_font, body_font = font(52, "Bold"), font(36, "Regular")
+    for i, (symbol, color, title, body) in enumerate(FEATURES):
+        x = left + (i % cols) * (tw + gap)
+        y = top + (i // cols) * (th + gap)
+        shadow(canvas, (x, y, x + tw, y + th), 44, blur=26, alpha=50, dy=12)
+        tile = Image.new("RGB", (tw, th), (255, 255, 255))
+        canvas.paste(Image.blend(canvas.crop((x, y, x + tw, y + th)), tile, 0.72), (x, y), rounded(tile, 44))
+        badge = 150
+        draw.rounded_rectangle((x + 56, y + 60, x + 56 + badge, y + 60 + badge), 36, fill=color)
+        icon = tint(symbol, (255, 255, 255), 96)
+        canvas.paste(icon, (x + 56 + (badge - 96) // 2, y + 60 + (badge - 96) // 2), icon)
+        draw.text((x + 56, y + 270), title, font=title_font, fill=INK)
+        for n, line in enumerate(wrap(draw, body, body_font, tw - 112)):
+            draw.text((x + 56, y + 350 + n * 50), line, font=body_font, fill=INK_SOFT)
+    return canvas
+
+
+SHOTS = [
+    lambda: screen(os.path.join(RAW, "1-ideas.png")),
+    lambda: screen(os.path.join(RAW, "2-focus.png")),
+    lambda: screen(os.path.join(RAW, "3-locked.png")),
+    spaces_grid,
+    features_grid,
+]
+
 os.makedirs(os.path.join(HERE, "out"), exist_ok=True)
-for index, (name, crop, title, subtitle) in enumerate(SHOTS, 1):
+for index, make in enumerate(SHOTS, 1):
     path = os.path.join(HERE, "out", f"{index}.png")
-    compose(name, crop, title, subtitle).save(path)
+    make().save(path)
     print(path)
