@@ -21,18 +21,19 @@ struct FeedScreen: View {
     var body: some View {
         GeometryReader { geo in
         // Страницы Spaces — горизонтальная прокрутка без обрезки (страничный TabView
-        // обрезал ленту). Настоящие бары лежат поверх и не уезжают при свайпе, а
-        // каждой ленте даны прозрачные бары той же высоты — они включают системный
-        // scroll edge (мягкое затухание с размытием).
+        // обрезал ленту). Настоящие бары лежат поверх и не уезжают при свайпе; ленте
+        // даны прозрачные бары той же высоты (отступы), а у краёв — свои затухания с
+        // размытием, чуть темнее фона.
         let insets = EdgeInsets(top: geo.safeAreaInsets.top + 56, leading: 0,
                                 bottom: geo.safeAreaInsets.bottom + bottomBarHeight, trailing: 0)
+        ZStack {
         ScrollView(.horizontal) {
             LazyHStack(spacing: 0) {
                 ForEach(board.workspaces) { workspace in
                     FeedList(board: board, slot: workspace.slot, revealed: revealed, insets: insets,
                              onOpen: { editing = EditorTarget(card: $0, detent: .medium) },
                              onReveal: reveal,
-                             onCollapse: { collapsed in withAnimation(.snappy) { spacesCollapsed = collapsed } })
+                             onCollapse: { collapsed in if collapsed != spacesCollapsed { withAnimation(.snappy) { spacesCollapsed = collapsed } } })
                         .containerRelativeFrame(.horizontal)
                         .id(workspace.slot)
                 }
@@ -44,6 +45,10 @@ struct FeedScreen: View {
         .scrollIndicators(.hidden)
         .scrollClipDisabled()
         .ignoresSafeArea()
+        EdgeFade(edge: .top, height: geo.safeAreaInsets.top + 64)
+        // Снизу — выше баров: захватывает папки и часть поля ввода.
+        EdgeFade(edge: .bottom, height: geo.safeAreaInsets.bottom + bottomBarHeight * 0.75 + 30)
+        }
         }
         // Бары — поверх, в безопасной зоне (клавиатура поднимает поле ввода сама).
         .overlay(alignment: .top) { HStack { Spacer(); moreButton }.padding(.top, 6) }
@@ -51,13 +56,7 @@ struct FeedScreen: View {
             bottomBar.onGeometryChange(for: CGFloat.self) { $0.size.height } action: { bottomBarHeight = $0 }
         }
         .background(Theme.background.ignoresSafeArea())
-        // Клавиатура закрывается прокруткой ленты и кнопкой над ней.
-        .toolbar {
-            ToolbarItemGroup(placement: .keyboard) {
-                Spacer()
-                Button { composerFocused = false } label: { Image(systemName: "keyboard.chevron.compact.down") }
-            }
-        }
+        // Клавиатура закрывается свайпом по ленте (scrollDismissesKeyboard).
         .sheet(item: $editing) { target in
             EditorSheet(board: board, card: target.card, detent: target.detent, lock: lock)
         }
@@ -79,12 +78,14 @@ struct FeedScreen: View {
     private var bottomBar: some View {
         VStack(spacing: 8) {
             Composer(text: $draft, focused: $composerFocused, onSend: send, onExpand: expand)
+                .padding(.horizontal, 16)
             if !composerFocused {
+                // Полоса Spaces — во всю ширину, края уходят за экран с мягким затуханием.
                 SpacesBar(workspaces: board.workspaces, slot: $slot, collapsed: spacesCollapsed,
+                          onExpand: { withAnimation(.snappy) { spacesCollapsed = false } },
                           onRename: { renaming = $0; newName = $0.name })
             }
         }
-        .padding(.horizontal, 16)
         .padding(.bottom, 4)
         .animation(.snappy, value: composerFocused)
     }
@@ -134,6 +135,30 @@ struct FeedScreen: View {
         board.workspaces[i].name = trimmed.isEmpty ? Workspace.defaultName(forSlot: ws.slot) : trimmed
         board.saveImmediately()
         renaming = nil
+    }
+}
+
+private struct ScrollState: Equatable {
+    var offset: CGFloat
+    var toBottom: CGFloat
+}
+
+/// Мягкое затухание с размытием у края экрана, чуть темнее фона.
+private struct EdgeFade: View {
+    let edge: VerticalEdge
+    let height: CGFloat
+
+    var body: some View {
+        let toEdge: (UnitPoint, UnitPoint) = edge == .top ? (.bottom, .top) : (.top, .bottom)
+        ZStack {
+            Rectangle().fill(.ultraThinMaterial)
+                .mask(LinearGradient(colors: [.clear, .black], startPoint: toEdge.0, endPoint: toEdge.1))
+            LinearGradient(colors: [Theme.fade.opacity(0), Theme.fade.opacity(0.92)], startPoint: toEdge.0, endPoint: toEdge.1)
+        }
+        .frame(height: height)
+        .frame(maxHeight: .infinity, alignment: edge == .top ? .top : .bottom)
+        .ignoresSafeArea()
+        .allowsHitTesting(false)
     }
 }
 
@@ -228,14 +253,20 @@ private struct FeedList: View {
         .listStyle(.plain)
         .safeAreaBar(edge: .top, spacing: 0) { Color.clear.frame(height: insets.top) }
         .safeAreaBar(edge: .bottom, spacing: 0) { Color.clear.frame(height: insets.bottom) }
-        .scrollEdgeEffectStyle(.soft, for: .all)
+        .scrollEdgeEffectHidden(true, for: .all) // затухания свои, темнее фона (EdgeFade)
         .scrollDismissesKeyboard(.interactively)
         .scrollContentBackground(.hidden)
         .defaultScrollAnchor(.bottom)
-        // Полоса Spaces сворачивается в точки, когда листаем вверх, к старым.
-        .onScrollGeometryChange(for: Bool.self) { geo in
-            geo.contentSize.height - geo.contentOffset.y - geo.containerSize.height > 120
-        } action: { _, away in onCollapse(away) }
+        // Полоса Spaces: свайп пальцем сверху вниз — разворачивается, снизу вверх —
+        // сворачивается в точки (Р12, пересмотрено); у самого низа — всегда развёрнута.
+        .onScrollGeometryChange(for: ScrollState.self) { geo in
+            ScrollState(offset: geo.contentOffset.y,
+                        toBottom: geo.contentSize.height - geo.contentOffset.y - geo.containerSize.height + geo.contentInsets.bottom)
+        } action: { old, new in
+            if new.toBottom < 24 { onCollapse(false); return }
+            let delta = new.offset - old.offset
+            if delta < -4 { onCollapse(false) } else if delta > 4 { onCollapse(true) }
+        }
         .onAppear {
             order = Self.sorted(cards).map(\.id)
             // List не держит defaultScrollAnchor(.bottom) — прокручиваем к свежей сами.
@@ -318,6 +349,7 @@ private struct SpacesBar: View {
     let workspaces: [Workspace]
     @Binding var slot: Int
     let collapsed: Bool
+    var onExpand: () -> Void
     var onRename: (Workspace) -> Void
 
     var body: some View {
@@ -329,7 +361,9 @@ private struct SpacesBar: View {
                         .frame(width: ws.slot == slot ? 16 : 6, height: 6)
                 }
             }
-            .frame(height: 20)
+            .frame(maxWidth: .infinity, minHeight: 28)
+            .contentShape(.rect)
+            .onTapGesture(perform: onExpand) // тап по точкам — раскрыть
             .transition(.opacity)
         } else {
             ScrollViewReader { proxy in
@@ -351,11 +385,19 @@ private struct SpacesBar: View {
                             .contextMenu { Button("Rename…", systemImage: "pencil") { onRename(ws) } }
                         }
                     }
-                    .padding(.horizontal, 4)
                 }
-                .onChange(of: slot) { _, s in withAnimation { proxy.scrollTo(s, anchor: .center) } }
+                // Поля, чтобы и крайние Spaces вставали по центру.
+                .contentMargins(.horizontal, 150, for: .scrollContent)
+                .onAppear { proxy.scrollTo(slot, anchor: .center) }
+                .onChange(of: slot) { _, s in withAnimation(.snappy) { proxy.scrollTo(s, anchor: .center) } }
             }
             .frame(height: 40)
+            .mask {
+                LinearGradient(stops: [
+                    .init(color: .clear, location: 0), .init(color: .black, location: 0.12),
+                    .init(color: .black, location: 0.88), .init(color: .clear, location: 1),
+                ], startPoint: .leading, endPoint: .trailing)
+            }
             .transition(.opacity)
         }
     }

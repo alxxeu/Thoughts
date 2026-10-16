@@ -88,7 +88,6 @@ struct EditorSheet: View {
             }
             Button { showMarkdown = false } label: { Image(systemName: "xmark") }
         } else {
-            Button { focused = false } label: { Image(systemName: "keyboard.chevron.compact.down") }
             Spacer()
             Button { showMarkdown = true } label: { Text("Aa").font(.system(size: 17, weight: .semibold)) }
         }
@@ -179,7 +178,8 @@ private struct TagControl: View {
                 }
             } else {
                 Button { withAnimation(.bouncy) { expanded = true } } label: {
-                    Color.clear.frame(width: 44, height: 44)
+                    // Прозрачная «начинка» сама тапы не ловит — нужна форма касания.
+                    Color.clear.frame(width: 44, height: 44).contentShape(.circle)
                 }
                 .buttonStyle(.plain)
                 .glassEffect(.regular.tint(card.tagColor?.color ?? .white.opacity(0.15)).interactive(), in: .circle)
@@ -203,6 +203,7 @@ private struct TagControl: View {
                 }
             }
             .frame(width: 34, height: 34)
+            .contentShape(.circle)
         }
         .buttonStyle(.plain)
         .glassEffect(.regular.tint(tag?.color ?? .white.opacity(0.15)).interactive(), in: .circle)
