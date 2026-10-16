@@ -8,12 +8,14 @@ struct MarkdownTextView: UIViewRepresentable {
     @Binding var text: String
     @Binding var isFocused: Bool
     let controller: MarkdownEditorController
-    /// Высота шапки шторки над текстом: текст уходит под неё и гаснет с размытием.
+    /// Шапка шторки — поверх текста; текст уходит под неё и гаснет системным
+    /// размытием края прокрутки (UIScrollEdgeElementContainerInteraction).
+    var header: AnyView
     var topBar: CGFloat = 56
 
     func makeCoordinator() -> Coordinator { Coordinator(self) }
 
-    func makeUIView(context: Context) -> UITextView {
+    func makeUIView(context: Context) -> EditorContainer {
         let storage = NSTextStorage()
         let layout = LiveLayoutManager()
         storage.addLayoutManager(layout)
@@ -32,7 +34,7 @@ struct MarkdownTextView: UIViewRepresentable {
         // Умные кавычки и тире ломали бы разметку.
         view.smartQuotesType = .no
         view.smartDashesType = .no
-        view.topEdgeEffect.isHidden = true // своё затухание под шапкой — в EditorSheet
+        view.topEdgeEffect.style = .soft
         view.contentInsetAdjustmentBehavior = .never
         view.contentInset.top = topBar
         view.verticalScrollIndicatorInsets.top = topBar
@@ -46,11 +48,13 @@ struct MarkdownTextView: UIViewRepresentable {
 
         controller.textView = view
         controller.coordinator = context.coordinator
-        return view
+        return EditorContainer(textView: view, header: header, height: topBar)
     }
 
-    func updateUIView(_ view: UITextView, context: Context) {
+    func updateUIView(_ container: EditorContainer, context: Context) {
         context.coordinator.parent = self
+        container.header.rootView = header
+        let view = container.textView
         // Текст сменился снаружи (синк) — подставить, сохранив курсор.
         guard view.text != text, view.markedTextRange == nil else { return }
         let selection = view.selectedRange
@@ -131,15 +135,36 @@ struct MarkdownTextView: UIViewRepresentable {
         // MARK: Квадратики чек-листа
 
         @objc func tapped(_ gesture: UITapGestureRecognizer) {
-            guard let view = gesture.view as? UITextView, let edit = taskEdit(at: gesture.location(in: view), in: view) else { return }
+            guard let view = gesture.view as? UITextView else { return }
+            let point = gesture.location(in: view)
+            if let url = link(at: point, in: view) {
+                UIApplication.shared.open(url)
+                return
+            }
+            guard let edit = taskEdit(at: point, in: view) else { return }
             let selection = view.selectedRange
             parent.controller.apply(edit)
             view.selectedRange = selection
         }
 
+        /// Тап забирается у редактора только по квадратику или ссылке — остальное как обычно.
         func gestureRecognizerShouldBegin(_ gesture: UIGestureRecognizer) -> Bool {
             guard let view = gesture.view as? UITextView else { return false }
-            return taskEdit(at: gesture.location(in: view), in: view) != nil
+            let point = gesture.location(in: view)
+            return taskEdit(at: point, in: view) != nil || link(at: point, in: view) != nil
+        }
+
+        /// Ссылка под пальцем: символ с адресом, и палец действительно на его глифе.
+        private func link(at point: CGPoint, in view: UITextView) -> URL? {
+            let layout = view.layoutManager
+            let local = CGPoint(x: point.x - view.textContainerInset.left, y: point.y - view.textContainerInset.top)
+            var fraction: CGFloat = 0
+            let index = layout.characterIndex(for: local, in: view.textContainer, fractionOfDistanceBetweenInsertionPoints: &fraction)
+            guard index < view.textStorage.length,
+                  let url = view.textStorage.attribute(LiveMarkdownStyler.linkKey, at: index, effectiveRange: nil) as? URL else { return nil }
+            let glyph = layout.glyphIndexForCharacter(at: index)
+            let rect = layout.boundingRect(forGlyphRange: NSRange(location: glyph, length: 1), in: view.textContainer)
+            return rect.insetBy(dx: -4, dy: -6).contains(local) ? url : nil
         }
 
         func gestureRecognizer(_ gesture: UIGestureRecognizer, shouldRecognizeSimultaneouslyWith other: UIGestureRecognizer) -> Bool { false }
@@ -150,6 +175,43 @@ struct MarkdownTextView: UIViewRepresentable {
             return layout.taskToggle(at: point, origin: origin)
         }
     }
+}
+
+/// Редактор и шапка над ним в одном контейнере. На шапке висит
+/// UIScrollEdgeElementContainerInteraction — текст под ней гаснет системным
+/// размытием края (размер эффекта задают элементы шапки, поэтому она здесь, а не
+/// оверлеем SwiftUI сверху).
+final class EditorContainer: UIView {
+    let textView: UITextView
+    let header: UIHostingController<AnyView>
+
+    init(textView: UITextView, header: AnyView, height: CGFloat) {
+        self.textView = textView
+        self.header = UIHostingController(rootView: header)
+        super.init(frame: .zero)
+        let bar = self.header.view!
+        bar.backgroundColor = .clear
+        self.header.safeAreaRegions = []
+        addSubview(textView)
+        addSubview(bar)
+        let edge = UIScrollEdgeElementContainerInteraction()
+        edge.scrollView = textView
+        edge.edge = .top
+        bar.addInteraction(edge)
+        for view in [textView, bar] { view.translatesAutoresizingMaskIntoConstraints = false }
+        NSLayoutConstraint.activate([
+            textView.topAnchor.constraint(equalTo: topAnchor),
+            textView.bottomAnchor.constraint(equalTo: bottomAnchor),
+            textView.leadingAnchor.constraint(equalTo: leadingAnchor),
+            textView.trailingAnchor.constraint(equalTo: trailingAnchor),
+            bar.topAnchor.constraint(equalTo: topAnchor),
+            bar.leadingAnchor.constraint(equalTo: leadingAnchor),
+            bar.trailingAnchor.constraint(equalTo: trailingAnchor),
+            bar.heightAnchor.constraint(equalToConstant: height),
+        ])
+    }
+
+    required init?(coder: NSCoder) { fatalError("init(coder:) is not used") }
 }
 
 /// Команды панели Markdown и состояние для неё: выделение, активные стили.

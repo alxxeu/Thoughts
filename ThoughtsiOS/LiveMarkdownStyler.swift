@@ -14,6 +14,8 @@ enum LiveMarkdownStyler {
     static let taskBoxKey = NSAttributedString.Key("thoughts.markdownTaskBox")
     /// Строки блока кода (значение — NSRange всего блока) — для подложки.
     static let codeBlockKey = NSAttributedString.Key("thoughts.markdownCodeBlock")
+    /// Адрес ссылки (URL) на её тексте — тап открывает (не .link: тот мешал бы правке).
+    static let linkKey = NSAttributedString.Key("thoughts.markdownLink")
 
     static let font = UIFont.systemFont(ofSize: 17)
     static let color = UIColor(white: 1, alpha: 0.88)
@@ -101,9 +103,10 @@ enum LiveMarkdownStyler {
                 case .code:
                     storage.addAttributes([.font: mono(paragraphFont.pointSize), .foregroundColor: codeColor,
                                            .backgroundColor: UIColor(white: 1, alpha: 0.08)], range: range)
-                case .link:
+                case .link(let url):
                     // Не .link: в редактируемом UITextView ссылка перехватывала бы касания.
                     storage.addAttributes([.foregroundColor: accent, .underlineStyle: NSUnderlineStyle.single.rawValue], range: range)
+                    if let target = URL(string: url) { storage.addAttribute(linkKey, value: target, range: range) }
                 }
             }
         }

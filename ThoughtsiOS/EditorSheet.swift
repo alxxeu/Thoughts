@@ -18,23 +18,13 @@ struct EditorSheet: View {
     @State private var linkTitle = ""
     @State private var linkURL = ""
     @State private var linkNeedsTitle = false
+    @Namespace private var glass
     @Environment(\.dismiss) private var dismiss
 
     var body: some View {
-        MarkdownTextView(text: $card.text, isFocused: $focused, controller: editor)
+        // Шапка — внутри редактора: под ней системное размытие края прокрутки.
+        MarkdownTextView(text: $card.text, isFocused: $focused, controller: editor, header: AnyView(header))
             .ignoresSafeArea(.container, edges: .bottom)
-            // Шапка — поверх текста: он уходит под неё и гаснет с размытием (своё
-            // затухание: системное у safeAreaBar не работает над UIKit-редактором).
-            .overlay(alignment: .top) {
-                header.background(alignment: .top) {
-                    Rectangle().fill(.ultraThinMaterial)
-                        .mask(LinearGradient(stops: [.init(color: .black, location: 0), .init(color: .black, location: 0.55),
-                                                     .init(color: .clear, location: 1)], startPoint: .top, endPoint: .bottom))
-                        .frame(height: 84)
-                        .ignoresSafeArea(edges: .top)
-                        .allowsHitTesting(false)
-                }
-            }
             .overlay(alignment: .topLeading) {
                 // Поповер тега «вытекает» из кнопки (морфинг стекла); тап мимо — закрыть.
                 ZStack(alignment: .topLeading) {
@@ -57,8 +47,6 @@ struct EditorSheet: View {
                     .transition(.opacity.combined(with: .scale(scale: 0.9, anchor: .bottomTrailing)))
             }
         }
-        .animation(.snappy, value: editor.hasSelection)
-        .animation(.snappy, value: showMarkdown)
         .alert("Add Link", isPresented: $showLink) {
             if linkNeedsTitle { TextField("Text", text: $linkTitle) }
             TextField("https://", text: $linkURL)
@@ -100,39 +88,50 @@ struct EditorSheet: View {
 
     // MARK: - Клавиатура: «Aa» → панель Markdown
 
-    @ViewBuilder
+    /// «Aa» и панель — одно стекло: кнопка «вытекает» в панель и стекается обратно
+    /// (GlassEffectContainer + glassEffectID). Без выделения панель по размеру своих
+    /// значков и прижата вправо, к месту «Aa»; с выделением — во всю ширину.
     private var keyboardBar: some View {
-        if showMarkdown {
+        GlassEffectContainer(spacing: 8) {
             HStack(spacing: 0) {
-                ScrollView(.horizontal, showsIndicators: false) {
+                Spacer(minLength: 0)
+                if showMarkdown {
                     HStack(spacing: 0) {
-                        if editor.hasSelection { selectionTools } else { starterTools }
+                        if editor.hasSelection {
+                            ScrollView(.horizontal, showsIndicators: false) {
+                                HStack(spacing: 0) { selectionTools }.padding(.leading, 8)
+                            }
+                            .scrollEdgeEffectStyle(.soft, for: .horizontal)
+                        } else {
+                            starterTools.padding(.leading, 6)
+                        }
+                        Button { withAnimation(.bouncy) { showMarkdown = false } } label: {
+                            Image(systemName: "xmark")
+                                .font(.system(size: 17, weight: .semibold))
+                                .foregroundStyle(Theme.secondary)
+                                .frame(width: 44, height: 44)
+                        }
+                        .buttonStyle(.plain)
+                        .padding(.trailing, 4)
                     }
-                    .padding(.horizontal, 8)
-                    .animation(.snappy, value: editor.hasSelection)
+                    .frame(maxWidth: editor.hasSelection ? .infinity : nil)
+                    .frame(height: 52)
+                    .glassEffect(.regular.interactive(), in: .capsule)
+                    .glassEffectID("markdown", in: glass)
+                } else {
+                    Button { withAnimation(.bouncy) { showMarkdown = true } } label: {
+                        Text("Aa").font(.system(size: 17, weight: .semibold))
+                            .foregroundStyle(Theme.text)
+                            .frame(width: 52, height: 52)
+                            .contentShape(.circle)
+                    }
+                    .buttonStyle(.plain)
+                    .glassEffect(.regular.interactive(), in: .circle)
+                    .glassEffectID("markdown", in: glass)
                 }
-                .scrollEdgeEffectStyle(.soft, for: .horizontal)
-                Button { showMarkdown = false } label: {
-                    Image(systemName: "xmark")
-                        .font(.system(size: 17, weight: .semibold))
-                        .foregroundStyle(Theme.secondary)
-                        .frame(width: 44, height: 44)
-                }
-                .padding(.trailing, 4)
-            }
-            .frame(height: 52)
-            .glassEffect(.regular.interactive(), in: .capsule)
-        } else {
-            HStack {
-                Spacer()
-                Button { showMarkdown = true } label: {
-                    Text("Aa").font(.system(size: 17, weight: .semibold))
-                        .foregroundStyle(Theme.text)
-                        .frame(width: 48, height: 48)
-                }
-                .glassEffect(.regular.interactive(), in: .circle)
             }
         }
+        .animation(.bouncy, value: editor.hasSelection)
     }
 
     /// Без выделения — только то, с чего начинают строку.
