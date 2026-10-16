@@ -253,9 +253,7 @@ private struct FeedList: View {
                         ShareLink(item: card.text) { Label("Share", systemImage: "square.and.arrow.up") }
                         Button("Delete", systemImage: "trash", role: .destructive) { board.deleteCard(id: card.id) }
                     }
-                    .swipeActions(edge: .trailing) {
-                        Button("Delete", systemImage: "trash", role: .destructive) { board.deleteCard(id: card.id) }
-                    }
+                    .modifier(EdgeDeleteSwipe { withAnimation { board.deleteCard(id: card.id) } })
                     .listRowBackground(Color.clear)
                     .listRowSeparator(.hidden)
                     .listRowInsets(EdgeInsets(top: 5, leading: 16, bottom: 5, trailing: 16))
@@ -372,6 +370,10 @@ private struct SpacesBar: View {
     var onExpand: () -> Void
     var onRename: (Workspace) -> Void
 
+    @State private var centered: Int?
+    @State private var widths: [Int: CGFloat] = [:]
+    @State private var barWidth: CGFloat = 400
+
     var body: some View {
         if collapsed {
             HStack(spacing: 8) {
@@ -386,30 +388,46 @@ private struct SpacesBar: View {
             .onTapGesture(perform: onExpand) // тап по точкам — раскрыть
             .transition(.opacity)
         } else {
+            // Капсула стоит на месте, имена едут под ней; имя в центре — текущий Space.
             ScrollViewReader { proxy in
-                ScrollView(.horizontal, showsIndicators: false) {
-                    HStack(spacing: 4) {
-                        ForEach(workspaces) { ws in
-                            Button { withAnimation(.snappy) { slot = ws.slot } } label: {
-                                Text(ws.name)
-                                    .font(.system(size: 15, weight: .semibold))
-                                    .foregroundStyle(ws.slot == slot ? Theme.text : Theme.secondary)
-                                    .padding(.horizontal, 14)
-                                    .padding(.vertical, 8)
-                                    .background {
-                                        if ws.slot == slot { Capsule().fill(.clear).glassEffect(.regular, in: .capsule) }
-                                    }
-                            }
-                            .buttonStyle(.plain)
-                            .id(ws.slot)
+            ScrollView(.horizontal, showsIndicators: false) {
+                HStack(spacing: 4) {
+                    ForEach(workspaces) { ws in
+                        Text(ws.name)
+                            .font(.system(size: 15, weight: .semibold))
+                            .foregroundStyle(ws.slot == centered ? Theme.text : Theme.secondary)
+                            .padding(.horizontal, 14)
+                            .padding(.vertical, 8)
+                            .onGeometryChange(for: CGFloat.self) { $0.size.width } action: { widths[ws.slot] = $0 }
+                            .contentShape(.capsule)
+                            .onTapGesture { withAnimation(.snappy) { centered = ws.slot } }
                             .contextMenu { Button("Rename…", systemImage: "pencil") { onRename(ws) } }
-                        }
+                            .id(ws.slot)
                     }
                 }
-                // Поля, чтобы и крайние Spaces вставали по центру.
-                .contentMargins(.horizontal, 150, for: .scrollContent)
-                .onAppear { proxy.scrollTo(slot, anchor: .center) }
-                .onChange(of: slot) { _, s in withAnimation(.snappy) { proxy.scrollTo(s, anchor: .center) } }
+                .scrollTargetLayout()
+            }
+            .scrollPosition(id: $centered, anchor: .center)
+            // viewAligned прижимает имя левым краем — доводим до центра сами, когда лента встала.
+            .onScrollPhaseChange { _, phase in
+                if phase == .idle, let c = centered { withAnimation(.snappy) { proxy.scrollTo(c, anchor: .center) } }
+            }
+            // Поля в полширины, чтобы и крайние имена вставали в центр.
+            .contentMargins(.horizontal, barWidth / 2, for: .scrollContent)
+            .onGeometryChange(for: CGFloat.self) { $0.size.width } action: { barWidth = $0 }
+            .background {
+                Capsule().fill(.clear)
+                    .glassEffect(.regular, in: .capsule)
+                    .frame(width: widths[centered ?? slot] ?? 80, height: 36)
+                    .animation(.snappy, value: centered)
+            }
+            .onAppear { centered = slot }
+            .onChange(of: centered) { _, c in
+                if let c, c != slot { withAnimation(.snappy) { slot = c } }
+            }
+            .onChange(of: slot) { _, s in
+                if centered != s { withAnimation(.snappy) { centered = s } }
+            }
             }
             .frame(height: 40)
             .mask {
@@ -421,4 +439,62 @@ private struct SpacesBar: View {
             .transition(.opacity)
         }
     }
+}
+
+// MARK: - Удаление свайпом с правого края
+
+/// Свайп удаления ловит только правый край карточки (56 pt); по остальной карточке
+/// горизонтальный свайп листает Spaces. Потянул — красная кнопка, дотянул — удалено.
+private struct EdgeDeleteSwipe: ViewModifier {
+    var onDelete: () -> Void
+    @State private var offset: CGFloat = 0
+    @State private var isOpen = false
+    private let zone: CGFloat = 56
+    private let revealed: CGFloat = 72
+    private let fullSwipe: CGFloat = 200
+
+    func body(content: Content) -> some View {
+        content
+            .offset(x: offset)
+            .background(alignment: .trailing) {
+                if offset < 0 {
+                    Button(action: delete) {
+                        Image(systemName: "trash")
+                            .font(.system(size: 17, weight: .semibold))
+                            .foregroundStyle(.white)
+                            .frame(width: 52, height: 52)
+                            .background(.red, in: .circle)
+                    }
+                    .buttonStyle(.plain)
+                    .padding(.trailing, (revealed - 52) / 2)
+                    .opacity(min(1, -offset / revealed))
+                }
+            }
+            .overlay(alignment: .trailing) {
+                if isOpen {
+                    // Открыто: тап по карточке — закрыть, кнопка справа — удалить.
+                    Color.clear.contentShape(.rect)
+                        .padding(.trailing, revealed)
+                        .onTapGesture { close() }
+                } else {
+                    Color.clear.frame(width: zone).contentShape(.rect)
+                        .highPriorityGesture(drag)
+                }
+            }
+    }
+
+    private var drag: some Gesture {
+        DragGesture(minimumDistance: 8)
+            .onChanged { offset = min(0, $0.translation.width) }
+            .onEnded { value in
+                if -value.translation.width > fullSwipe { delete(); return }
+                withAnimation(.snappy) {
+                    isOpen = -offset > revealed / 2
+                    offset = isOpen ? -revealed : 0
+                }
+            }
+    }
+
+    private func close() { withAnimation(.snappy) { isOpen = false; offset = 0 } }
+    private func delete() { close(); onDelete() }
 }
