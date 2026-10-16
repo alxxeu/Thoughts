@@ -14,8 +14,9 @@ struct FeedScreen: View {
     @State private var renaming: Workspace?
     @State private var newName = ""
     @State private var showSpaceSettings = false
-    /// Сдвиг ленты при дальнем переходе по полосе: она встаёт на место сбоку.
-    @State private var arrival: CGFloat = 0
+    /// Порядок страниц на время дальнего перехода по полосе: нужный Space ставится
+    /// рядом с текущим, лента прокручивается на одну страницу, потом порядок обратно.
+    @State private var pageOrder: [Int]?
     @AppStorage("hideEmptySpaces") private var hideEmptySpaces = false
     @FocusState private var composerFocused: Bool
     @Environment(\.scenePhase) private var scenePhase
@@ -38,7 +39,7 @@ struct FeedScreen: View {
         ZStack {
         ScrollView(.horizontal) {
             LazyHStack(spacing: 0) {
-                ForEach(visibleWorkspaces) { workspace in
+                ForEach(pages) { workspace in
                     FeedList(board: board, slot: workspace.slot, revealed: revealed, insets: insets, barTop: barTop,
                              onOpen: { editing = EditorTarget(card: $0, detent: .medium) },
                              onReveal: reveal,
@@ -56,8 +57,6 @@ struct FeedScreen: View {
         .scrollIndicators(.hidden)
         .scrollClipDisabled()
         .ignoresSafeArea()
-        .offset(x: arrival)
-        .opacity(arrival == 0 ? 1 : 0.4)
         EdgeFade(edge: .top, height: geo.safeAreaInsets.top + 64)
         // Снизу — выше баров: захватывает папки и часть поля ввода.
         EdgeFade(edge: .bottom, height: geo.safeAreaInsets.bottom + bottomBarHeight * 0.8 + 30)
@@ -134,20 +133,30 @@ struct FeedScreen: View {
 
     // MARK: - Действия
 
-    /// Тап по имени в полосе. Соседний Space — обычная прокрутка; дальний — без
-    /// пролёта через все промежуточные: лента сразу встаёт на нужный и коротко
-    /// въезжает сбоку, как будто переход на соседний.
+    /// Страницы ленты: обычный порядок или временный — на время дальнего перехода.
+    private var pages: [Workspace] {
+        guard let pageOrder else { return visibleWorkspaces }
+        return pageOrder.compactMap { slot in visibleWorkspaces.first { $0.slot == slot } }
+    }
+
+    /// Тап по имени в полосе. Дальний Space на время перехода встаёт рядом с текущим
+    /// (с той стороны, где он в полосе), и лента прокручивается на одну страницу, как к
+    /// соседу. Текущая страница при перестановке не сдвигается: до неё столько же страниц.
     private func select(_ target: Int) {
-        let ids = visibleWorkspaces.map(\.slot)
+        var ids = visibleWorkspaces.map(\.slot)
         guard let from = ids.firstIndex(of: slot), let to = ids.firstIndex(of: target), from != to else { return }
         if abs(to - from) == 1 { withAnimation(.snappy) { slot = target }; return }
-        var jump = Transaction()
-        jump.disablesAnimations = true
-        withTransaction(jump) {
-            slot = target
-            arrival = to > from ? 60 : -60
+        ids.remove(at: to)
+        let current = ids.firstIndex(of: slot) ?? from
+        ids.insert(target, at: to > from ? current + 1 : current)
+        var still = Transaction()
+        still.disablesAnimations = true
+        withTransaction(still) { pageOrder = ids }
+        Task { @MainActor in
+            withAnimation(.snappy) { slot = target } completion: {
+                withTransaction(still) { pageOrder = nil }
+            }
         }
-        Task { @MainActor in withAnimation(.snappy(duration: 0.3)) { arrival = 0 } }
     }
 
     private func send() {
