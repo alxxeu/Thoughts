@@ -35,8 +35,8 @@ struct EditorSheet: View {
                             .onTapGesture { withAnimation(.bouncy) { showTags = false } }
                     }
                     TagControl(card: card, board: board, expanded: $showTags)
-                        .padding(.leading, 16)
-                        .padding(.top, 26)
+                        .padding(.leading, 20)
+                        .padding(.top, 20)
                 }
             }
         .presentationDetents([.medium, .large], selection: $detent)
@@ -55,7 +55,7 @@ struct EditorSheet: View {
 
     private var header: some View {
         HStack {
-            Color.clear.frame(width: 32, height: 44) // место кнопки тега (она в оверлее)
+            Color.clear.frame(width: 24, height: 44) // место кнопки тега (она в оверлее)
             Spacer()
             Menu {
                 Button("Copy", systemImage: "doc.on.doc") { UIPasteboard.general.string = card.text }
@@ -69,8 +69,8 @@ struct EditorSheet: View {
                     .contentShape(.rect) // без стеклянного фона (доводка 3)
             }
         }
-        .padding(.horizontal, 12)
-        .padding(.top, 20)
+        .padding(.horizontal, 8)
+        .padding(.top, 10)
     }
 
     // MARK: - Клавиатура: «Aa» → панель Markdown
@@ -168,8 +168,9 @@ private struct TagControl: View {
             if expanded {
                 VStack(alignment: .leading, spacing: 10) {
                     HStack(spacing: 8) {
-                        colorButton(nil)
+                        closeButton
                         ForEach(CardTagColor.allCases) { colorButton($0) }
+                        colorButton(nil) // снять тег — в самом конце
                     }
                     HStack(spacing: 8) {
                         privacyButton(.spoiler, title: "Spoiler", symbol: "sparkles")
@@ -178,14 +179,27 @@ private struct TagControl: View {
                 }
             } else {
                 Button { withAnimation(.bouncy) { expanded = true } } label: {
-                    // Прозрачная «начинка» сама тапы не ловит — нужна форма касания.
-                    Color.clear.frame(width: 32, height: 32).contentShape(.circle)
+                    // Прозрачная «начинка» сама тапы не ловит — нужна форма касания;
+                    // она шире круга, чтобы в 24 pt было легко попасть.
+                    Color.clear.frame(width: 24, height: 24).padding(10).contentShape(.circle).padding(-10)
                 }
                 .buttonStyle(.plain)
                 .glassEffect(.regular.tint(card.tagColor?.color ?? .white.opacity(0.15)).interactive(), in: .circle)
-                .glassEffectID(card.tagColor?.rawValue ?? "none", in: glass)
+                .glassEffectID("button", in: glass) // перетекает в ✕ на том же месте
             }
         }
+    }
+
+    /// ✕ — только закрыть меню, тег не трогает.
+    private var closeButton: some View {
+        Button { withAnimation(.bouncy) { expanded = false } } label: {
+            Image(systemName: "xmark").font(.system(size: 13, weight: .bold)).foregroundStyle(Theme.secondary)
+                .frame(width: 34, height: 34)
+                .contentShape(.circle)
+        }
+        .buttonStyle(.plain)
+        .glassEffect(.regular.interactive(), in: .circle)
+        .glassEffectID("button", in: glass)
     }
 
     /// Цвет — отдельная стеклянная капля с оттенком; выбранный — белая точка в центре.
@@ -197,7 +211,7 @@ private struct TagControl: View {
         } label: {
             ZStack {
                 if tag == nil {
-                    Image(systemName: "xmark").font(.system(size: 13, weight: .bold)).foregroundStyle(Theme.secondary)
+                    Image(systemName: "circle.slash").font(.system(size: 15, weight: .semibold)).foregroundStyle(Theme.secondary)
                 } else if card.tagColor == tag {
                     Circle().fill(.white).frame(width: 8, height: 8)
                 }

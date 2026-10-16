@@ -263,14 +263,14 @@ private struct FeedList: View {
         }
         .listStyle(.plain)
         .safeAreaBar(edge: .top, spacing: 0) { Color.clear.frame(height: insets.top) }
-        .safeAreaBar(edge: .bottom, spacing: 0) { Color.clear.frame(height: max(listBottom - barTop, 0)) }
+        .safeAreaBar(edge: .bottom, spacing: 0) { Color.clear.frame(height: max(listBottom - barTop + 5, 0)) } // +5: зазор до поля = зазору между карточками
         .onGeometryChange(for: CGFloat.self) { $0.frame(in: .global).maxY } action: { listBottom = $0 }
         .scrollEdgeEffectHidden(true, for: .all) // затухания свои, темнее фона (EdgeFade)
         .scrollDismissesKeyboard(.interactively)
         .scrollContentBackground(.hidden)
         .defaultScrollAnchor(.bottom)
-        // Полоса Spaces: палец вверх — сворачивается в точки, вниз — разворачивается
-        // (Р12). Только от пальца: сдвиги от смены высоты баров не в счёт.
+        // Полоса Spaces: палец вверх (к свежим) — разворачивается, вниз (к старым) —
+        // сворачивается в точки (Р12). Только от пальца: сдвиги от смены высоты баров не в счёт.
         .onScrollPhaseChange { _, phase in isDragging = phase == .interacting } // отскок у края — не палец
         .onScrollGeometryChange(for: ScrollState.self) { geo in
             ScrollState(offset: geo.contentOffset.y,
@@ -282,7 +282,7 @@ private struct FeedList: View {
             if isDragging || old.toBottom >= 24 { atBottom = new.toBottom < 24 }
             guard isDragging else { return }
             let delta = new.offset - old.offset
-            if delta > 4 { onCollapse(true) } else if delta < -4 { onCollapse(false) }
+            if delta > 4 { onCollapse(false) } else if delta < -4 { onCollapse(true) }
         }
         // shortcut: держится только низ ленты; из середины карточки под клавиатурой
         // не поднимаются — нужен сдвиг contentOffset, если попросят.
@@ -331,25 +331,26 @@ private struct Composer: View {
                 .padding(.vertical, 6)
                 .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { height = $0 }
             if hasText {
-                VStack(spacing: 8) {
-                    if isLong {
-                        Button(action: onExpand) {
-                            Image(systemName: "arrow.up.left.and.arrow.down.right")
-                                .font(.system(size: 15, weight: .semibold))
-                                .foregroundStyle(Theme.secondary)
-                                .frame(width: 32, height: 32)
-                        }
-                        Spacer(minLength: 0)
-                    }
-                    Button(action: onSend) {
-                        Image(systemName: "arrow.up")
-                            .font(.system(size: 15, weight: .bold))
-                            .foregroundStyle(.white)
-                            .frame(width: 32, height: 32)
-                            .background(Theme.accent, in: .circle)
-                    }
+                Button(action: onSend) {
+                    Image(systemName: "arrow.up")
+                        .font(.system(size: 15, weight: .bold))
+                        .foregroundStyle(.white)
+                        .frame(width: 32, height: 32)
+                        .background(Theme.accent, in: .circle)
                 }
                 .transition(.scale.combined(with: .opacity))
+            }
+        }
+        // Расширитель — над кнопкой отправки, в оверлее: Spacer в стопке тянул поле до верха экрана.
+        .overlay(alignment: .topTrailing) {
+            if hasText && isLong {
+                Button(action: onExpand) {
+                    Image(systemName: "arrow.up.left.and.arrow.down.right")
+                        .font(.system(size: 15, weight: .semibold))
+                        .foregroundStyle(Theme.secondary)
+                        .frame(width: 32, height: 32)
+                }
+                .transition(.opacity)
             }
         }
         .padding(.leading, 18)
