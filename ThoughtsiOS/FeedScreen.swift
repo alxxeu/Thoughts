@@ -328,12 +328,8 @@ private struct FeedList: View {
                         onToggleTask: { toggle(card, $0) })
                     .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { rowHeights[card.id] = $0 }
                     .onTapGesture { if card.privacyMode == .none || revealed.contains(card.id) { onOpen(card) } }
-                    .contentShape(.contextMenuPreview, .rect(cornerRadius: Theme.cardRadius)) // превью без прямоугольной рамки
-                    .contextMenu {
-                        Button("Copy", systemImage: "doc.on.doc") { UIPasteboard.general.string = card.text }
-                        ShareLink(item: card.text) { Label("Share", systemImage: "square.and.arrow.up") }
-                        Button("Delete", systemImage: "trash", role: .destructive) { board.deleteCard(id: card.id) }
-                    }
+                    .modifier(CardMenu(card: card, isHidden: card.privacyMode != .none && !revealed.contains(card.id),
+                                       onDelete: { board.deleteCard(id: card.id) }))
                     .modifier(EdgeDeleteSwipe { withAnimation { board.deleteCard(id: card.id) } })
                     .listRowBackground(Color.clear)
                     .listRowSeparator(.hidden)
@@ -525,6 +521,38 @@ private struct SpacesBar: View {
             ], startPoint: .leading, endPoint: .trailing)
         }
         .transition(.opacity)
+    }
+}
+
+// MARK: - Меню долгого нажатия
+
+/// Copy / Share / Delete по долгому нажатию. Нераскрытая Spoiler/Lock-карточка меню
+/// не даёт вовсе (Copy отдал бы текст без Face ID): только отклик и короткое всплывание.
+private struct CardMenu: ViewModifier {
+    let card: Card
+    let isHidden: Bool
+    var onDelete: () -> Void
+    @State private var pulse = false
+
+    func body(content: Content) -> some View {
+        if isHidden {
+            content
+                .scaleEffect(pulse ? 1.03 : 1)
+                .sensoryFeedback(.impact(weight: .light), trigger: pulse) { _, new in new }
+                .onLongPressGesture(minimumDuration: 0.35) {
+                    withAnimation(.spring(duration: 0.18)) { pulse = true } completion: {
+                        withAnimation(.spring(duration: 0.35, bounce: 0.5)) { pulse = false }
+                    }
+                }
+        } else {
+            content
+                .contentShape(.contextMenuPreview, .rect(cornerRadius: Theme.cardRadius)) // превью без прямоугольной рамки
+                .contextMenu {
+                    Button("Copy", systemImage: "doc.on.doc") { UIPasteboard.general.string = card.text }
+                    ShareLink(item: card.text) { Label("Share", systemImage: "square.and.arrow.up") }
+                    Button("Delete", systemImage: "trash", role: .destructive, action: onDelete)
+                }
+        }
     }
 }
 
