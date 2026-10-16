@@ -1,7 +1,6 @@
 import SwiftUI
 
-/// Заготовка iPhone-компаньона: доска из iCloud, пока только Spaces с
-/// числом карточек и статус синка.
+/// Thoughts для iPhone — MVP: лента (S1) и редактор (S2), синк с iCloud.
 @main
 struct ThoughtsiOSApp: App {
     /// Движок держит доску слабой ссылкой; App живёт всё время работы.
@@ -16,20 +15,7 @@ struct ThoughtsiOSApp: App {
 
     var body: some Scene {
         WindowGroup {
-            NavigationStack {
-                List {
-                    // Только счётчики: Space Lock на iPhone ещё нет, поэтому
-                    // текст карточек (в том числе защищённых Spaces) не показываем.
-                    ForEach(board.workspaces) { workspace in
-                        LabeledContent(workspace.name, value: "\(board.cardsByWorkspace[workspace.slot]?.count ?? 0)")
-                    }
-                    Section {
-                        Text(sync.status.text)
-                            .foregroundStyle(.secondary)
-                    }
-                }
-                .navigationTitle("Thoughts")
-            }
+            FeedScreen(board: board)
         }
         .onChange(of: scenePhase, initial: true) { _, phase in
             enableSyncIfNeeded(phase)

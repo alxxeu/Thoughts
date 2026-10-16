@@ -63,3 +63,29 @@ struct BoardModelTests {
         #expect(deleted == [card.id])
     }
 }
+
+@MainActor
+struct BoardModelCardTests {
+    private let boardURL = FileManager.default.temporaryDirectory
+        .appendingPathComponent("ThoughtsTests-\(UUID().uuidString)", isDirectory: true)
+        .appendingPathComponent("board.json")
+
+    init() throws {
+        try FileManager.default.createDirectory(at: boardURL.deletingLastPathComponent(), withIntermediateDirectories: true)
+    }
+
+    /// Карточка с iPhone сохраняется и уходит в синк; удаление — тоже.
+    @Test func addAndDeleteCardAreSavedAndSynced() {
+        let board = BoardModel(store: BoardStore(fileURL: boardURL))
+        var changes: [BoardChangeSet] = []
+        board.onLocalChanges = { changes.append($0) }
+
+        let card = board.addCard(text: "Buy oat milk", slot: 3)
+        #expect(BoardModel(store: BoardStore(fileURL: boardURL)).cardsByWorkspace[3]?.first?.text == "Buy oat milk")
+        #expect(changes.last?.savedCards == [card.id])
+
+        board.deleteCard(id: card.id)
+        #expect(board.cardsByWorkspace[3]?.isEmpty == true)
+        #expect(changes.last?.deletedCards == [card.id])
+    }
+}

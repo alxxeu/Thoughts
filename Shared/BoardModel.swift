@@ -100,6 +100,28 @@ final class BoardModel: SyncableBoard {
         }
     }
 
+    // MARK: - Карточки (iPhone; на Mac — свои операции на холсте)
+
+    /// Размер карточки с iPhone на холсте Mac — как у Quick Capture.
+    static let phoneCardSize = CGSize(width: 224, height: 164)
+
+    @discardableResult
+    func addCard(text: String, slot: Int) -> Card {
+        // shortcut: позиция по умолчанию — на холсте Mac карточки с iPhone встанут
+        // стопкой; «первое свободное место» (Р2) — доработка Mac.
+        let card = Card(position: CGPoint(x: 40, y: 80), size: Self.phoneCardSize, text: text)
+        cardsByWorkspace[slot, default: []].append(card)
+        saveImmediately()
+        return card
+    }
+
+    func deleteCard(id: UUID) {
+        for slot in cardsByWorkspace.keys {
+            cardsByWorkspace[slot]?.removeAll { $0.id == id }
+        }
+        saveImmediately()
+    }
+
     // MARK: - Snapshot (бэкап, импорт, синк)
 
     func makeSnapshot() -> BoardSnapshot {

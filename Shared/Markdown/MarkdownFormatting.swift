@@ -57,6 +57,18 @@ enum MarkdownFormatting {
         )
     }
 
+    /// Галочка задачи `[ ]` ↔ `[x]` в строке `paragraph` (тап по задаче в ленте).
+    /// nil — строка не задача.
+    static func togglingTask(in text: String, paragraph: MarkdownStyler.Paragraph) -> String? {
+        guard case .task(let done) = paragraph.block, let marker = paragraph.blockMarker else { return nil }
+        let ns = text as NSString
+        let open = ns.range(of: "[", options: [], range: marker)
+        let close = ns.range(of: "]", options: [], range: marker)
+        guard open.location != NSNotFound, close.location != NSNotFound, close.location > open.location else { return nil }
+        let inside = NSRange(location: open.location + 1, length: close.location - open.location - 1)
+        return ns.replacingCharacters(in: inside, with: done ? " " : "x")
+    }
+
     /// Ровно этот маркер, а не часть более длинного: `*` курсива не должен
     /// совпасть со звёздочкой из `**` жирного. Допускается и `***` (жирный
     /// курсив) — курсив снимается из него, жирный остаётся.
