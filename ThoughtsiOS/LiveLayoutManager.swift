@@ -151,13 +151,8 @@ final class LiveLayoutManager: NSLayoutManager, NSLayoutManagerDelegate {
                     rect = rect.union(lineRect)
                     return
                 }
-                // Первый видимый символ строки: у скрытого `> ` крохотный шрифт.
-                var glyph = lineGlyphs.location
-                while glyph < NSMaxRange(lineGlyphs) - 1,
-                      let font = storage.attribute(.font, at: self.characterIndexForGlyph(at: glyph), effectiveRange: nil) as? UIFont,
-                      font.pointSize < 1 {
-                    glyph += 1
-                }
+                // Скрытый `> ` — шрифтом строки, по первому глифу и меряем.
+                let glyph = lineGlyphs.location
                 let char = min(self.characterIndexForGlyph(at: glyph), storage.length - 1)
                 let font = storage.attribute(.font, at: char, effectiveRange: nil) as? UIFont ?? LiveMarkdownStyler.font
                 let baseline = lineRect.minY + self.location(forGlyphAt: glyph).y

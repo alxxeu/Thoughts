@@ -112,7 +112,7 @@ enum LiveMarkdownStyler {
             }
         }
 
-        // Скрытое — прозрачное и почти нулевой ширины, но остаётся в своей строке
+        // Скрытое — прозрачное и нулевой ширины, но остаётся в своей строке
         // (как на Mac: глифы нулевой ширины уезжали в строку выше).
         for range in LiveMarkdown.hiddenRanges(paragraphs) where !fenceLines.contains(range) {
             hide(range, in: storage)
@@ -121,11 +121,18 @@ enum LiveMarkdownStyler {
         return paragraphs
     }
 
+    /// Прозрачно и без ширины (кернинг минус ширина символа), но шрифтом своей строки:
+    /// крохотный шрифт сжимал строку, где кроме служебных символов ничего нет (новая
+    /// пустая строка цитаты), — курсор съезжал вниз и выпадал из подложки.
     static func hide(_ range: NSRange, in storage: NSTextStorage) {
-        storage.addAttributes([.font: hiddenFont, .foregroundColor: UIColor.clear], range: range)
+        let ns = storage.string as NSString
+        for index in range.location..<NSMaxRange(range) {
+            let char = NSRange(location: index, length: 1)
+            let font = storage.attribute(.font, at: index, effectiveRange: nil) as? UIFont ?? Self.font
+            let width = ns.substring(with: char).size(withAttributes: [.font: font]).width
+            storage.addAttributes([.foregroundColor: UIColor.clear, .kern: -width], range: char)
+        }
     }
-
-    private static let hiddenFont = UIFont.systemFont(ofSize: 0.1)
 
     private static func mono(_ size: CGFloat) -> UIFont {
         .monospacedSystemFont(ofSize: size * 0.9, weight: .regular)
