@@ -357,8 +357,7 @@ private struct Composer: View {
         }
         .padding(.leading, 18)
         .padding(.trailing, hasText ? 8 : 18)
-        .padding(.top, compact ? 2 : 8)
-        .padding(.bottom, 8)
+        .padding(.vertical, compact ? 5 : 8) // поровну сверху и снизу — подпись остаётся по центру
         .frame(minHeight: compact ? 42 : 48)
         .glassEffect(.regular, in: .rect(cornerRadius: 24))
         .animation(.snappy, value: hasText)
