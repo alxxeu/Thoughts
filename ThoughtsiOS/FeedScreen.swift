@@ -384,20 +384,10 @@ private struct SpacesBar: View {
     var onExpand: () -> Void
     var onRename: (Workspace) -> Void
 
-    /// Имя в центре ленты. Живёт и при свёрнутой полосе — раскрытая сразу стоит на нём.
-    @State private var centered: Int?
     @State private var barWidth: CGFloat = 400
-    /// Все имена одной ширины: системная доводка (viewAligned) ставит имя ровно в центр.
-    private static let itemWidth: CGFloat = 96
 
     var body: some View {
-        Group {
-            if collapsed { dots } else { names }
-        }
-        .onAppear { centered = slot }
-        .onChange(of: slot) { _, s in
-            if centered != s { withAnimation(.snappy) { centered = s } }
-        }
+        if collapsed { dots } else { names }
     }
 
     private var dots: some View {
@@ -414,41 +404,43 @@ private struct SpacesBar: View {
         .transition(.opacity)
     }
 
-    /// Имя в центре — текущий Space: ярче и чуть крупнее (масштаб — плавно, без скачков ширины).
+    /// Простая прокрутка имён; Space меняется только тапом по имени. Текущий —
+    /// ярче и чуть крупнее, лента держит его по центру.
     private var names: some View {
-        ScrollView(.horizontal, showsIndicators: false) {
-            HStack(spacing: 0) {
-                ForEach(workspaces) { ws in
-                    let isCurrent = ws.slot == centered
-                    Text(ws.name)
-                        .font(.system(size: 15, weight: .semibold))
-                        .lineLimit(1)
-                        .foregroundStyle(isCurrent ? Theme.text : Theme.secondary)
-                        .scaleEffect(isCurrent ? 1.15 : 1)
-                        .frame(width: Self.itemWidth, height: 40)
-                        .contentShape(.rect)
-                        .onTapGesture { withAnimation(.snappy) { centered = ws.slot } }
-                        .contextMenu { Button("Rename…", systemImage: "pencil") { onRename(ws) } }
-                        .id(ws.slot)
+        ScrollViewReader { proxy in
+            ScrollView(.horizontal, showsIndicators: false) {
+                HStack(spacing: 0) {
+                    ForEach(workspaces) { ws in
+                        let isCurrent = ws.slot == slot
+                        Text(ws.name)
+                            .font(.system(size: 15, weight: .semibold))
+                            .foregroundStyle(isCurrent ? Theme.text : Theme.secondary)
+                            .scaleEffect(isCurrent ? 1.12 : 1)
+                            .padding(.horizontal, 14)
+                            .frame(height: 40)
+                            .contentShape(.rect)
+                            .onTapGesture { withAnimation(.snappy) { slot = ws.slot } }
+                            .contextMenu { Button("Rename…", systemImage: "pencil") { onRename(ws) } }
+                            .id(ws.slot)
+                    }
                 }
             }
-            .scrollTargetLayout()
+            // Поля, чтобы и крайние имена могли встать по центру.
+            .contentMargins(.horizontal, max(barWidth / 2 - 40, 0), for: .scrollContent)
+            .onGeometryChange(for: CGFloat.self) { $0.size.width } action: { barWidth = $0 }
+            .onAppear {
+                // Раскрылась из точек — сразу на текущем имени, без прокатывания.
+                proxy.scrollTo(slot, anchor: .center)
+                Task { @MainActor in proxy.scrollTo(slot, anchor: .center) }
+            }
+            .onChange(of: slot) { _, s in withAnimation(.snappy) { proxy.scrollTo(s, anchor: .center) } }
+            .onChange(of: workspaces.map(\.name)) { proxy.scrollTo(slot, anchor: .center) }
         }
-        .scrollTargetBehavior(.viewAligned(limitBehavior: .alwaysByFew))
-        .scrollPosition(id: $centered, anchor: .center)
-        // Лента Spaces переключается, когда полоса встала: на лету она не успевала за
-        // несколькими сменами за один бросок и застревала на промежуточном Space.
-        .onScrollPhaseChange { _, phase in
-            if phase == .idle, let c = centered, c != slot { withAnimation(.snappy) { slot = c } }
-        }
-        .contentMargins(.horizontal, max((barWidth - Self.itemWidth) / 2, 0), for: .scrollContent)
-        .onGeometryChange(for: CGFloat.self) { $0.size.width } action: { barWidth = $0 }
-        .animation(.snappy, value: centered)
         .frame(height: 40)
         .mask {
             LinearGradient(stops: [
-                .init(color: .clear, location: 0), .init(color: .black, location: 0.15),
-                .init(color: .black, location: 0.85), .init(color: .clear, location: 1),
+                .init(color: .clear, location: 0), .init(color: .black, location: 0.12),
+                .init(color: .black, location: 0.88), .init(color: .clear, location: 1),
             ], startPoint: .leading, endPoint: .trailing)
         }
         .transition(.opacity)
