@@ -101,11 +101,11 @@ struct EditorSheet: View {
                 HStack(spacing: 0) {
                     if editor.hasSelection {
                         ScrollView(.horizontal, showsIndicators: false) {
-                            HStack(spacing: 0) { selectionTools }.padding(.leading, 8)
+                            HStack(spacing: 0) { selectionTools }.padding(.leading, 12)
                         }
                         .scrollEdgeEffectStyle(.soft, for: .horizontal)
                     } else {
-                        starterTools.padding(.leading, 6)
+                        HStack(spacing: 0) { starterTools }.padding(.leading, 12) // padding на группе раздал бы отступ каждому значку
                     }
                     Button { withAnimation(.bouncy) { showMarkdown = false } } label: {
                         Image(systemName: "xmark")
@@ -114,7 +114,7 @@ struct EditorSheet: View {
                             .frame(width: 44, height: 44)
                     }
                     .buttonStyle(.plain)
-                    .padding(.trailing, 4)
+                    .padding(.trailing, 7)
                 }
                 .frame(maxWidth: width ?? .infinity)
                 .frame(height: 52)
@@ -134,8 +134,8 @@ struct EditorSheet: View {
         .animation(.bouncy, value: editor.hasSelection)
     }
 
-    /// 4 значка по 44 + ✕ 44 + поля.
-    private static let starterWidth: CGFloat = 4 * 44 + 44 + 6 + 4
+    /// 4 значка по 44 + ✕ 44 + поля по краям капсулы.
+    private static let starterWidth: CGFloat = 4 * 44 + 44 + 12 + 7
 
     /// Без выделения — только то, с чего начинают строку.
     @ViewBuilder
