@@ -444,8 +444,8 @@ private struct SpacesBar: View {
 // MARK: - Удаление свайпом с правого края
 
 /// Свайп удаления ловит только правый край карточки (56 pt); по остальной карточке
-/// горизонтальный свайп листает Spaces. Повторяет системный: красная кнопка
-/// растягивается за пальцем, за порогом полного свайпа (с отдачей) значок уходит
+/// горизонтальный свайп листает Spaces. Повторяет системный: красный круг
+/// тянется за карточкой в капсулу, за порогом полного свайпа (с отдачей) значок уходит
 /// к краю карточки, отпустил — карточка уезжает и удаляется. Короткий свайп —
 /// кнопка остаётся открытой.
 private struct EdgeDeleteSwipe: ViewModifier {
@@ -465,18 +465,21 @@ private struct EdgeDeleteSwipe: ViewModifier {
             .onGeometryChange(for: CGFloat.self) { $0.size.width } action: { width = $0 }
             .background(alignment: .trailing) {
                 if offset < 0 {
+                    // Круг 52 pt по центру высоты; дальше тянется за карточкой в капсулу.
+                    let w = max(-offset - gap * 2, 0)
                     Button(action: delete) {
                         Image(systemName: "trash")
                             .font(.system(size: 17, weight: .semibold))
                             .foregroundStyle(.white)
-                            .scaleEffect(min(1, -offset / revealed))
-                            .frame(width: revealed - gap)
+                            .scaleEffect(min(1, w / 52))
+                            .frame(width: 52)
                             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: armed ? .leading : .center)
-                            .background(.red, in: .rect(cornerRadius: Theme.cardRadius))
+                            .background(.red, in: .capsule)
                     }
                     .buttonStyle(.plain)
-                    .frame(width: max(-offset - gap, 0))
-                    .clipShape(.rect(cornerRadius: Theme.cardRadius))
+                    .frame(width: w, height: min(52, w))
+                    .clipShape(.capsule)
+                    .padding(.trailing, gap)
                     .animation(.snappy, value: armed)
                 }
             }
