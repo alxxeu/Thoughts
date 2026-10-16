@@ -204,13 +204,13 @@ private struct TagControl: View {
 
     private var row: some View {
         HStack(spacing: 0) {
-            iconButton("xmark.circle") { withAnimation(.bouncy) { expanded = false } } // только закрыть
+            iconButton("xmark") { withAnimation(.bouncy) { expanded = false } } // только закрыть
             ForEach(CardTagColor.allCases) { tag in
                 Spacer(minLength: 4)
                 colorButton(tag)
             }
             Spacer(minLength: 4)
-            iconButton("circle.slash") { select(nil) } // снять тег
+            iconButton("minus.circle.fill") { select(nil) } // снять тег
         }
         .padding(Self.panelPadding)
         .frame(maxWidth: .infinity)
@@ -233,15 +233,15 @@ private struct TagControl: View {
         .buttonStyle(.plain)
     }
 
-    /// Цвет — плоская точка внутри подложки; выбранный — белая точка в центре.
+    /// Цвет — стеклянная капля с оттенком тега; выбранный — белая точка в центре.
     private func colorButton(_ tag: CardTagColor) -> some View {
         Button { select(tag) } label: {
-            Circle().fill(tag.color)
-                .overlay { if card.tagColor == tag { Circle().fill(.white).frame(width: 8, height: 8) } }
+            ZStack { if card.tagColor == tag { Circle().fill(.white).frame(width: 8, height: 8) } }
                 .frame(width: Self.dot, height: Self.dot)
                 .contentShape(.circle)
         }
         .buttonStyle(.plain)
+        .glassEffect(.regular.tint(tag.color).interactive(), in: .circle)
     }
 
     private func privacyButton(_ mode: CardPrivacyMode, title: String, symbol: String) -> some View {
