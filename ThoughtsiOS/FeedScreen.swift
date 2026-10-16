@@ -16,20 +16,48 @@ struct FeedScreen: View {
     @FocusState private var composerFocused: Bool
     @Environment(\.scenePhase) private var scenePhase
 
+    @State private var bottomBarHeight: CGFloat = 110
+
     var body: some View {
-        TabView(selection: $slot) {
-            ForEach(board.workspaces) { workspace in
-                FeedList(board: board, slot: workspace.slot, revealed: revealed,
-                         onOpen: { editing = EditorTarget(card: $0, detent: .medium) },
-                         onReveal: reveal,
-                         onCollapse: { collapsed in withAnimation(.snappy) { spacesCollapsed = collapsed } })
-                    .tag(workspace.slot)
+        GeometryReader { geo in
+        // Страницы Spaces — горизонтальная прокрутка без обрезки (страничный TabView
+        // обрезал ленту). Настоящие бары лежат поверх и не уезжают при свайпе, а
+        // каждой ленте даны прозрачные бары той же высоты — они включают системный
+        // scroll edge (мягкое затухание с размытием).
+        let insets = EdgeInsets(top: geo.safeAreaInsets.top + 56, leading: 0,
+                                bottom: geo.safeAreaInsets.bottom + bottomBarHeight, trailing: 0)
+        ScrollView(.horizontal) {
+            LazyHStack(spacing: 0) {
+                ForEach(board.workspaces) { workspace in
+                    FeedList(board: board, slot: workspace.slot, revealed: revealed, insets: insets,
+                             onOpen: { editing = EditorTarget(card: $0, detent: .medium) },
+                             onReveal: reveal,
+                             onCollapse: { collapsed in withAnimation(.snappy) { spacesCollapsed = collapsed } })
+                        .containerRelativeFrame(.horizontal)
+                        .id(workspace.slot)
+                }
+            }
+            .scrollTargetLayout()
+        }
+        .scrollTargetBehavior(.paging)
+        .scrollPosition(id: Binding(get: { Optional(slot) }, set: { if let s = $0 { slot = s } }))
+        .scrollIndicators(.hidden)
+        .scrollClipDisabled()
+        .ignoresSafeArea()
+        }
+        // Бары — поверх, в безопасной зоне (клавиатура поднимает поле ввода сама).
+        .overlay(alignment: .top) { HStack { Spacer(); moreButton }.padding(.top, 6) }
+        .overlay(alignment: .bottom) {
+            bottomBar.onGeometryChange(for: CGFloat.self) { $0.size.height } action: { bottomBarHeight = $0 }
+        }
+        .background(Theme.background.ignoresSafeArea())
+        // Клавиатура закрывается прокруткой ленты и кнопкой над ней.
+        .toolbar {
+            ToolbarItemGroup(placement: .keyboard) {
+                Spacer()
+                Button { composerFocused = false } label: { Image(systemName: "keyboard.chevron.compact.down") }
             }
         }
-        .tabViewStyle(.page(indexDisplayMode: .never))
-        .background(Theme.background.ignoresSafeArea())
-        .safeAreaInset(edge: .bottom, spacing: 0) { bottomBar }
-        .overlay(alignment: .topTrailing) { moreButton }
         .sheet(item: $editing) { target in
             EditorSheet(board: board, card: target.card, detent: target.detent, lock: lock)
         }
@@ -121,6 +149,8 @@ private struct FeedList: View {
     @Bindable var board: BoardModel
     let slot: Int
     let revealed: Set<UUID>
+    /// Высота баров экрана (статус-бар + «…» сверху, поле ввода + Spaces снизу).
+    let insets: EdgeInsets
     var onOpen: (Card) -> Void
     var onReveal: (Card) -> Void
     var onCollapse: (Bool) -> Void
@@ -196,9 +226,12 @@ private struct FeedList: View {
             }
         }
         .listStyle(.plain)
+        .safeAreaBar(edge: .top, spacing: 0) { Color.clear.frame(height: insets.top) }
+        .safeAreaBar(edge: .bottom, spacing: 0) { Color.clear.frame(height: insets.bottom) }
+        .scrollEdgeEffectStyle(.soft, for: .all)
+        .scrollDismissesKeyboard(.interactively)
         .scrollContentBackground(.hidden)
         .defaultScrollAnchor(.bottom)
-        .contentMargins(.top, 60, for: .scrollContent)
         // Полоса Spaces сворачивается в точки, когда листаем вверх, к старым.
         .onScrollGeometryChange(for: Bool.self) { geo in
             geo.contentSize.height - geo.contentOffset.y - geo.containerSize.height > 120
