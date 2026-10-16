@@ -444,38 +444,50 @@ private struct SpacesBar: View {
 // MARK: - Удаление свайпом с правого края
 
 /// Свайп удаления ловит только правый край карточки (56 pt); по остальной карточке
-/// горизонтальный свайп листает Spaces. Потянул — красная кнопка, дотянул — удалено.
+/// горизонтальный свайп листает Spaces. Повторяет системный: красная кнопка
+/// растягивается за пальцем, за порогом полного свайпа (с отдачей) значок уходит
+/// к краю карточки, отпустил — карточка уезжает и удаляется. Короткий свайп —
+/// кнопка остаётся открытой.
 private struct EdgeDeleteSwipe: ViewModifier {
     var onDelete: () -> Void
     @State private var offset: CGFloat = 0
     @State private var isOpen = false
+    @State private var width: CGFloat = 0
     private let zone: CGFloat = 56
-    private let revealed: CGFloat = 72
-    private let fullSwipe: CGFloat = 200
+    private let revealed: CGFloat = 80
+    private let gap: CGFloat = 8
+    private var fullSwipe: CGFloat { max(width * 0.55, 160) }
+    private var armed: Bool { -offset > fullSwipe }
 
     func body(content: Content) -> some View {
         content
             .offset(x: offset)
+            .onGeometryChange(for: CGFloat.self) { $0.size.width } action: { width = $0 }
             .background(alignment: .trailing) {
                 if offset < 0 {
                     Button(action: delete) {
                         Image(systemName: "trash")
                             .font(.system(size: 17, weight: .semibold))
                             .foregroundStyle(.white)
-                            .frame(width: 52, height: 52)
-                            .background(.red, in: .circle)
+                            .scaleEffect(min(1, -offset / revealed))
+                            .frame(width: revealed - gap)
+                            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: armed ? .leading : .center)
+                            .background(.red, in: .rect(cornerRadius: Theme.cardRadius))
                     }
                     .buttonStyle(.plain)
-                    .padding(.trailing, (revealed - 52) / 2)
-                    .opacity(min(1, -offset / revealed))
+                    .frame(width: max(-offset - gap, 0))
+                    .clipShape(.rect(cornerRadius: Theme.cardRadius))
+                    .animation(.snappy, value: armed)
                 }
             }
+            .sensoryFeedback(.impact(weight: .medium), trigger: armed) { _, new in new }
             .overlay(alignment: .trailing) {
                 if isOpen {
-                    // Открыто: тап по карточке — закрыть, кнопка справа — удалить.
+                    // Открыто: тап по карточке — закрыть, кнопка справа — удалить, тянуть дальше — полный свайп.
                     Color.clear.contentShape(.rect)
                         .padding(.trailing, revealed)
                         .onTapGesture { close() }
+                        .highPriorityGesture(drag)
                 } else {
                     Color.clear.frame(width: zone).contentShape(.rect)
                         .highPriorityGesture(drag)
@@ -485,9 +497,9 @@ private struct EdgeDeleteSwipe: ViewModifier {
 
     private var drag: some Gesture {
         DragGesture(minimumDistance: 8)
-            .onChanged { offset = min(0, $0.translation.width) }
-            .onEnded { value in
-                if -value.translation.width > fullSwipe { delete(); return }
+            .onChanged { offset = min(0, (isOpen ? -revealed : 0) + $0.translation.width) }
+            .onEnded { _ in
+                if armed { delete(); return }
                 withAnimation(.snappy) {
                     isOpen = -offset > revealed / 2
                     offset = isOpen ? -revealed : 0
@@ -496,5 +508,13 @@ private struct EdgeDeleteSwipe: ViewModifier {
     }
 
     private func close() { withAnimation(.snappy) { isOpen = false; offset = 0 } }
-    private func delete() { close(); onDelete() }
+
+    /// Карточка уезжает влево вместе с растянутой кнопкой, потом удаляется.
+    private func delete() {
+        withAnimation(.easeIn(duration: 0.2)) { offset = -width - gap * 4 }
+        Task { @MainActor in
+            try? await Task.sleep(for: .milliseconds(200))
+            onDelete()
+        }
+    }
 }
