@@ -46,7 +46,8 @@ struct CardRow: View {
         .padding(.vertical, 16)
         .background {
             ZStack {
-                Color.clear.glassEffect(.clear, in: .rect(cornerRadius: Theme.cardRadius))
+                // Стекло с тёмным оттенком: чистое .clear на тёмном фоне выходит слишком светлым.
+                Color.clear.glassEffect(.clear.tint(.black.opacity(0.4)), in: .rect(cornerRadius: Theme.cardRadius))
                 if isHidden {
                     RoundedRectangle(cornerRadius: Theme.cardRadius).fill(.black.opacity(0.2))
                     StarFieldCanvas()
