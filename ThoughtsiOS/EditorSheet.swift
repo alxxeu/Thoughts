@@ -25,7 +25,8 @@ struct EditorSheet: View {
             .scrollEdgeEffectStyle(.soft, for: .all) // текст гаснет с размытием под шапкой
             .scrollDismissesKeyboard(.interactively)
             .focused($focused)
-            .padding(.horizontal, 16)
+            // Поля — внутри прокрутки: сам редактор во всю ширину, и размытие под шапкой доходит до краёв.
+            .contentMargins(.horizontal, 16, for: .scrollContent)
             .safeAreaBar(edge: .top) { header }
             .overlay(alignment: .topLeading) {
                 // Поповер тега «вытекает» из кнопки (морфинг стекла); тап мимо — закрыть.
@@ -39,9 +40,18 @@ struct EditorSheet: View {
             }
         .presentationDetents([.medium, .large], selection: $detent)
         .presentationDragIndicator(showTags ? .hidden : .visible) // подложка тега встаёт на его место
-        .toolbar {
-            ToolbarItemGroup(placement: .keyboard) { keyboardBar }
+        // «Aa» — только когда выделен текст (или панель уже открыта); своя плашка над
+        // клавиатурой с отступом, а не toolbar клавиатуры, прижатый к ней вплотную.
+        .overlay(alignment: .bottom) {
+            if focused && (hasSelection || showMarkdown) {
+                keyboardBar
+                    .padding(.horizontal, 16)
+                    .padding(.bottom, 10)
+                    .transition(.opacity.combined(with: .scale(scale: 0.9, anchor: .bottomTrailing)))
+            }
         }
+        .animation(.snappy, value: hasSelection)
+        .animation(.snappy, value: showMarkdown)
         .onChange(of: focused) { _, isFocused in if isFocused { withAnimation { detent = .large } } }
         .onChange(of: card.text) { board.scheduleDebouncedSave() }
         .onAppear { board.editingCardID = card.id }
@@ -73,21 +83,40 @@ struct EditorSheet: View {
 
     // MARK: - Клавиатура: «Aa» → панель Markdown
 
+    private var hasSelection: Bool {
+        if case .selection(let range) = selection?.indices { return !range.isEmpty }
+        return false
+    }
+
     @ViewBuilder
     private var keyboardBar: some View {
         if showMarkdown {
-            ScrollView(.horizontal, showsIndicators: false) {
-                HStack(spacing: 18) {
-                    wrap("bold", "**"); wrap("italic", "*"); wrap("strikethrough", "~~"); wrap("highlighter", "==")
-                    prefix("textformat.size", "# "); prefix("list.bullet", "- "); prefix("checklist", "- [ ] "); prefix("text.quote", "> ")
-                    wrap("chevron.left.forwardslash.chevron.right", "`")
-                    Button { insertLink() } label: { Image(systemName: "link") }
+            HStack(spacing: 4) {
+                ScrollView(.horizontal, showsIndicators: false) {
+                    HStack(spacing: 18) {
+                        wrap("bold", "**"); wrap("italic", "*"); wrap("strikethrough", "~~"); wrap("highlighter", "==")
+                        prefix("textformat.size", "# "); prefix("list.bullet", "- "); prefix("checklist", "- [ ] "); prefix("text.quote", "> ")
+                        wrap("chevron.left.forwardslash.chevron.right", "`")
+                        Button { insertLink() } label: { Image(systemName: "link") }
+                    }
+                    .padding(.horizontal, 16)
                 }
+                Button { showMarkdown = false } label: { Image(systemName: "xmark").frame(width: 44, height: 44) }
             }
-            Button { showMarkdown = false } label: { Image(systemName: "xmark") }
+            .font(.system(size: 17))
+            .foregroundStyle(Theme.text)
+            .frame(height: 48)
+            .glassEffect(.regular.interactive(), in: .capsule)
         } else {
-            Spacer()
-            Button { showMarkdown = true } label: { Text("Aa").font(.system(size: 17, weight: .semibold)) }
+            HStack {
+                Spacer()
+                Button { showMarkdown = true } label: {
+                    Text("Aa").font(.system(size: 17, weight: .semibold))
+                        .foregroundStyle(Theme.text)
+                        .frame(width: 48, height: 48)
+                }
+                .glassEffect(.regular.interactive(), in: .circle)
+            }
         }
     }
 

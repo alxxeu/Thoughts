@@ -20,6 +20,8 @@ struct FeedScreen: View {
     /// Верх нижних баров в глобальных координатах: клавиатура сжимает GeometryReader,
     /// а лента под ней — нет, так что отступ ленты снизу считается от поля ввода.
     @State private var barTop: CGFloat = 0
+    /// Растёт, когда начинают листать Spaces, — открытые кнопки удаления закрываются.
+    @State private var swipeReset = 0
 
     var body: some View {
         GeometryReader { geo in
@@ -44,6 +46,8 @@ struct FeedScreen: View {
             .scrollTargetLayout()
         }
         .scrollTargetBehavior(.paging)
+        .onScrollPhaseChange { _, phase in if phase == .interacting { swipeReset += 1 } }
+        .environment(\.swipeReset, swipeReset)
         .scrollPosition(id: Binding(get: { Optional(slot) }, set: { if let s = $0 { slot = s } }))
         .scrollIndicators(.hidden)
         .scrollClipDisabled()
@@ -196,6 +200,7 @@ private struct FeedList: View {
     /// порядок при открытии Space и при возврате из редактора.
     @State private var order: [UUID] = []
     @State private var isDragging = false
+    @State private var listReset = 0
     @State private var atBottom = true
     @State private var listBottom: CGFloat = 0
 
@@ -273,7 +278,11 @@ private struct FeedList: View {
         .defaultScrollAnchor(.bottom)
         // Полоса Spaces: палец вверх (к свежим) — разворачивается, вниз (к старым) —
         // сворачивается в точки (Р12). Только от пальца: сдвиги от смены высоты баров не в счёт.
-        .onScrollPhaseChange { _, phase in isDragging = phase == .interacting } // отскок у края — не палец
+        .onScrollPhaseChange { _, phase in
+            isDragging = phase == .interacting // отскок у края — не палец
+            if phase == .interacting { listReset += 1 } // прокрутка ленты закрывает кнопки удаления
+        }
+        .transformEnvironment(\.swipeReset) { $0 += listReset }
         .onScrollGeometryChange(for: ScrollState.self) { geo in
             ScrollState(offset: geo.contentOffset.y,
                         toBottom: geo.contentSize.height - geo.contentOffset.y - geo.containerSize.height + geo.contentInsets.bottom,
@@ -375,40 +384,86 @@ private struct SpacesBar: View {
     var onExpand: () -> Void
     var onRename: (Workspace) -> Void
 
-    @State private var centered: Int?
+    /// Положение ленты имён — дробный индекс Space в центре. Своя лента вместо
+    /// ScrollView: прокрутка с трением и ровная доводка к центру, без рывков.
+    @State private var position: CGFloat = 0
+    @State private var dragStart: CGFloat?
     @State private var widths: [Int: CGFloat] = [:]
     @State private var barWidth: CGFloat = 400
-    @State private var barOffset: CGFloat = 0
-    /// Пока открыто меню Rename, капсула прячется — над лентой взлетает одно имя.
-    @State private var menuOpen = false
+    private static let spacing: CGFloat = 4
+    /// Доля броска, которую лента пролетает после отпускания (трение).
+    private static let friction: CGFloat = 0.25
 
-    @Namespace private var morph
+    private var focused: Int { min(max(Int(position.rounded()), 0), max(workspaces.count - 1, 0)) }
 
     var body: some View {
         Group {
             if collapsed { dots } else { names }
         }
-        // centered живёт и при свёрнутой полосе — раскрытая встаёт сразу на нужное имя.
-        .onAppear { centered = slot }
-        .onChange(of: centered) { _, c in
-            if let c, c != slot { withAnimation(.snappy) { slot = c } }
+        .onAppear { position = CGFloat(index(of: slot)) }
+        .onChange(of: focused) { _, i in
+            if workspaces.indices.contains(i), workspaces[i].slot != slot { withAnimation(.snappy) { slot = workspaces[i].slot } }
         }
         .onChange(of: slot) { _, s in
-            if centered != s { withAnimation(.snappy) { centered = s } }
+            guard dragStart == nil, workspaces.indices.contains(focused), workspaces[focused].slot != s else { return }
+            withAnimation(.snappy) { position = CGFloat(index(of: s)) }
         }
     }
 
-    /// Свёрнуто: ряд точек; точка текущего Space — та же капсула, что под именем.
+    private func index(of slot: Int) -> Int { workspaces.firstIndex { $0.slot == slot } ?? 0 }
+
+    // MARK: Геометрия ленты
+
+    private func width(_ i: Int) -> CGFloat { widths[workspaces[i].slot] ?? 70 }
+
+    /// Центр имени i от левого края ряда.
+    private func center(_ i: Int) -> CGFloat {
+        (0..<i).reduce(0) { $0 + width($1) + Self.spacing } + width(i) / 2
+    }
+
+    /// Центр дробного положения — между центрами соседних имён.
+    private func center(at position: CGFloat) -> CGFloat {
+        guard !workspaces.isEmpty else { return 0 }
+        let p = min(max(position, 0), CGFloat(workspaces.count - 1))
+        let i = Int(p.rounded(.down)), t = p - CGFloat(i)
+        guard i + 1 < workspaces.count else { return center(i) }
+        return center(i) + (center(i + 1) - center(i)) * t
+    }
+
+    /// Обратное: какое дробное положение у точки x ряда.
+    private func position(at x: CGFloat) -> CGFloat {
+        guard workspaces.count > 1 else { return 0 }
+        for i in 0..<(workspaces.count - 1) where x <= center(i + 1) {
+            return CGFloat(i) + max(0, (x - center(i)) / (center(i + 1) - center(i)))
+        }
+        return CGFloat(workspaces.count - 1)
+    }
+
+    private var drag: some Gesture {
+        DragGesture(minimumDistance: 4)
+            .onChanged { value in
+                let start = dragStart ?? position
+                if dragStart == nil { dragStart = start }
+                position = self.position(at: center(at: start) - value.translation.width)
+            }
+            .onEnded { value in
+                let start = dragStart ?? position
+                let fling = (value.predictedEndTranslation.width - value.translation.width) * Self.friction
+                let target = self.position(at: center(at: start) - value.translation.width - fling).rounded()
+                dragStart = nil
+                withAnimation(.snappy) { position = target }
+            }
+    }
+
+    // MARK: Вид
+
+    /// Свёрнуто: ряд точек.
     private var dots: some View {
         HStack(spacing: 8) {
             ForEach(workspaces) { ws in
-                if ws.slot == slot {
-                    Capsule().fill(Theme.text)
-                        .matchedGeometryEffect(id: "current", in: morph)
-                        .frame(width: 16, height: 6)
-                } else {
-                    Capsule().fill(Theme.secondary).frame(width: 6, height: 6)
-                }
+                Capsule()
+                    .fill(ws.slot == slot ? Theme.text : Theme.secondary)
+                    .frame(width: ws.slot == slot ? 16 : 6, height: 6)
             }
         }
         .frame(maxWidth: .infinity, minHeight: 28)
@@ -417,82 +472,40 @@ private struct SpacesBar: View {
         .transition(.scale(scale: 0.6, anchor: .bottom).combined(with: .opacity))
     }
 
-    /// Раскрыто: имена всплывают снизу из точек, капсула вырастает из точки текущего.
+    /// Раскрыто: имена всплывают снизу из точек; имя в центре — текущий Space,
+    /// оно крупнее и жирнее остальных.
     private var names: some View {
-        // Капсула стоит на месте, имена едут под ней; имя в центре — текущий Space.
-        ScrollViewReader { proxy in
-            ScrollView(.horizontal, showsIndicators: false) {
-                HStack(spacing: 4) {
-                    ForEach(workspaces) { ws in
-                        Text(ws.name)
-                            .font(.system(size: 15, weight: .semibold))
-                            .foregroundStyle(ws.slot == centered ? Theme.text : Theme.secondary)
-                            .padding(.horizontal, 14)
-                            .padding(.vertical, 8)
-                            .onGeometryChange(for: CGFloat.self) { $0.size.width } action: { widths[ws.slot] = $0 }
-                            .contentShape(.capsule)
-                            .onTapGesture { withAnimation(.snappy) { centered = ws.slot } }
-                            .contextMenu {
-                                Button("Rename…", systemImage: "pencil") { withAnimation(.snappy) { menuOpen = false }; onRename(ws) }
-                                    .onAppear { withAnimation(.snappy) { menuOpen = true } }
-                                    .onDisappear { withAnimation(.snappy) { menuOpen = false } }
-                            }
-                            .id(ws.slot)
-                    }
-                }
-                .scrollTargetLayout()
-            }
-            .scrollPosition(id: $centered, anchor: .center)
-            .scrollTargetBehavior(DampedScroll(from: barOffset))
-            .onScrollGeometryChange(for: CGFloat.self) { $0.visibleRect.minX } action: { barOffset = $1 }
-            // После переименования ширина имени меняется — вернуть его в центр капсулы.
-            .onChange(of: workspaces.map(\.name)) {
-                if let c = centered { withAnimation(.snappy) { proxy.scrollTo(c, anchor: .center) } }
-            }
-            // viewAligned прижимает имя левым краем — доводим до центра сами, когда лента встала.
-            .onScrollPhaseChange { _, phase in
-                if menuOpen { withAnimation(.snappy) { menuOpen = false } } // меню не всегда сообщает, что закрылось
-                if phase == .idle, let c = centered { withAnimation(.snappy) { proxy.scrollTo(c, anchor: .center) } }
-            }
-            // Поля в полширины, чтобы и крайние имена вставали в центр.
-            .contentMargins(.horizontal, barWidth / 2, for: .scrollContent)
-            .onGeometryChange(for: CGFloat.self) { $0.size.width } action: { barWidth = $0 }
-            .onAppear {
-                // Встать на текущее имя без анимации — иначе лента прокатывается слева.
-                var t = Transaction()
-                t.disablesAnimations = true
-                withTransaction(t) { proxy.scrollTo(slot, anchor: .center) }
+        HStack(spacing: Self.spacing) {
+            ForEach(Array(workspaces.enumerated()), id: \.element.id) { i, ws in
+                Text(ws.name)
+                    .font(.system(size: i == focused ? 17 : 15, weight: i == focused ? .bold : .medium))
+                    .foregroundStyle(i == focused ? Theme.text : Theme.secondary)
+                    .padding(.horizontal, 12)
+                    .padding(.vertical, 8)
+                    .fixedSize()
+                    .onGeometryChange(for: CGFloat.self) { $0.size.width } action: { widths[ws.slot] = $0 }
+                    .contentShape(.rect)
+                    .onTapGesture { withAnimation(.snappy) { position = CGFloat(i) } }
+                    .contextMenu { Button("Rename…", systemImage: "pencil") { onRename(ws) } }
             }
         }
+        .fixedSize()
+        .offset(x: barWidth / 2 - center(at: position))
+        .frame(maxWidth: .infinity, alignment: .leading)
         .frame(height: 40)
+        .contentShape(.rect)
+        .gesture(drag)
+        .onGeometryChange(for: CGFloat.self) { $0.size.width } action: { barWidth = $0 }
+        .clipped()
         .mask {
             LinearGradient(stops: [
                 .init(color: .clear, location: 0), .init(color: .black, location: 0.12),
                 .init(color: .black, location: 0.88), .init(color: .clear, location: 1),
             ], startPoint: .leading, endPoint: .trailing)
         }
-        .background {
-            Capsule().fill(.clear)
-                .glassEffect(.regular, in: .capsule)
-                .matchedGeometryEffect(id: "current", in: morph)
-                .frame(width: widths[centered ?? slot] ?? 80, height: 36)
-                .opacity(menuOpen ? 0 : 1)
-                .animation(.snappy, value: centered)
-        }
         .transition(.asymmetric(
             insertion: .offset(y: 14).combined(with: .scale(scale: 0.7, anchor: .bottom)).combined(with: .opacity),
             removal: .scale(scale: 0.7, anchor: .bottom).combined(with: .opacity)))
-    }
-}
-
-/// Трение для полосы Spaces: бросок пальцем пролетает лишь треть пути, чтобы не
-/// проскакивать от первого Space к последнему; к центру имя доводится после.
-private struct DampedScroll: ScrollTargetBehavior {
-    let from: CGFloat
-
-    func updateTarget(_ target: inout ScrollTarget, context: TargetContext) {
-        guard context.velocity.dx != 0 else { return } // доводку к центру (scrollTo) не трогаем
-        target.rect.origin.x = from + (target.rect.origin.x - from) * 0.3
     }
 }
 
@@ -508,6 +521,10 @@ private struct EdgeDeleteSwipe: ViewModifier {
     @State private var offset: CGFloat = 0
     @State private var isOpen = false
     @State private var width: CGFloat = 0
+    /// Значок у края капсулы — отдельным состоянием с явной анимацией: неявная
+    /// тонула в непрерывных обновлениях свайпа.
+    @State private var iconAtEdge = false
+    @Environment(\.swipeReset) private var swipeReset
     private let zone: CGFloat = 56
     private let revealed: CGFloat = 80
     private let gap: CGFloat = 8
@@ -528,17 +545,18 @@ private struct EdgeDeleteSwipe: ViewModifier {
                             .foregroundStyle(.white)
                             .scaleEffect(min(1, w / 52))
                             .frame(width: 52)
-                            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: armed ? .leading : .center)
+                            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: iconAtEdge ? .leading : .center)
                             .background(.red, in: .capsule)
                     }
                     .buttonStyle(.plain)
                     .frame(width: w, height: min(52, w))
                     .clipShape(.capsule)
                     .padding(.trailing, gap)
-                    .animation(.snappy, value: armed)
                 }
             }
             .sensoryFeedback(.impact(weight: .medium), trigger: armed) { _, new in new }
+            .onChange(of: armed) { _, a in withAnimation(.snappy) { iconAtEdge = a } }
+            .onChange(of: swipeReset) { if offset != 0 { close() } }
             .overlay(alignment: .trailing) {
                 if isOpen {
                     // Открыто: тап по карточке — закрыть, кнопка справа — удалить, тянуть дальше — полный свайп.
@@ -575,4 +593,9 @@ private struct EdgeDeleteSwipe: ViewModifier {
             onDelete()
         }
     }
+}
+
+extension EnvironmentValues {
+    /// Счётчик «закрыть открытые свайпы удаления» (листают Spaces или ленту).
+    @Entry var swipeReset = 0
 }
