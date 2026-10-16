@@ -42,7 +42,9 @@ struct CardRow: View {
             }
         }
         .padding(.horizontal, 20)
-        .padding(.vertical, 16)
+        .padding(.top, 16)
+        // Длинная карточка: текст гаснет маской прямо у нижнего края, без отступа под ним.
+        .padding(.bottom, contentHeight > maxHeight ? 0 : 16)
         .background {
             ZStack {
                 // Стекло с тёмным оттенком: чистое .clear на тёмном фоне выходит слишком светлым.
@@ -51,6 +53,7 @@ struct CardRow: View {
                 if isHidden {
                     RoundedRectangle(cornerRadius: Theme.cardRadius).fill(.black.opacity(0.2))
                     StarFieldCanvas()
+                        .mask { Self.edgeFade } // звёзды гаснут у верхнего и нижнего края
                         .clipShape(RoundedRectangle(cornerRadius: Theme.cardRadius))
                 }
             }
@@ -62,6 +65,15 @@ struct CardRow: View {
         }
         .contentShape(.rect(cornerRadius: Theme.cardRadius))
         .simultaneousGesture(TapGesture().onEnded { if isHidden { onReveal() } }, isEnabled: isHidden)
+    }
+
+    /// Маска мягкого края сверху и снизу — та же высота затухания, что у длинного текста.
+    private static var edgeFade: some View {
+        VStack(spacing: 0) {
+            LinearGradient(colors: [.clear, .black], startPoint: .top, endPoint: .bottom).frame(height: fade)
+            Color.black
+            LinearGradient(colors: [.black, .clear], startPoint: .top, endPoint: .bottom).frame(height: fade)
+        }
     }
 
     /// Превью: естественная высота, обрезка на 10 строках, затухание — только если не влезло.

@@ -13,6 +13,8 @@ struct FeedScreen: View {
     @State private var revealed = Set<UUID>()
     @State private var renaming: Workspace?
     @State private var newName = ""
+    @State private var showSpaceSettings = false
+    @AppStorage("hideEmptySpaces") private var hideEmptySpaces = false
     @FocusState private var composerFocused: Bool
     @Environment(\.scenePhase) private var scenePhase
 
@@ -34,7 +36,7 @@ struct FeedScreen: View {
         ZStack {
         ScrollView(.horizontal) {
             LazyHStack(spacing: 0) {
-                ForEach(board.workspaces) { workspace in
+                ForEach(visibleWorkspaces) { workspace in
                     FeedList(board: board, slot: workspace.slot, revealed: revealed, insets: insets, barTop: barTop,
                              onOpen: { editing = EditorTarget(card: $0, detent: .medium) },
                              onReveal: reveal,
@@ -70,6 +72,7 @@ struct FeedScreen: View {
             EditorSheet(board: board, card: target.card, detent: target.detent, lock: lock)
         }
         .sheet(isPresented: $showSettings) { SettingsView() }
+        .sheet(isPresented: $showSpaceSettings) { SpaceSettingsView(board: board) }
         .alert("Rename Space", isPresented: Binding(get: { renaming != nil }, set: { if !$0 { renaming = nil } })) {
             TextField("Name", text: $newName)
                 .onChange(of: newName) { if newName.count > 30 { newName = String(newName.prefix(30)) } } // как на Mac
@@ -93,9 +96,10 @@ struct FeedScreen: View {
                 .padding(.horizontal, compact ? 46 : 16)
             if !composerFocused {
                 // Полоса Spaces — во всю ширину, края уходят за экран с мягким затуханием.
-                SpacesBar(workspaces: board.workspaces, slot: $slot, collapsed: spacesCollapsed,
+                SpacesBar(workspaces: visibleWorkspaces, slot: $slot, collapsed: spacesCollapsed,
                           onExpand: { withAnimation(.snappy) { spacesCollapsed = false } },
-                          onRename: { renaming = $0; newName = $0.name })
+                          onRename: { renaming = $0; newName = $0.name },
+                          onSettings: { showSpaceSettings = true })
             }
         }
         .padding(.bottom, 4)
@@ -105,6 +109,7 @@ struct FeedScreen: View {
 
     private var moreButton: some View {
         Menu {
+            Button("Spaces", systemImage: "square.stack") { showSpaceSettings = true }
             Button("Settings", systemImage: "gearshape") { showSettings = true }
         } label: {
             Image(systemName: "ellipsis")
@@ -114,6 +119,12 @@ struct FeedScreen: View {
                 .glassEffect(.regular, in: .circle)
         }
         .padding(.trailing, 16)
+    }
+
+    /// Spaces в полосе и ленте; с «Hide empty Spaces» — без пустых, кроме текущего.
+    private var visibleWorkspaces: [Workspace] {
+        guard hideEmptySpaces else { return board.workspaces }
+        return board.workspaces.filter { !(board.cardsByWorkspace[$0.slot] ?? []).isEmpty || $0.slot == slot }
     }
 
     // MARK: - Действия
@@ -203,6 +214,20 @@ private struct FeedList: View {
     @State private var listReset = 0
     @State private var atBottom = true
     @State private var listBottom: CGFloat = 0
+    /// Высоты карточек и самой ленты — чтобы в полупустом Space карточки стояли внизу,
+    /// у поля. Считается по размерам, а не по прокрутке: замер на каждом кадре
+    /// прокрутки ломал горизонтальный свайп между Spaces.
+    @State private var rowHeights: [UUID: CGFloat] = [:]
+    @State private var listHeight: CGFloat = 0
+
+    private var bottomInset: CGFloat { max(listBottom - barTop + 5, 0) } // +5: зазор до поля = зазору между карточками
+
+    /// Пустое место над карточками (строка-распорка сверху).
+    private var topFill: CGFloat {
+        guard !cards.isEmpty else { return 0 }
+        let content = ordered.reduce(0) { $0 + (rowHeights[$1.id] ?? 0) + 10 } // 10 — отступы строки
+        return max(0, listHeight - insets.top - bottomInset - content)
+    }
 
     private var cards: [Card] { board.cardsByWorkspace[slot] ?? [] }
 
@@ -244,6 +269,12 @@ private struct FeedList: View {
     private var list: some View {
         ScrollViewReader { proxy in
         List {
+            if topFill > 0 {
+                Color.clear.frame(height: topFill)
+                    .listRowBackground(Color.clear)
+                    .listRowSeparator(.hidden)
+                    .listRowInsets(EdgeInsets())
+            }
             if cards.isEmpty {
                 Text("Here’s nothing.\nTry to create your first Card")
                     .multilineTextAlignment(.center)
@@ -256,7 +287,9 @@ private struct FeedList: View {
                 CardRow(card: card, isRevealed: revealed.contains(card.id),
                         onReveal: { onReveal(card) },
                         onToggleTask: { toggle(card, $0) })
+                    .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { rowHeights[card.id] = $0 }
                     .onTapGesture { if card.privacyMode == .none || revealed.contains(card.id) { onOpen(card) } }
+                    .contentShape(.contextMenuPreview, .rect(cornerRadius: Theme.cardRadius)) // превью без прямоугольной рамки
                     .contextMenu {
                         Button("Copy", systemImage: "doc.on.doc") { UIPasteboard.general.string = card.text }
                         ShareLink(item: card.text) { Label("Share", systemImage: "square.and.arrow.up") }
@@ -269,9 +302,10 @@ private struct FeedList: View {
             }
         }
         .listStyle(.plain)
+        .environment(\.defaultMinListRowHeight, 0)
         .safeAreaBar(edge: .top, spacing: 0) { Color.clear.frame(height: insets.top) }
-        .safeAreaBar(edge: .bottom, spacing: 0) { Color.clear.frame(height: max(listBottom - barTop + 5, 0)) } // +5: зазор до поля = зазору между карточками
-        .onGeometryChange(for: CGFloat.self) { $0.frame(in: .global).maxY } action: { listBottom = $0 }
+        .safeAreaBar(edge: .bottom, spacing: 0) { Color.clear.frame(height: bottomInset) }
+        .onGeometryChange(for: CGRect.self) { $0.frame(in: .global) } action: { listBottom = $0.maxY; listHeight = $0.height }
         .scrollEdgeEffectHidden(true, for: .all) // затухания свои, темнее фона (EdgeFade)
         .scrollDismissesKeyboard(.interactively)
         .scrollContentBackground(.hidden)
@@ -383,6 +417,7 @@ private struct SpacesBar: View {
     let collapsed: Bool
     var onExpand: () -> Void
     var onRename: (Workspace) -> Void
+    var onSettings: () -> Void
 
     @State private var barWidth: CGFloat = 400
 
@@ -420,7 +455,10 @@ private struct SpacesBar: View {
                             .frame(height: 40)
                             .contentShape(.rect)
                             .onTapGesture { withAnimation(.snappy) { slot = ws.slot } }
-                            .contextMenu { Button("Rename…", systemImage: "pencil") { onRename(ws) } }
+                            .contextMenu {
+                                Button("Rename…", systemImage: "pencil") { onRename(ws) }
+                                Button("Space Settings…", systemImage: "slider.horizontal.3", action: onSettings)
+                            }
                             .id(ws.slot)
                     }
                 }
@@ -482,8 +520,8 @@ private struct EdgeDeleteSwipe: ViewModifier {
                             .font(.system(size: 17, weight: .semibold))
                             .foregroundStyle(.white)
                             .scaleEffect(min(1, w / 52))
-                            .frame(width: 52)
-                            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: iconAtEdge ? .leading : .center)
+                            .modifier(IconShift(progress: iconAtEdge ? 1 : 0, width: w))
+                            .frame(maxWidth: .infinity, maxHeight: .infinity)
                             .background(.red, in: .capsule)
                     }
                     .buttonStyle(.plain)
@@ -530,6 +568,21 @@ private struct EdgeDeleteSwipe: ViewModifier {
             try? await Task.sleep(for: .milliseconds(200))
             onDelete()
         }
+    }
+}
+
+/// Сдвиг значка корзины от центра капсулы к её левому краю. Анимируется только
+/// progress, ширина берётся живой — иначе каждое обновление свайпа обрывало анимацию.
+private struct IconShift: ViewModifier, Animatable {
+    var progress: CGFloat
+    let width: CGFloat
+    var animatableData: CGFloat {
+        get { progress }
+        set { progress = newValue }
+    }
+
+    func body(content: Content) -> some View {
+        content.offset(x: -max(width / 2 - 26, 0) * progress)
     }
 }
 
