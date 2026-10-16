@@ -35,12 +35,10 @@ struct EditorSheet: View {
                             .onTapGesture { withAnimation(.bouncy) { showTags = false } }
                     }
                     TagControl(card: card, board: board, expanded: $showTags)
-                        .padding(.leading, 20)
-                        .padding(.top, 20)
                 }
             }
         .presentationDetents([.medium, .large], selection: $detent)
-        .presentationDragIndicator(.visible)
+        .presentationDragIndicator(showTags ? .hidden : .visible) // подложка тега встаёт на его место
         .toolbar {
             ToolbarItemGroup(placement: .keyboard) { keyboardBar }
         }
@@ -154,74 +152,96 @@ struct EditorSheet: View {
     }
 }
 
-/// Кнопка тега в шапке редактора: стеклянная точка цвета тега (без тега —
-/// полупрозрачная). По тапу из неё «вытекают» стеклянные цвета и Spoiler / Lock —
-/// морфинг Liquid Glass (GlassEffectContainer + glassEffectID), как у системных меню.
+/// Кнопка тега в шапке редактора: стеклянная точка цвета тега 24 pt (без тега —
+/// полупрозрачная). По тапу она «перетекает» в одну стеклянную подложку во всю
+/// ширину шторки (как в Figma): ✕ на месте кнопки, плоские точки цветов того же
+/// размера, «снять тег» в конце; под подложкой — Spoiler / Lock.
 private struct TagControl: View {
     @Bindable var card: Card
     let board: BoardModel
     @Binding var expanded: Bool
     @Namespace private var glass
 
+    private static let dot: CGFloat = 24
+    /// Центр кнопки — 32 pt от верха и от края; подложка вокруг неё с равными полями.
+    private static let inset: CGFloat = 20
+    private static let panelPadding: CGFloat = 12
+
     var body: some View {
-        GlassEffectContainer(spacing: 12) {
+        ZStack(alignment: .topLeading) {
+        GlassEffectContainer(spacing: 10) {
             if expanded {
-                VStack(alignment: .leading, spacing: 10) {
-                    HStack(spacing: 8) {
-                        closeButton
-                        ForEach(CardTagColor.allCases) { colorButton($0) }
-                        colorButton(nil) // снять тег — в самом конце
-                    }
+                VStack(alignment: .leading, spacing: 8) {
+                    // Стекло — пустая капсула, ряд — поверх контейнера (оверлей ниже): контейнер
+                    // рисует стекло над всем, что в нём, и цвета точек мутнеют.
+                    Color.clear
+                        .frame(height: Self.dot + Self.panelPadding * 2)
+                        .frame(maxWidth: .infinity)
+                        .glassEffect(.regular, in: .capsule)
+                        .glassEffectID("tag", in: glass)
+
                     HStack(spacing: 8) {
                         privacyButton(.spoiler, title: "Spoiler", symbol: "sparkles")
                         privacyButton(.lock, title: "Lock", symbol: "lock.fill")
                     }
                 }
+                .padding(Self.inset - Self.panelPadding)
             } else {
                 Button { withAnimation(.bouncy) { expanded = true } } label: {
                     // Прозрачная «начинка» сама тапы не ловит — нужна форма касания;
                     // она шире круга, чтобы в 24 pt было легко попасть.
-                    Color.clear.frame(width: 24, height: 24).padding(10).contentShape(.circle).padding(-10)
+                    Color.clear.frame(width: Self.dot, height: Self.dot).padding(10).contentShape(.circle).padding(-10)
                 }
                 .buttonStyle(.plain)
                 .glassEffect(.regular.tint(card.tagColor?.color ?? .white.opacity(0.15)).interactive(), in: .circle)
-                .glassEffectID("button", in: glass) // перетекает в ✕ на том же месте
+                .glassEffectID("tag", in: glass)
+                .padding(Self.inset)
             }
+        }
+        if expanded { row.padding(Self.inset - Self.panelPadding).transition(.opacity) }
         }
     }
 
-    /// ✕ — только закрыть меню, тег не трогает.
-    private var closeButton: some View {
-        Button { withAnimation(.bouncy) { expanded = false } } label: {
-            Image(systemName: "xmark").font(.system(size: 13, weight: .bold)).foregroundStyle(Theme.secondary)
-                .frame(width: 34, height: 34)
+    private var row: some View {
+        HStack(spacing: 0) {
+            iconButton("xmark.circle") { withAnimation(.bouncy) { expanded = false } } // только закрыть
+            ForEach(CardTagColor.allCases) { tag in
+                Spacer(minLength: 4)
+                colorButton(tag)
+            }
+            Spacer(minLength: 4)
+            iconButton("circle.slash") { select(nil) } // снять тег
+        }
+        .padding(Self.panelPadding)
+        .frame(maxWidth: .infinity)
+    }
+
+    private func select(_ tag: CardTagColor?) {
+        card.tagColor = tag
+        board.saveImmediately()
+        withAnimation(.bouncy) { expanded = false }
+    }
+
+    private func iconButton(_ symbol: String, action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            Image(systemName: symbol)
+                .font(.system(size: 20, weight: .regular))
+                .foregroundStyle(Theme.text)
+                .frame(width: Self.dot, height: Self.dot)
                 .contentShape(.circle)
         }
         .buttonStyle(.plain)
-        .glassEffect(.regular.interactive(), in: .circle)
-        .glassEffectID("button", in: glass)
     }
 
-    /// Цвет — отдельная стеклянная капля с оттенком; выбранный — белая точка в центре.
-    private func colorButton(_ tag: CardTagColor?) -> some View {
-        Button {
-            card.tagColor = tag
-            board.saveImmediately()
-            withAnimation(.bouncy) { expanded = false }
-        } label: {
-            ZStack {
-                if tag == nil {
-                    Image(systemName: "circle.slash").font(.system(size: 15, weight: .semibold)).foregroundStyle(Theme.secondary)
-                } else if card.tagColor == tag {
-                    Circle().fill(.white).frame(width: 8, height: 8)
-                }
-            }
-            .frame(width: 34, height: 34)
-            .contentShape(.circle)
+    /// Цвет — плоская точка внутри подложки; выбранный — белая точка в центре.
+    private func colorButton(_ tag: CardTagColor) -> some View {
+        Button { select(tag) } label: {
+            Circle().fill(tag.color)
+                .overlay { if card.tagColor == tag { Circle().fill(.white).frame(width: 8, height: 8) } }
+                .frame(width: Self.dot, height: Self.dot)
+                .contentShape(.circle)
         }
         .buttonStyle(.plain)
-        .glassEffect(.regular.tint(tag?.color ?? .white.opacity(0.15)).interactive(), in: .circle)
-        .glassEffectID(tag?.rawValue ?? "none", in: glass)
     }
 
     private func privacyButton(_ mode: CardPrivacyMode, title: String, symbol: String) -> some View {
@@ -242,4 +262,3 @@ private struct TagControl: View {
         .glassEffectID(mode.rawValue, in: glass)
     }
 }
-
