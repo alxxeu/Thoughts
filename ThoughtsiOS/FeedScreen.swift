@@ -378,22 +378,45 @@ private struct SpacesBar: View {
     @State private var widths: [Int: CGFloat] = [:]
     @State private var barWidth: CGFloat = 400
 
+    @Namespace private var morph
+
     var body: some View {
-        if collapsed {
-            HStack(spacing: 8) {
-                ForEach(workspaces) { ws in
-                    Capsule()
-                        .fill(ws.slot == slot ? Theme.text : Theme.secondary)
-                        .frame(width: ws.slot == slot ? 16 : 6, height: 6)
+        Group {
+            if collapsed { dots } else { names }
+        }
+        // centered живёт и при свёрнутой полосе — раскрытая встаёт сразу на нужное имя.
+        .onAppear { centered = slot }
+        .onChange(of: centered) { _, c in
+            if let c, c != slot { withAnimation(.snappy) { slot = c } }
+        }
+        .onChange(of: slot) { _, s in
+            if centered != s { withAnimation(.snappy) { centered = s } }
+        }
+    }
+
+    /// Свёрнуто: ряд точек; точка текущего Space — та же капсула, что под именем.
+    private var dots: some View {
+        HStack(spacing: 8) {
+            ForEach(workspaces) { ws in
+                if ws.slot == slot {
+                    Capsule().fill(Theme.text)
+                        .matchedGeometryEffect(id: "current", in: morph)
+                        .frame(width: 16, height: 6)
+                } else {
+                    Capsule().fill(Theme.secondary).frame(width: 6, height: 6)
                 }
             }
-            .frame(maxWidth: .infinity, minHeight: 28)
-            .contentShape(.rect)
-            .onTapGesture(perform: onExpand) // тап по точкам — раскрыть
-            .transition(.opacity)
-        } else {
-            // Капсула стоит на месте, имена едут под ней; имя в центре — текущий Space.
-            ScrollViewReader { proxy in
+        }
+        .frame(maxWidth: .infinity, minHeight: 28)
+        .contentShape(.rect)
+        .onTapGesture(perform: onExpand) // тап по точкам — раскрыть
+        .transition(.scale(scale: 0.6, anchor: .bottom).combined(with: .opacity))
+    }
+
+    /// Раскрыто: имена всплывают снизу из точек, капсула вырастает из точки текущего.
+    private var names: some View {
+        // Капсула стоит на месте, имена едут под ней; имя в центре — текущий Space.
+        ScrollViewReader { proxy in
             ScrollView(.horizontal, showsIndicators: false) {
                 HStack(spacing: 4) {
                     ForEach(workspaces) { ws in
@@ -419,29 +442,30 @@ private struct SpacesBar: View {
             // Поля в полширины, чтобы и крайние имена вставали в центр.
             .contentMargins(.horizontal, barWidth / 2, for: .scrollContent)
             .onGeometryChange(for: CGFloat.self) { $0.size.width } action: { barWidth = $0 }
-            .background {
-                Capsule().fill(.clear)
-                    .glassEffect(.regular, in: .capsule)
-                    .frame(width: widths[centered ?? slot] ?? 80, height: 36)
-                    .animation(.snappy, value: centered)
+            .onAppear {
+                // Встать на текущее имя без анимации — иначе лента прокатывается слева.
+                var t = Transaction()
+                t.disablesAnimations = true
+                withTransaction(t) { proxy.scrollTo(slot, anchor: .center) }
             }
-            .onAppear { centered = slot }
-            .onChange(of: centered) { _, c in
-                if let c, c != slot { withAnimation(.snappy) { slot = c } }
-            }
-            .onChange(of: slot) { _, s in
-                if centered != s { withAnimation(.snappy) { centered = s } }
-            }
-            }
-            .frame(height: 40)
-            .mask {
-                LinearGradient(stops: [
-                    .init(color: .clear, location: 0), .init(color: .black, location: 0.12),
-                    .init(color: .black, location: 0.88), .init(color: .clear, location: 1),
-                ], startPoint: .leading, endPoint: .trailing)
-            }
-            .transition(.opacity)
         }
+        .frame(height: 40)
+        .mask {
+            LinearGradient(stops: [
+                .init(color: .clear, location: 0), .init(color: .black, location: 0.12),
+                .init(color: .black, location: 0.88), .init(color: .clear, location: 1),
+            ], startPoint: .leading, endPoint: .trailing)
+        }
+        .background {
+            Capsule().fill(.clear)
+                .glassEffect(.regular, in: .capsule)
+                .matchedGeometryEffect(id: "current", in: morph)
+                .frame(width: widths[centered ?? slot] ?? 80, height: 36)
+                .animation(.snappy, value: centered)
+        }
+        .transition(.asymmetric(
+            insertion: .offset(y: 14).combined(with: .scale(scale: 0.7, anchor: .bottom)).combined(with: .opacity),
+            removal: .scale(scale: 0.7, anchor: .bottom).combined(with: .opacity)))
     }
 }
 
