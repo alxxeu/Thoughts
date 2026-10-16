@@ -204,7 +204,7 @@ private struct TagControl: View {
 
     private var row: some View {
         HStack(spacing: 0) {
-            iconButton("xmark") { withAnimation(.bouncy) { expanded = false } } // только закрыть
+            iconButton("xmark", size: 15) { withAnimation(.bouncy) { expanded = false } } // только закрыть
             ForEach(CardTagColor.allCases) { tag in
                 Spacer(minLength: 4)
                 colorButton(tag)
@@ -222,10 +222,10 @@ private struct TagControl: View {
         withAnimation(.bouncy) { expanded = false }
     }
 
-    private func iconButton(_ symbol: String, action: @escaping () -> Void) -> some View {
+    private func iconButton(_ symbol: String, size: CGFloat = 20, action: @escaping () -> Void) -> some View {
         Button(action: action) {
             Image(systemName: symbol)
-                .font(.system(size: 20, weight: .regular))
+                .font(.system(size: size, weight: .medium))
                 .foregroundStyle(Theme.text)
                 .frame(width: Self.dot, height: Self.dot)
                 .contentShape(.circle)
