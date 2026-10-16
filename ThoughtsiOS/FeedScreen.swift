@@ -82,7 +82,7 @@ struct FeedScreen: View {
 
     private var bottomBar: some View {
         VStack(spacing: 8) {
-            // К старым карточкам поле чуть сжимается: на 30 pt с боков и на 5 pt сверху.
+            // К старым карточкам поле чуть сжимается: на 30 pt с боков и на 6 pt сверху.
             let compact = spacesCollapsed && !composerFocused
             Composer(text: $draft, focused: $composerFocused, compact: compact, onSend: send, onExpand: expand)
                 .padding(.horizontal, compact ? 46 : 16)
@@ -357,9 +357,9 @@ private struct Composer: View {
         }
         .padding(.leading, 18)
         .padding(.trailing, hasText ? 8 : 18)
-        .padding(.top, compact ? 3 : 8)
+        .padding(.top, compact ? 2 : 8)
         .padding(.bottom, 8)
-        .frame(minHeight: compact ? 43 : 48)
+        .frame(minHeight: compact ? 42 : 48)
         .glassEffect(.regular, in: .rect(cornerRadius: 24))
         .animation(.snappy, value: hasText)
         .animation(.snappy, value: isLong)
