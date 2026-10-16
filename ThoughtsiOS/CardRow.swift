@@ -33,13 +33,12 @@ struct CardRow: View {
 
     var body: some View {
         ZStack {
+            // Скрытая карточка сохраняет свой размер: текст разложен, но невидим.
+            preview.opacity(isHidden ? 0 : 1).accessibilityHidden(isHidden)
             if card.privacyMode == .lock && isHidden {
                 Image(systemName: "lock.fill")
                     .font(.system(size: 20, weight: .medium))
                     .foregroundStyle(Theme.text)
-                    .frame(maxWidth: .infinity, minHeight: 32)
-            } else {
-                preview.opacity(isHidden ? 0 : 1)
             }
         }
         .padding(.horizontal, 20)
@@ -47,7 +46,8 @@ struct CardRow: View {
         .background {
             ZStack {
                 // Стекло с тёмным оттенком: чистое .clear на тёмном фоне выходит слишком светлым.
-                Color.clear.glassEffect(.clear.tint(.black.opacity(0.5)), in: .rect(cornerRadius: Theme.cardRadius))
+                // На устройстве оттенок ложится гуще, чем в симуляторе (0.5 там — чёрный).
+                Color.clear.glassEffect(.clear.tint(.black.opacity(0.2)), in: .rect(cornerRadius: Theme.cardRadius))
                 if isHidden {
                     RoundedRectangle(cornerRadius: Theme.cardRadius).fill(.black.opacity(0.2))
                     StarFieldCanvas()

@@ -68,6 +68,7 @@ struct FeedScreen: View {
         .sheet(isPresented: $showSettings) { SettingsView() }
         .alert("Rename Space", isPresented: Binding(get: { renaming != nil }, set: { if !$0 { renaming = nil } })) {
             TextField("Name", text: $newName)
+                .onChange(of: newName) { if newName.count > 30 { newName = String(newName.prefix(30)) } } // как на Mac
             Button("Cancel", role: .cancel) {}
             Button("Rename") { rename() }
         }
@@ -377,6 +378,9 @@ private struct SpacesBar: View {
     @State private var centered: Int?
     @State private var widths: [Int: CGFloat] = [:]
     @State private var barWidth: CGFloat = 400
+    @State private var barOffset: CGFloat = 0
+    /// Пока открыто меню Rename, капсула прячется — над лентой взлетает одно имя.
+    @State private var menuOpen = false
 
     @Namespace private var morph
 
@@ -428,15 +432,26 @@ private struct SpacesBar: View {
                             .onGeometryChange(for: CGFloat.self) { $0.size.width } action: { widths[ws.slot] = $0 }
                             .contentShape(.capsule)
                             .onTapGesture { withAnimation(.snappy) { centered = ws.slot } }
-                            .contextMenu { Button("Rename…", systemImage: "pencil") { onRename(ws) } }
+                            .contextMenu {
+                                Button("Rename…", systemImage: "pencil") { withAnimation(.snappy) { menuOpen = false }; onRename(ws) }
+                                    .onAppear { withAnimation(.snappy) { menuOpen = true } }
+                                    .onDisappear { withAnimation(.snappy) { menuOpen = false } }
+                            }
                             .id(ws.slot)
                     }
                 }
                 .scrollTargetLayout()
             }
             .scrollPosition(id: $centered, anchor: .center)
+            .scrollTargetBehavior(DampedScroll(from: barOffset))
+            .onScrollGeometryChange(for: CGFloat.self) { $0.visibleRect.minX } action: { barOffset = $1 }
+            // После переименования ширина имени меняется — вернуть его в центр капсулы.
+            .onChange(of: workspaces.map(\.name)) {
+                if let c = centered { withAnimation(.snappy) { proxy.scrollTo(c, anchor: .center) } }
+            }
             // viewAligned прижимает имя левым краем — доводим до центра сами, когда лента встала.
             .onScrollPhaseChange { _, phase in
+                if menuOpen { withAnimation(.snappy) { menuOpen = false } } // меню не всегда сообщает, что закрылось
                 if phase == .idle, let c = centered { withAnimation(.snappy) { proxy.scrollTo(c, anchor: .center) } }
             }
             // Поля в полширины, чтобы и крайние имена вставали в центр.
@@ -461,11 +476,23 @@ private struct SpacesBar: View {
                 .glassEffect(.regular, in: .capsule)
                 .matchedGeometryEffect(id: "current", in: morph)
                 .frame(width: widths[centered ?? slot] ?? 80, height: 36)
+                .opacity(menuOpen ? 0 : 1)
                 .animation(.snappy, value: centered)
         }
         .transition(.asymmetric(
             insertion: .offset(y: 14).combined(with: .scale(scale: 0.7, anchor: .bottom)).combined(with: .opacity),
             removal: .scale(scale: 0.7, anchor: .bottom).combined(with: .opacity)))
+    }
+}
+
+/// Трение для полосы Spaces: бросок пальцем пролетает лишь треть пути, чтобы не
+/// проскакивать от первого Space к последнему; к центру имя доводится после.
+private struct DampedScroll: ScrollTargetBehavior {
+    let from: CGFloat
+
+    func updateTarget(_ target: inout ScrollTarget, context: TargetContext) {
+        guard context.velocity.dx != 0 else { return } // доводку к центру (scrollTo) не трогаем
+        target.rect.origin.x = from + (target.rect.origin.x - from) * 0.3
     }
 }
 
