@@ -19,6 +19,10 @@ struct FeedScreen: View {
     @State private var pageOrder: [Int]?
     @State private var realign = 0
     @AppStorage("hideEmptySpaces") private var hideEmptySpaces = false
+    /// Видимые Spaces с «Hide empty Spaces» — пересчитываются не при смене Space:
+    /// иначе пустой Space пропадал из страниц прямо во время прокрутки с него, и
+    /// лента перескакивала.
+    @State private var visibleSlots: [Int]?
     @FocusState private var composerFocused: Bool
     @Environment(\.scenePhase) private var scenePhase
 
@@ -81,19 +85,23 @@ struct FeedScreen: View {
         .background(Theme.background.ignoresSafeArea())
         // Клавиатура закрывается свайпом по ленте (scrollDismissesKeyboard).
         .sheet(item: $editing) { target in
-            EditorSheet(board: board, card: target.card, detent: target.detent, lock: lock)
+            EditorSheet(board: board, card: target.card, detent: target.detent)
         }
         .sheet(isPresented: $showSettings) { SettingsView() }
         .sheet(isPresented: $showSpaceSettings) { SpaceSettingsView(board: board) }
         .alert("Rename Space", isPresented: Binding(get: { renaming != nil }, set: { if !$0 { renaming = nil } })) {
             TextField("Name", text: $newName)
-                .onChange(of: newName) { if newName.count > 30 { newName = String(newName.prefix(30)) } } // как на Mac
+                .onChange(of: newName) { if newName.count > Workspace.maxNameLength { newName = String(newName.prefix(Workspace.maxNameLength)) } }
             Button("Cancel", role: .cancel) {}
             Button("Rename") { rename() }
         }
         .onChange(of: slot) { revealed = [] }
+        .onAppear(perform: refreshVisibleSlots)
+        .onChange(of: hideEmptySpaces) { refreshVisibleSlots() }
+        .onChange(of: nonEmptySlots) { refreshVisibleSlots() }
         .onChange(of: scenePhase) { _, phase in
             if phase == .background { lock.isUnlocked = false; revealed = [] }
+            if phase == .active { refreshVisibleSlots() }
         }
         .preferredColorScheme(.dark)
     }
@@ -136,8 +144,15 @@ struct FeedScreen: View {
 
     /// Spaces в полосе и ленте; с «Hide empty Spaces» — без пустых, кроме текущего.
     private var visibleWorkspaces: [Workspace] {
-        guard hideEmptySpaces else { return board.workspaces }
-        return board.workspaces.filter { !(board.cardsByWorkspace[$0.slot] ?? []).isEmpty || $0.slot == slot }
+        guard hideEmptySpaces, let visibleSlots else { return board.workspaces }
+        return board.workspaces.filter { visibleSlots.contains($0.slot) }
+    }
+
+    private var nonEmptySlots: Set<Int> { Set(board.cardsByWorkspace.filter { !$0.value.isEmpty }.keys) }
+
+    /// Непустые Spaces и текущий; Space, с которого ушли, остаётся до следующего пересчёта.
+    private func refreshVisibleSlots() {
+        visibleSlots = board.workspaces.map(\.slot).filter { nonEmptySlots.contains($0) || $0 == slot }
     }
 
     // MARK: - Действия
@@ -193,10 +208,7 @@ struct FeedScreen: View {
     }
 
     private func rename() {
-        guard let ws = renaming, let i = board.workspaces.firstIndex(where: { $0.slot == ws.slot }) else { return }
-        let trimmed = String(newName.trimmingCharacters(in: .whitespacesAndNewlines).prefix(30))
-        board.workspaces[i].name = trimmed.isEmpty ? Workspace.defaultName(forSlot: ws.slot) : trimmed
-        board.saveImmediately()
+        if let ws = renaming { board.renameWorkspace(slot: ws.slot, to: newName) }
         renaming = nil
     }
 }
@@ -375,7 +387,10 @@ private struct FeedList: View {
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) { scrollToBottom(proxy, animated: false) }
         }
         .onChange(of: board.editingCardID) { _, id in if id == nil { withAnimation { order = Self.sorted(cards).map(\.id) } } }
-        .onChange(of: cards.count) { old, new in if new > old { scrollToBottom(proxy, animated: true) } }
+        .onChange(of: cards.count) { old, new in
+            if new > old { scrollToBottom(proxy, animated: true) }
+            rowHeights = rowHeights.filter { id, _ in cards.contains { $0.id == id } } // удалённые — из замеров
+        }
         }
     }
 
@@ -547,11 +562,7 @@ private struct CardMenu: ViewModifier {
         } else {
             content
                 .contentShape(.contextMenuPreview, .rect(cornerRadius: Theme.cardRadius)) // превью без прямоугольной рамки
-                .contextMenu {
-                    Button("Copy", systemImage: "doc.on.doc") { UIPasteboard.general.string = card.text }
-                    ShareLink(item: card.text) { Label("Share", systemImage: "square.and.arrow.up") }
-                    Button("Delete", systemImage: "trash", role: .destructive, action: onDelete)
-                }
+                .contextMenu { CardActions(card: card, onDelete: onDelete) }
         }
     }
 }

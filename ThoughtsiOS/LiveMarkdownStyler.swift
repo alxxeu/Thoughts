@@ -1,3 +1,4 @@
+import SwiftUI
 import UIKit
 
 /// Оформление Markdown в редакторе iPhone — порт Mac `MarkdownRenderer` на UIKit,
@@ -18,8 +19,8 @@ enum LiveMarkdownStyler {
     static let linkKey = NSAttributedString.Key("thoughts.markdownLink")
 
     static let font = UIFont.systemFont(ofSize: 17)
-    static let color = UIColor(white: 1, alpha: 0.88)
-    static let accent = UIColor(red: 0.42, green: 0.36, blue: 0.96, alpha: 1)
+    static let color = UIColor(Theme.text)
+    static let accent = UIColor(Theme.accent)
     static let codeColor = UIColor(white: 1, alpha: 0.7)
     /// Отступ под квадратик чек-листа.
     static let taskIndent: CGFloat = 26

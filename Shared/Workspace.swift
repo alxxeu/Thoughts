@@ -27,6 +27,9 @@ struct Workspace: Identifiable, Codable, Equatable {
         "Space \(slot)"
     }
 
+    /// Предел длины имени Space — одинаковый на Mac и iPhone.
+    static let maxNameLength = 30
+
     enum CodingKeys: String, CodingKey {
         case id, slot, name, isProtected, modifiedAt
     }

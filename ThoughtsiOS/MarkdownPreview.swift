@@ -22,7 +22,8 @@ struct MarkdownPreview: View {
     private func row(_ p: MarkdownStyler.Paragraph) -> some View {
         switch p.block {
         case .heading(let level):
-            inline(p).font(.system(size: level == 1 ? 20 : level == 2 ? 17 : 15, weight: .semibold))
+            // Те же пропорции, что в редакторе (LiveMarkdownStyler): ×1.5 / ×1.3 / ×1.15, жирный.
+            inline(p).font(.system(size: 15 * [1.5, 1.3, 1.15][level - 1], weight: .bold))
         case .bullet:
             HStack(alignment: .firstTextBaseline, spacing: 6) { Text("•"); inline(p) }
         case .numbered:
@@ -39,11 +40,18 @@ struct MarkdownPreview: View {
                     .foregroundStyle(done ? Theme.secondary : Theme.text)
             }
         case .quote:
-            HStack(spacing: 8) {
-                Capsule().fill(Theme.secondary).frame(width: 3)
-                inline(p).foregroundStyle(Theme.secondary)
-            }
-            .fixedSize(horizontal: false, vertical: true)
+            // Как в редакторе: акцентная полоса слева на акцентной подложке.
+            inline(p)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(.vertical, 4)
+                .padding(.leading, 12)
+                .background(alignment: .leading) {
+                    ZStack(alignment: .leading) {
+                        Theme.accent.opacity(0.14)
+                        Theme.accent.frame(width: 3)
+                    }
+                    .clipShape(.rect(cornerRadius: 6))
+                }
         case .divider:
             Rectangle().fill(Theme.secondary.opacity(0.5)).frame(height: 1).padding(.vertical, 4)
         case .codeFence:
@@ -51,6 +59,7 @@ struct MarkdownPreview: View {
         case .code:
             Text((text as NSString).substring(with: p.range))
                 .font(.system(size: 14, design: .monospaced))
+                .foregroundStyle(Theme.text.opacity(0.8)) // код бледнее текста, как в редакторе
         case .paragraph:
             inline(p)
         }

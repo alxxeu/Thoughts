@@ -41,7 +41,7 @@ struct SpaceSettingsView: View {
                 Section("Names") {
                     ForEach($board.workspaces) { $ws in
                         TextField(Workspace.defaultName(forSlot: ws.slot), text: $ws.name)
-                            .onChange(of: ws.name) { if ws.name.count > 30 { ws.name = String(ws.name.prefix(30)) } }
+                            .onChange(of: ws.name) { if ws.name.count > Workspace.maxNameLength { ws.name = String(ws.name.prefix(Workspace.maxNameLength)) } }
                     }
                 }
             }
@@ -49,11 +49,8 @@ struct SpaceSettingsView: View {
             .toolbar { ToolbarItem(placement: .confirmationAction) { Button("Done") { dismiss() } } }
         }
         .onDisappear {
-            // Пустое имя — имя по умолчанию, как при Rename.
-            for i in board.workspaces.indices where board.workspaces[i].name.trimmingCharacters(in: .whitespaces).isEmpty {
-                board.workspaces[i].name = Workspace.defaultName(forSlot: board.workspaces[i].slot)
-            }
-            board.saveImmediately()
+            // Те же правила, что у Rename: пробелы по краям, пустое — имя по умолчанию.
+            for ws in board.workspaces { board.renameWorkspace(slot: ws.slot, to: ws.name) }
         }
         .preferredColorScheme(.dark)
     }

@@ -115,6 +115,14 @@ final class BoardModel: SyncableBoard {
         return card
     }
 
+    /// Имя Space: обрезается до Workspace.maxNameLength, пустое — имя по умолчанию.
+    func renameWorkspace(slot: Int, to name: String) {
+        guard let index = workspaces.firstIndex(where: { $0.slot == slot }) else { return }
+        let limited = String(name.trimmingCharacters(in: .whitespacesAndNewlines).prefix(Workspace.maxNameLength))
+        workspaces[index].name = limited.isEmpty ? Workspace.defaultName(forSlot: slot) : limited
+        saveImmediately()
+    }
+
     func deleteCard(id: UUID) {
         for slot in cardsByWorkspace.keys {
             cardsByWorkspace[slot]?.removeAll { $0.id == id }

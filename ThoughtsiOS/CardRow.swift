@@ -15,6 +15,18 @@ final class LockSession {
     }
 }
 
+/// Copy / Share / Delete карточки — меню долгого нажатия в ленте и «…» редактора.
+struct CardActions: View {
+    let card: Card
+    var onDelete: () -> Void
+
+    var body: some View {
+        Button("Copy", systemImage: "doc.on.doc") { UIPasteboard.general.string = card.text }
+        ShareLink(item: card.text) { Label("Share", systemImage: "square.and.arrow.up") }
+        Button("Delete", systemImage: "trash", role: .destructive, action: onDelete)
+    }
+}
+
 /// Карточка в ленте: стекло, превью до 10 строк с мягким затуханием, точка тега
 /// справа сверху, Spoiler — звёзды поверх, Lock — замок.
 struct CardRow: View {

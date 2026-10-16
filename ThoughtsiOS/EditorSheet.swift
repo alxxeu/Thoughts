@@ -2,13 +2,12 @@ import SwiftUI
 
 /// Редактор карточки (S2): шторка Half / Full. Тап по тексту — Full. Шапка: точка
 /// тега (поповер: цвета + Spoiler / Lock) и «…» (Copy / Share / Delete). Markdown
-/// живой — служебных символов не видно (MarkdownTextView). «Aa» при выделении —
+/// живой — служебных символов не видно (MarkdownTextView). «Aa» при правке —
 /// панель Markdown над клавиатурой. Пустая карточка при закрытии удаляется (Р10).
 struct EditorSheet: View {
     @Bindable var board: BoardModel
     @Bindable var card: Card
     @State var detent: PresentationDetent
-    let lock: LockSession
 
     @State private var editor = MarkdownEditorController()
     @State private var showTags = false
@@ -159,10 +158,7 @@ struct EditorSheet: View {
         tool("link", active: "link") { askLink() }
         Divider().frame(height: 24).padding(.horizontal, 6)
         // Блок
-        tool("textformat.size", block: "# ") { editor.block("# ") }
-        tool("list.bullet", block: "- ") { editor.block("- ") }
-        tool("list.number", block: "1. ") { editor.block("1. ") }
-        tool("checklist", block: "- [ ] ") { editor.block("- [ ] ") }
+        starterTools
         tool("text.quote", block: "> ") { editor.block("> ") }
         tool("curlybraces", block: "```") { editor.codeBlock() }
     }
@@ -206,8 +202,6 @@ struct EditorSheet: View {
 }
 
 /// Шапка редактора: место кнопки тега (она в оверлее) и «…» (Copy / Share / Delete).
-/// Отдельный вид, который сам следит за карточкой: его хостинг внутри редактора
-/// создаётся один раз и не пересобирается при каждом обновлении шторки.
 private struct EditorHeader: View {
     @Bindable var card: Card
     var onDelete: () -> Void
@@ -217,9 +211,7 @@ private struct EditorHeader: View {
             Color.clear.frame(width: 24, height: 44)
             Spacer()
             Menu {
-                Button("Copy", systemImage: "doc.on.doc") { UIPasteboard.general.string = card.text }
-                ShareLink(item: card.text) { Label("Share", systemImage: "square.and.arrow.up") }
-                Button("Delete", systemImage: "trash", role: .destructive, action: onDelete)
+                CardActions(card: card, onDelete: onDelete)
             } label: {
                 Image(systemName: "ellipsis")
                     .font(.system(size: 17, weight: .semibold))

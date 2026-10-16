@@ -78,7 +78,7 @@ final class BoardViewModel {
     static let minCardSize = Card.minSize
     static let canvasSidePadding: CGFloat = 24
     static let topCreationLimit: CGFloat = 40
-    static let maxWorkspaceNameLength = 30
+    static let maxWorkspaceNameLength = Workspace.maxNameLength
 
     /// Верхняя граница специально для Desktop Overlay — окно там растянуто
     /// на весь экран вплоть до самого верха (см. ContentView), и без
@@ -197,11 +197,7 @@ final class BoardViewModel {
 
 
     func renameWorkspace(slot: Int, to name: String) {
-        guard let index = workspaces.firstIndex(where: { $0.slot == slot }) else { return }
-        let trimmed = name.trimmingCharacters(in: .whitespacesAndNewlines)
-        let limited = String(trimmed.prefix(Self.maxWorkspaceNameLength))
-        workspaces[index].name = limited.isEmpty ? Workspace.defaultName(forSlot: slot) : limited
-        saveImmediately()
+        board.renameWorkspace(slot: slot, to: name)
     }
 
     @discardableResult

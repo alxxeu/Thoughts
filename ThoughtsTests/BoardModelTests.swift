@@ -88,4 +88,15 @@ struct BoardModelCardTests {
         #expect(board.cardsByWorkspace[3]?.isEmpty == true)
         #expect(changes.last?.deletedCards == [card.id])
     }
+
+    /// Rename — общий для Mac и iPhone: пробелы по краям, предел длины, пустое — имя по умолчанию.
+    @Test func renameWorkspaceTrimsLimitsAndFallsBack() {
+        let board = BoardModel(store: BoardStore(fileURL: boardURL))
+        board.renameWorkspace(slot: 2, to: "  Ideas  ")
+        #expect(board.workspaces.first { $0.slot == 2 }?.name == "Ideas")
+        board.renameWorkspace(slot: 2, to: String(repeating: "x", count: 40))
+        #expect(board.workspaces.first { $0.slot == 2 }?.name.count == Workspace.maxNameLength)
+        board.renameWorkspace(slot: 2, to: "   ")
+        #expect(board.workspaces.first { $0.slot == 2 }?.name == Workspace.defaultName(forSlot: 2))
+    }
 }
