@@ -23,7 +23,18 @@ struct EditorSheet: View {
     var body: some View {
         MarkdownTextView(text: $card.text, isFocused: $focused, controller: editor)
             .ignoresSafeArea(.container, edges: .bottom)
-            .safeAreaBar(edge: .top) { header }
+            // Шапка — поверх текста: он уходит под неё и гаснет с размытием (своё
+            // затухание: системное у safeAreaBar не работает над UIKit-редактором).
+            .overlay(alignment: .top) {
+                header.background(alignment: .top) {
+                    Rectangle().fill(.ultraThinMaterial)
+                        .mask(LinearGradient(stops: [.init(color: .black, location: 0), .init(color: .black, location: 0.55),
+                                                     .init(color: .clear, location: 1)], startPoint: .top, endPoint: .bottom))
+                        .frame(height: 84)
+                        .ignoresSafeArea(edges: .top)
+                        .allowsHitTesting(false)
+                }
+            }
             .overlay(alignment: .topLeading) {
                 // Поповер тега «вытекает» из кнопки (морфинг стекла); тап мимо — закрыть.
                 ZStack(alignment: .topLeading) {
@@ -36,10 +47,10 @@ struct EditorSheet: View {
             }
         .presentationDetents([.medium, .large], selection: $detent)
         .presentationDragIndicator(showTags ? .hidden : .visible) // подложка тега встаёт на его место
-        // «Aa» — только когда выделен текст (или панель уже открыта); своя плашка над
-        // клавиатурой с отступом, а не toolbar клавиатуры, прижатый к ней вплотную.
+        // «Aa» — всегда при правке; своя плашка над клавиатурой с отступом, а не
+        // toolbar клавиатуры, прижатый к ней вплотную.
         .overlay(alignment: .bottom) {
-            if focused && (editor.hasSelection || showMarkdown) {
+            if focused {
                 keyboardBar
                     .padding(.horizontal, 12)
                     .padding(.bottom, 10)
@@ -95,23 +106,10 @@ struct EditorSheet: View {
             HStack(spacing: 0) {
                 ScrollView(.horizontal, showsIndicators: false) {
                     HStack(spacing: 0) {
-                        // Строка
-                        tool("bold", active: "**") { editor.wrap("**") }
-                        tool("italic", active: "*") { editor.wrap("*") }
-                        tool("underline", active: "~") { editor.wrap("~") }
-                        tool("strikethrough", active: "~~") { editor.wrap("~~") }
-                        tool("highlighter", active: "==") { editor.wrap("==") }
-                        tool("chevron.left.forwardslash.chevron.right", active: "`") { editor.wrap("`") }
-                        tool("link", active: "link") { askLink() }
-                        Divider().frame(height: 24).padding(.horizontal, 6)
-                        // Блок
-                        tool("textformat.size", block: "# ") { editor.block("# ") }
-                        tool("list.bullet", block: "- ") { editor.block("- ") }
-                        tool("checklist", block: "- [ ] ") { editor.block("- [ ] ") }
-                        tool("text.quote", block: "> ") { editor.block("> ") }
-                        tool("curlybraces", block: "```") { editor.codeBlock() }
+                        if editor.hasSelection { selectionTools } else { starterTools }
                     }
                     .padding(.horizontal, 8)
+                    .animation(.snappy, value: editor.hasSelection)
                 }
                 .scrollEdgeEffectStyle(.soft, for: .horizontal)
                 Button { showMarkdown = false } label: {
@@ -135,6 +133,36 @@ struct EditorSheet: View {
                 .glassEffect(.regular.interactive(), in: .circle)
             }
         }
+    }
+
+    /// Без выделения — только то, с чего начинают строку.
+    @ViewBuilder
+    private var starterTools: some View {
+        tool("textformat.size", block: "# ") { editor.block("# ") }
+        tool("list.bullet", block: "- ") { editor.block("- ") }
+        tool("list.number", block: "1. ") { editor.block("1. ") }
+        tool("checklist", block: "- [ ] ") { editor.block("- [ ] ") }
+    }
+
+    /// С выделением — всё: оформление строки и блока.
+    @ViewBuilder
+    private var selectionTools: some View {
+        // Строка
+        tool("bold", active: "**") { editor.wrap("**") }
+        tool("italic", active: "*") { editor.wrap("*") }
+        tool("underline", active: "~") { editor.wrap("~") }
+        tool("strikethrough", active: "~~") { editor.wrap("~~") }
+        tool("highlighter", active: "==") { editor.wrap("==") }
+        tool("chevron.left.forwardslash.chevron.right", active: "`") { editor.wrap("`") }
+        tool("link", active: "link") { askLink() }
+        Divider().frame(height: 24).padding(.horizontal, 6)
+        // Блок
+        tool("textformat.size", block: "# ") { editor.block("# ") }
+        tool("list.bullet", block: "- ") { editor.block("- ") }
+        tool("list.number", block: "1. ") { editor.block("1. ") }
+        tool("checklist", block: "- [ ] ") { editor.block("- [ ] ") }
+        tool("text.quote", block: "> ") { editor.block("> ") }
+        tool("curlybraces", block: "```") { editor.codeBlock() }
     }
 
     /// Кнопка панели: один набор значков, один размер и вес; активный стиль — акцентом.

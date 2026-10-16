@@ -8,6 +8,8 @@ struct MarkdownTextView: UIViewRepresentable {
     @Binding var text: String
     @Binding var isFocused: Bool
     let controller: MarkdownEditorController
+    /// Высота шапки шторки над текстом: текст уходит под неё и гаснет с размытием.
+    var topBar: CGFloat = 56
 
     func makeCoordinator() -> Coordinator { Coordinator(self) }
 
@@ -30,7 +32,10 @@ struct MarkdownTextView: UIViewRepresentable {
         // Умные кавычки и тире ломали бы разметку.
         view.smartQuotesType = .no
         view.smartDashesType = .no
-        view.topEdgeEffect.style = .soft // текст гаснет с размытием под шапкой
+        view.topEdgeEffect.isHidden = true // своё затухание под шапкой — в EditorSheet
+        view.contentInsetAdjustmentBehavior = .never
+        view.contentInset.top = topBar
+        view.verticalScrollIndicatorInsets.top = topBar
         view.delegate = context.coordinator
         view.text = text
         context.coordinator.restyle(view)
@@ -197,6 +202,7 @@ final class MarkdownEditorController {
         case .bullet: "- "
         case .task: "- [ ] "
         case .quote: "> "
+        case .numbered: "1. "
         case .code, .codeFence: "```"
         default: nil
         }
@@ -253,10 +259,17 @@ final class MarkdownEditorController {
         var existing: NSRange?
         switch line.block {
         case .heading, .bullet, .task, .quote: existing = line.blockMarker
+        case .numbered:
+            // Номер не скрыт и не маркер в разборе — но для панели это маркер строки.
+            let lineText = text.substring(with: line.range)
+            if let match = lineText.range(of: #"^\d+\. "#, options: .regularExpression) {
+                existing = NSRange(location: line.range.location, length: (String(lineText[match]) as NSString).length)
+            }
         default: break
         }
         let current = existing.map { text.substring(with: $0) }
-        let same = current.map { $0 == marker || (marker == "- [ ] " && $0.hasPrefix("- [")) } ?? false
+        let same = current.map { $0 == marker || (marker == "- [ ] " && $0.hasPrefix("- ["))
+            || (marker == "1. " && $0.range(of: #"^\d+\. $"#, options: .regularExpression) != nil) } ?? false
         let range = existing ?? NSRange(location: lineRange.location, length: 0)
         let replacement = same ? "" : marker
         let shift = (replacement as NSString).length - range.length
