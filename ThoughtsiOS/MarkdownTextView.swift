@@ -4,18 +4,26 @@ import UIKit
 /// Редактор карточки на iPhone с живым Markdown: UITextView на TextKit 1
 /// (LiveLayoutManager рисует блоки), оформление — LiveMarkdownStyler, правила
 /// курсора и Backspace — LiveMarkdown. В `text` — обычный Markdown.
+/// Сам не прокручивается — растёт по тексту внутри ScrollView SwiftUI: системное
+/// размытие края под шапкой (safeAreaBar) SwiftUI рисует только для своих
+/// ScrollView; UIKit-прокрутке внутри шторки его не дал ни один способ.
 struct MarkdownTextView: UIViewRepresentable {
     @Binding var text: String
     @Binding var isFocused: Bool
     let controller: MarkdownEditorController
-    /// Шапка шторки — поверх текста; текст уходит под неё и гаснет системным
-    /// размытием края прокрутки (UIScrollEdgeElementContainerInteraction).
-    var header: AnyView
-    var topBar: CGFloat = 56
+    /// Не ниже видимой области — тап по пустому месту под текстом ставит курсор.
+    var minHeight: CGFloat = 0
 
     func makeCoordinator() -> Coordinator { Coordinator(self) }
 
-    func makeUIView(context: Context) -> EditorContainer {
+    func sizeThatFits(_ proposal: ProposedViewSize, uiView: UITextView, context: Context) -> CGSize? {
+        let width = proposal.width ?? uiView.bounds.width
+        guard width > 0 else { return nil }
+        let height = uiView.sizeThatFits(CGSize(width: width, height: .greatestFiniteMagnitude)).height
+        return CGSize(width: width, height: max(height, minHeight))
+    }
+
+    func makeUIView(context: Context) -> UITextView {
         let storage = NSTextStorage()
         let layout = LiveLayoutManager()
         storage.addLayoutManager(layout)
@@ -26,18 +34,13 @@ struct MarkdownTextView: UIViewRepresentable {
 
         let view = UITextView(frame: .zero, textContainer: container)
         view.backgroundColor = .clear
-        view.textContainerInset = UIEdgeInsets(top: 8, left: 16, bottom: 140, right: 16)
-        view.keyboardDismissMode = .interactive
+        view.textContainerInset = UIEdgeInsets(top: 8, left: 16, bottom: 120, right: 16)
+        view.isScrollEnabled = false
         view.keyboardAppearance = .dark
         view.tintColor = LiveMarkdownStyler.accent
-        view.alwaysBounceVertical = true
         // Умные кавычки и тире ломали бы разметку.
         view.smartQuotesType = .no
         view.smartDashesType = .no
-        view.topEdgeEffect.style = .soft
-        view.contentInsetAdjustmentBehavior = .never
-        view.contentInset.top = topBar
-        view.verticalScrollIndicatorInsets.top = topBar
         view.delegate = context.coordinator
         view.text = text
         context.coordinator.restyle(view)
@@ -48,13 +51,11 @@ struct MarkdownTextView: UIViewRepresentable {
 
         controller.textView = view
         controller.coordinator = context.coordinator
-        return EditorContainer(textView: view, header: header, height: topBar)
+        return view
     }
 
-    func updateUIView(_ container: EditorContainer, context: Context) {
+    func updateUIView(_ view: UITextView, context: Context) {
         context.coordinator.parent = self
-        container.header.rootView = header
-        let view = container.textView
         // Текст сменился снаружи (синк) — подставить, сохранив курсор.
         guard view.text != text, view.markedTextRange == nil else { return }
         let selection = view.selectedRange
@@ -175,43 +176,6 @@ struct MarkdownTextView: UIViewRepresentable {
             return layout.taskToggle(at: point, origin: origin)
         }
     }
-}
-
-/// Редактор и шапка над ним в одном контейнере. На шапке висит
-/// UIScrollEdgeElementContainerInteraction — текст под ней гаснет системным
-/// размытием края (размер эффекта задают элементы шапки, поэтому она здесь, а не
-/// оверлеем SwiftUI сверху).
-final class EditorContainer: UIView {
-    let textView: UITextView
-    let header: UIHostingController<AnyView>
-
-    init(textView: UITextView, header: AnyView, height: CGFloat) {
-        self.textView = textView
-        self.header = UIHostingController(rootView: header)
-        super.init(frame: .zero)
-        let bar = self.header.view!
-        bar.backgroundColor = .clear
-        self.header.safeAreaRegions = []
-        addSubview(textView)
-        addSubview(bar)
-        let edge = UIScrollEdgeElementContainerInteraction()
-        edge.scrollView = textView
-        edge.edge = .top
-        bar.addInteraction(edge)
-        for view in [textView, bar] { view.translatesAutoresizingMaskIntoConstraints = false }
-        NSLayoutConstraint.activate([
-            textView.topAnchor.constraint(equalTo: topAnchor),
-            textView.bottomAnchor.constraint(equalTo: bottomAnchor),
-            textView.leadingAnchor.constraint(equalTo: leadingAnchor),
-            textView.trailingAnchor.constraint(equalTo: trailingAnchor),
-            bar.topAnchor.constraint(equalTo: topAnchor),
-            bar.leadingAnchor.constraint(equalTo: leadingAnchor),
-            bar.trailingAnchor.constraint(equalTo: trailingAnchor),
-            bar.heightAnchor.constraint(equalToConstant: height),
-        ])
-    }
-
-    required init?(coder: NSCoder) { fatalError("init(coder:) is not used") }
 }
 
 /// Команды панели Markdown и состояние для неё: выделение, активные стили.

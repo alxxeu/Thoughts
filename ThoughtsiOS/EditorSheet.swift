@@ -19,12 +19,19 @@ struct EditorSheet: View {
     @State private var linkURL = ""
     @State private var linkNeedsTitle = false
     @Namespace private var glass
+    @State private var viewport: CGFloat = 0
     @Environment(\.dismiss) private var dismiss
 
     var body: some View {
-        // Шапка — внутри редактора: под ней системное размытие края прокрутки.
-        MarkdownTextView(text: $card.text, isFocused: $focused, controller: editor, header: AnyView(header))
-            .ignoresSafeArea(.container, edges: .bottom)
+        // Прокрутка — своя, SwiftUI: под шапкой (safeAreaBar) текст гаснет системным
+        // размытием края; редактор внутри растёт по тексту.
+        ScrollView {
+            MarkdownTextView(text: $card.text, isFocused: $focused, controller: editor, minHeight: viewport)
+        }
+        .scrollEdgeEffectStyle(.soft, for: .top)
+        .scrollDismissesKeyboard(.interactively)
+        .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { viewport = $0 }
+        .safeAreaBar(edge: .top) { EditorHeader(card: card, onDelete: delete) }
             .overlay(alignment: .topLeading) {
                 // Поповер тега «вытекает» из кнопки (морфинг стекла); тап мимо — закрыть.
                 ZStack(alignment: .topLeading) {
@@ -64,75 +71,71 @@ struct EditorSheet: View {
         .preferredColorScheme(.dark)
     }
 
-    // MARK: - Шапка
-
-    private var header: some View {
-        HStack {
-            Color.clear.frame(width: 24, height: 44) // место кнопки тега (она в оверлее)
-            Spacer()
-            Menu {
-                Button("Copy", systemImage: "doc.on.doc") { UIPasteboard.general.string = card.text }
-                ShareLink(item: card.text) { Label("Share", systemImage: "square.and.arrow.up") }
-                Button("Delete", systemImage: "trash", role: .destructive) { delete() }
-            } label: {
-                Image(systemName: "ellipsis")
-                    .font(.system(size: 17, weight: .semibold))
-                    .foregroundStyle(Theme.text)
-                    .frame(width: 44, height: 44)
-                    .contentShape(.rect) // без стеклянного фона (доводка 3)
-            }
-        }
-        .padding(.horizontal, 8)
-        .padding(.top, 10)
-    }
-
     // MARK: - Клавиатура: «Aa» → панель Markdown
 
-    /// «Aa» и панель — одно стекло: кнопка «вытекает» в панель и стекается обратно
-    /// (GlassEffectContainer + glassEffectID). Без выделения панель по размеру своих
-    /// значков и прижата вправо, к месту «Aa»; с выделением — во всю ширину.
+    /// «Aa» и панель — одно стекло: кнопка «вытекает» в панель и стекается обратно.
+    /// Как TagControl: в GlassEffectContainer — только пустые стеклянные формы с
+    /// glassEffectID, значки — поверх, вне контейнера (стекло прямо на ряду кнопок
+    /// не морфилось: состояние менялось за один кадр). Без выделения панель по
+    /// размеру своих значков и прижата вправо, к месту «Aa»; с выделением — во всю ширину.
     private var keyboardBar: some View {
-        GlassEffectContainer(spacing: 8) {
-            HStack(spacing: 0) {
-                Spacer(minLength: 0)
+        let width: CGFloat? = editor.hasSelection ? nil : Self.starterWidth
+        return ZStack(alignment: .trailing) {
+            GlassEffectContainer(spacing: 8) {
                 if showMarkdown {
-                    HStack(spacing: 0) {
-                        if editor.hasSelection {
-                            ScrollView(.horizontal, showsIndicators: false) {
-                                HStack(spacing: 0) { selectionTools }.padding(.leading, 8)
-                            }
-                            .scrollEdgeEffectStyle(.soft, for: .horizontal)
-                        } else {
-                            starterTools.padding(.leading, 6)
-                        }
-                        Button { withAnimation(.bouncy) { showMarkdown = false } } label: {
-                            Image(systemName: "xmark")
-                                .font(.system(size: 17, weight: .semibold))
-                                .foregroundStyle(Theme.secondary)
-                                .frame(width: 44, height: 44)
-                        }
-                        .buttonStyle(.plain)
-                        .padding(.trailing, 4)
-                    }
-                    .frame(maxWidth: editor.hasSelection ? .infinity : nil)
-                    .frame(height: 52)
-                    .glassEffect(.regular.interactive(), in: .capsule)
-                    .glassEffectID("markdown", in: glass)
+                    Color.clear
+                        .frame(maxWidth: width ?? .infinity)
+                        .frame(height: 52)
+                        .glassEffect(.regular, in: .capsule)
+                        .glassEffectID("markdown", in: glass)
                 } else {
                     Button { withAnimation(.bouncy) { showMarkdown = true } } label: {
-                        Text("Aa").font(.system(size: 17, weight: .semibold))
-                            .foregroundStyle(Theme.text)
-                            .frame(width: 52, height: 52)
-                            .contentShape(.circle)
+                        Color.clear.frame(width: 52, height: 52).contentShape(.circle)
                     }
                     .buttonStyle(.plain)
                     .glassEffect(.regular.interactive(), in: .circle)
                     .glassEffectID("markdown", in: glass)
                 }
             }
+            if showMarkdown {
+                HStack(spacing: 0) {
+                    if editor.hasSelection {
+                        ScrollView(.horizontal, showsIndicators: false) {
+                            HStack(spacing: 0) { selectionTools }.padding(.leading, 8)
+                        }
+                        .scrollEdgeEffectStyle(.soft, for: .horizontal)
+                    } else {
+                        starterTools.padding(.leading, 6)
+                    }
+                    Button { withAnimation(.bouncy) { showMarkdown = false } } label: {
+                        Image(systemName: "xmark")
+                            .font(.system(size: 17, weight: .semibold))
+                            .foregroundStyle(Theme.secondary)
+                            .frame(width: 44, height: 44)
+                    }
+                    .buttonStyle(.plain)
+                    .padding(.trailing, 4)
+                }
+                .frame(maxWidth: width ?? .infinity)
+                .frame(height: 52)
+                .clipShape(.capsule)
+                // Значки уходят раньше, чем стекло стечётся в каплю; появляются, когда оно разлилось.
+                .transition(.asymmetric(insertion: .opacity.animation(.easeIn(duration: 0.18).delay(0.08)),
+                                        removal: .opacity.animation(.easeOut(duration: 0.08))))
+            } else {
+                Text("Aa").font(.system(size: 17, weight: .semibold))
+                    .foregroundStyle(Theme.text)
+                    .frame(width: 52, height: 52)
+                    .allowsHitTesting(false)
+                    .transition(.opacity)
+            }
         }
+        .frame(maxWidth: .infinity, alignment: .trailing)
         .animation(.bouncy, value: editor.hasSelection)
     }
+
+    /// 4 значка по 44 + ✕ 44 + поля.
+    private static let starterWidth: CGFloat = 4 * 44 + 44 + 6 + 4
 
     /// Без выделения — только то, с чего начинают строку.
     @ViewBuilder
@@ -199,6 +202,34 @@ struct EditorSheet: View {
         if card.text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty, board.cardsByWorkspace.values.contains(where: { $0.contains { $0.id == card.id } }) {
             board.deleteCard(id: card.id)
         }
+    }
+}
+
+/// Шапка редактора: место кнопки тега (она в оверлее) и «…» (Copy / Share / Delete).
+/// Отдельный вид, который сам следит за карточкой: его хостинг внутри редактора
+/// создаётся один раз и не пересобирается при каждом обновлении шторки.
+private struct EditorHeader: View {
+    @Bindable var card: Card
+    var onDelete: () -> Void
+
+    var body: some View {
+        HStack {
+            Color.clear.frame(width: 24, height: 44)
+            Spacer()
+            Menu {
+                Button("Copy", systemImage: "doc.on.doc") { UIPasteboard.general.string = card.text }
+                ShareLink(item: card.text) { Label("Share", systemImage: "square.and.arrow.up") }
+                Button("Delete", systemImage: "trash", role: .destructive, action: onDelete)
+            } label: {
+                Image(systemName: "ellipsis")
+                    .font(.system(size: 17, weight: .semibold))
+                    .foregroundStyle(Theme.text)
+                    .frame(width: 44, height: 44)
+                    .contentShape(.rect) // без стеклянного фона (доводка 3)
+            }
+        }
+        .padding(.horizontal, 8)
+        .padding(.top, 10)
     }
 }
 
