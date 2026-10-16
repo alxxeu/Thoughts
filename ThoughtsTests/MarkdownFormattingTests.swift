@@ -70,4 +70,24 @@ struct MarkdownFormattingTests {
         // Вставка посреди строки: первая строка продолжает чужую — не трогаем.
         #expect(MarkdownFormatting.standardizingTaskMarkers("[] a\n[] b", atLineStart: false) == "[] a\n- [ ] b")
     }
+
+    /// Блок кода: строки выделения в ``` и обратно; пустая строка — пустой блок с курсором внутри.
+    @Test func codeBlockWrapsAndUnwrapsLines() {
+        let text = "intro\nlet a = 1\nlet b = 2\noutro" as NSString
+        let selection = text.range(of: "a = 1\nlet b")
+        let wrap = MarkdownFormatting.toggleCodeBlock(in: text, selection: selection)
+        let wrapped = text.replacingCharacters(in: wrap.range, with: wrap.replacement) as NSString
+        #expect(wrapped as String == "intro\n```\nlet a = 1\nlet b = 2\n```\noutro")
+        #expect(wrapped.substring(with: wrap.selection) == "a = 1\nlet b")
+
+        let unwrap = MarkdownFormatting.toggleCodeBlock(in: wrapped, selection: wrap.selection)
+        let unwrapped = wrapped.replacingCharacters(in: unwrap.range, with: unwrap.replacement) as NSString
+        #expect(unwrapped as String == text as String)
+        #expect(unwrapped.substring(with: unwrap.selection) == "a = 1\nlet b")
+
+        let empty = "a\n\nb" as NSString
+        let cursor = MarkdownFormatting.toggleCodeBlock(in: empty, selection: NSRange(location: 2, length: 0))
+        #expect(empty.replacingCharacters(in: cursor.range, with: cursor.replacement) == "a\n```\n\n```\nb")
+        #expect(cursor.selection == NSRange(location: 6, length: 0))
+    }
 }

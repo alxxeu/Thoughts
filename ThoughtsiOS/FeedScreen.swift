@@ -373,7 +373,10 @@ private struct FeedList: View {
         .onAppear {
             order = Self.sorted(cards).map(\.id)
             // List не держит defaultScrollAnchor(.bottom) — прокручиваем к свежей сами.
+            // Страницы собираются все сразу, при запуске, — вёрстка строк ещё не готова,
+            // поэтому повтор чуть позже.
             Task { @MainActor in scrollToBottom(proxy, animated: false) }
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) { scrollToBottom(proxy, animated: false) }
         }
         .onChange(of: board.editingCardID) { _, id in if id == nil { withAnimation { order = Self.sorted(cards).map(\.id) } } }
         .onChange(of: cards.count) { old, new in if new > old { scrollToBottom(proxy, animated: true) } }

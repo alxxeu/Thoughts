@@ -57,6 +57,33 @@ enum MarkdownFormatting {
         )
     }
 
+    /// Блок кода: обернуть строки выделения в ```` ``` ```` (каждая ограда — своей
+    /// строкой); если они уже стоят строками выше и ниже — снять.
+    static func toggleCodeBlock(in text: NSString, selection: NSRange) -> Edit {
+        let lines = text.lineRange(for: selection)
+        var body = lines
+        if body.length > 0, text.character(at: NSMaxRange(body) - 1) == 0x0A { body.length -= 1 }
+        let offset = selection.location - body.location
+
+        func isFence(_ line: NSRange) -> Bool {
+            text.substring(with: line).trimmingCharacters(in: .whitespacesAndNewlines).hasPrefix("```")
+        }
+        if body.location > 0, NSMaxRange(lines) < text.length {
+            let above = text.lineRange(for: NSRange(location: body.location - 1, length: 0))
+            let below = text.lineRange(for: NSRange(location: NSMaxRange(lines), length: 0))
+            if isFence(above), isFence(below) {
+                var end = NSMaxRange(below)
+                if end > below.location, text.character(at: end - 1) == 0x0A { end -= 1 }
+                return Edit(range: NSRange(location: above.location, length: end - above.location),
+                            replacement: text.substring(with: body),
+                            selection: NSRange(location: above.location + offset, length: selection.length))
+            }
+        }
+        let opening = "```\n"
+        return Edit(range: body, replacement: opening + text.substring(with: body) + "\n```",
+                    selection: NSRange(location: selection.location + (opening as NSString).length, length: selection.length))
+    }
+
     /// Галочка задачи `[ ]` ↔ `[x]` в строке `paragraph` (тап по задаче в ленте).
     /// nil — строка не задача.
     static func togglingTask(in text: String, paragraph: MarkdownStyler.Paragraph) -> String? {

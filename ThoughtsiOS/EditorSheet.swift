@@ -1,32 +1,28 @@
 import SwiftUI
 
 /// Редактор карточки (S2): шторка Half / Full. Тап по тексту — Full. Шапка: точка
-/// тега (поповер: цвета + Spoiler / Lock) и «…» (Copy / Share / Delete). «Aa» —
+/// тега (поповер: цвета + Spoiler / Lock) и «…» (Copy / Share / Delete). Markdown
+/// живой — служебных символов не видно (MarkdownTextView). «Aa» при выделении —
 /// панель Markdown над клавиатурой. Пустая карточка при закрытии удаляется (Р10).
-/// shortcut: разметка в тексте видна целиком; прятать её вне строки под курсором,
-/// как на Mac, — после MVP.
 struct EditorSheet: View {
     @Bindable var board: BoardModel
     @Bindable var card: Card
     @State var detent: PresentationDetent
     let lock: LockSession
 
-    @State private var selection: TextSelection?
+    @State private var editor = MarkdownEditorController()
     @State private var showTags = false
     @State private var showMarkdown = false
-    @FocusState private var focused: Bool
+    @State private var focused = false
+    @State private var showLink = false
+    @State private var linkTitle = ""
+    @State private var linkURL = ""
+    @State private var linkNeedsTitle = false
     @Environment(\.dismiss) private var dismiss
 
     var body: some View {
-        TextEditor(text: $card.text, selection: $selection)
-            .font(.system(size: 17))
-            .foregroundStyle(Theme.text)
-            .scrollContentBackground(.hidden)
-            .scrollEdgeEffectStyle(.soft, for: .all) // текст гаснет с размытием под шапкой
-            .scrollDismissesKeyboard(.interactively)
-            .focused($focused)
-            // Поля — внутри прокрутки: сам редактор во всю ширину, и размытие под шапкой доходит до краёв.
-            .contentMargins(.horizontal, 16, for: .scrollContent)
+        MarkdownTextView(text: $card.text, isFocused: $focused, controller: editor)
+            .ignoresSafeArea(.container, edges: .bottom)
             .safeAreaBar(edge: .top) { header }
             .overlay(alignment: .topLeading) {
                 // Поповер тега «вытекает» из кнопки (морфинг стекла); тап мимо — закрыть.
@@ -43,15 +39,25 @@ struct EditorSheet: View {
         // «Aa» — только когда выделен текст (или панель уже открыта); своя плашка над
         // клавиатурой с отступом, а не toolbar клавиатуры, прижатый к ней вплотную.
         .overlay(alignment: .bottom) {
-            if focused && (hasSelection || showMarkdown) {
+            if focused && (editor.hasSelection || showMarkdown) {
                 keyboardBar
-                    .padding(.horizontal, 16)
+                    .padding(.horizontal, 12)
                     .padding(.bottom, 10)
                     .transition(.opacity.combined(with: .scale(scale: 0.9, anchor: .bottomTrailing)))
             }
         }
-        .animation(.snappy, value: hasSelection)
+        .animation(.snappy, value: editor.hasSelection)
         .animation(.snappy, value: showMarkdown)
+        .alert("Add Link", isPresented: $showLink) {
+            if linkNeedsTitle { TextField("Text", text: $linkTitle) }
+            TextField("https://", text: $linkURL)
+                .keyboardType(.URL)
+                .textInputAutocapitalization(.never)
+                .autocorrectionDisabled()
+            Button("Cancel", role: .cancel) {}
+            Button("Add") { editor.insertLink(title: linkTitle, url: linkURL) }
+                .disabled(linkURL.trimmingCharacters(in: .whitespaces).isEmpty)
+        }
         .onChange(of: focused) { _, isFocused in if isFocused { withAnimation { detent = .large } } }
         .onChange(of: card.text) { board.scheduleDebouncedSave() }
         .onAppear { board.editingCardID = card.id }
@@ -83,29 +89,40 @@ struct EditorSheet: View {
 
     // MARK: - Клавиатура: «Aa» → панель Markdown
 
-    private var hasSelection: Bool {
-        if case .selection(let range) = selection?.indices { return !range.isEmpty }
-        return false
-    }
-
     @ViewBuilder
     private var keyboardBar: some View {
         if showMarkdown {
-            HStack(spacing: 4) {
+            HStack(spacing: 0) {
                 ScrollView(.horizontal, showsIndicators: false) {
-                    HStack(spacing: 18) {
-                        wrap("bold", "**"); wrap("italic", "*"); wrap("strikethrough", "~~"); wrap("highlighter", "==")
-                        prefix("textformat.size", "# "); prefix("list.bullet", "- "); prefix("checklist", "- [ ] "); prefix("text.quote", "> ")
-                        wrap("chevron.left.forwardslash.chevron.right", "`")
-                        Button { insertLink() } label: { Image(systemName: "link") }
+                    HStack(spacing: 0) {
+                        // Строка
+                        tool("bold", active: "**") { editor.wrap("**") }
+                        tool("italic", active: "*") { editor.wrap("*") }
+                        tool("underline", active: "~") { editor.wrap("~") }
+                        tool("strikethrough", active: "~~") { editor.wrap("~~") }
+                        tool("highlighter", active: "==") { editor.wrap("==") }
+                        tool("chevron.left.forwardslash.chevron.right", active: "`") { editor.wrap("`") }
+                        tool("link", active: "link") { askLink() }
+                        Divider().frame(height: 24).padding(.horizontal, 6)
+                        // Блок
+                        tool("textformat.size", block: "# ") { editor.block("# ") }
+                        tool("list.bullet", block: "- ") { editor.block("- ") }
+                        tool("checklist", block: "- [ ] ") { editor.block("- [ ] ") }
+                        tool("text.quote", block: "> ") { editor.block("> ") }
+                        tool("curlybraces", block: "```") { editor.codeBlock() }
                     }
-                    .padding(.horizontal, 16)
+                    .padding(.horizontal, 8)
                 }
-                Button { showMarkdown = false } label: { Image(systemName: "xmark").frame(width: 44, height: 44) }
+                .scrollEdgeEffectStyle(.soft, for: .horizontal)
+                Button { showMarkdown = false } label: {
+                    Image(systemName: "xmark")
+                        .font(.system(size: 17, weight: .semibold))
+                        .foregroundStyle(Theme.secondary)
+                        .frame(width: 44, height: 44)
+                }
+                .padding(.trailing, 4)
             }
-            .font(.system(size: 17))
-            .foregroundStyle(Theme.text)
-            .frame(height: 48)
+            .frame(height: 52)
             .glassEffect(.regular.interactive(), in: .capsule)
         } else {
             HStack {
@@ -120,48 +137,25 @@ struct EditorSheet: View {
         }
     }
 
-    private var selectedRange: NSRange {
-        let text = card.text
-        if case .selection(let range) = selection?.indices { return NSRange(range, in: text) }
-        return NSRange(location: (text as NSString).length, length: 0)
+    /// Кнопка панели: один набор значков, один размер и вес; активный стиль — акцентом.
+    private func tool(_ symbol: String, active inline: String? = nil, block: String? = nil, action: @escaping () -> Void) -> some View {
+        let isOn = inline.map { editor.activeInlines.contains($0) } ?? (block == editor.activeBlock && block != nil)
+        return Button(action: action) {
+            Image(systemName: symbol)
+                .font(.system(size: 18, weight: .medium))
+                .foregroundStyle(isOn ? Theme.accent : Theme.text)
+                .frame(width: 44, height: 44)
+                .background { if isOn { Circle().fill(Theme.accent.opacity(0.18)).frame(width: 36, height: 36) } }
+                .contentShape(.rect)
+        }
+        .buttonStyle(.plain)
     }
 
-    private func apply(range: NSRange, replacement: String, selectionAfter: NSRange) {
-        let ns = card.text as NSString
-        card.text = ns.replacingCharacters(in: range, with: replacement)
-        if let r = Range(selectionAfter, in: card.text) { selection = TextSelection(range: r) }
-    }
-
-    private func wrap(_ symbol: String, _ marker: String) -> some View {
-        Button {
-            let edit = MarkdownFormatting.toggle(marker, in: card.text as NSString, selection: selectedRange)
-            apply(range: edit.range, replacement: edit.replacement, selectionAfter: edit.selection)
-        } label: { Image(systemName: symbol) }
-    }
-
-    /// Блочная разметка — в начало текущей строки (повтор — снимает).
-    private func prefix(_ symbol: String, _ marker: String) -> some View {
-        Button {
-            let ns = card.text as NSString
-            let sel = selectedRange
-            let line = ns.lineRange(for: NSRange(location: sel.location, length: 0))
-            let m = (marker as NSString).length
-            if line.length >= m, ns.substring(with: NSRange(location: line.location, length: m)) == marker {
-                apply(range: NSRange(location: line.location, length: m), replacement: "",
-                      selectionAfter: NSRange(location: max(line.location, sel.location - m), length: sel.length))
-            } else {
-                apply(range: NSRange(location: line.location, length: 0), replacement: marker,
-                      selectionAfter: NSRange(location: sel.location + m, length: sel.length))
-            }
-        } label: { Image(systemName: symbol) }
-    }
-
-    private func insertLink() {
-        let sel = selectedRange
-        let selected = (card.text as NSString).substring(with: sel)
-        let replacement = "[\(selected)](https://)"
-        apply(range: sel, replacement: replacement,
-              selectionAfter: NSRange(location: sel.location + (selected as NSString).length + 3, length: 8))
+    private func askLink() {
+        linkTitle = ""
+        linkURL = ""
+        linkNeedsTitle = editor.selectedText().isEmpty
+        showLink = true
     }
 
     // MARK: - Закрытие
