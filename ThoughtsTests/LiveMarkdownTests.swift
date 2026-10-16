@@ -70,4 +70,31 @@ struct LiveMarkdownTests {
         #expect(empty?.replacement == "")
         #expect(LiveMarkdown.newline(at: 5, text: "plain") == nil)
     }
+
+    /// Второй Return в блоке кода выходит из него; первый — обычный перевод строки.
+    @Test func doubleReturnExitsCodeBlock() {
+        func apply(_ text: String, _ edit: MarkdownFormatting.Edit?) -> (String, Int)? {
+            guard let edit else { return nil }
+            return ((text as NSString).replacingCharacters(in: edit.range, with: edit.replacement), edit.selection.location)
+        }
+        // Строка кода не пустая — обычный Return.
+        #expect(LiveMarkdown.newline(at: 8, text: "```\nlet\n```") == nil)
+        // Закрытый блок в конце текста.
+        let closed = "```\nlet\n\n```"
+        let r1 = apply(closed, LiveMarkdown.newline(at: 8, text: closed))
+        #expect(r1?.0 == "```\nlet\n```\n")
+        #expect(r1?.1 == 12)
+        // За блоком есть текст — курсор в его начало.
+        let after = "```\nlet\n\n```\nnext"
+        let r2 = apply(after, LiveMarkdown.newline(at: 8, text: after))
+        #expect(r2?.0 == "```\nlet\n```\nnext")
+        #expect(r2?.1 == 12)
+        // Незакрытый блок — дописать ```.
+        let open = "```\nlet\n"
+        let r3 = apply(open, LiveMarkdown.newline(at: 8, text: open))
+        #expect(r3?.0 == "```\nlet\n```\n")
+        #expect(r3?.1 == 12)
+        // Пустая первая строка нового блока — не выход.
+        #expect(LiveMarkdown.newline(at: 4, text: "```\n\n```") == nil)
+    }
 }

@@ -71,6 +71,9 @@ struct MarkdownTextView: UIViewRepresentable {
         private var isSnapping = false
         /// Правку вносит сам редактор (Backspace, Return, панель) — не перехватывать её снова.
         var isApplying = false
+        /// Идёт правка текста: курсор UIKit сдвигает раньше, чем приходит новый текст, и
+        /// по старой разметке его утягивало назад (второй Return в коде не попадал на пустую строку).
+        private var isEditing = false
 
         init(_ parent: MarkdownTextView) { self.parent = parent }
 
@@ -91,6 +94,7 @@ struct MarkdownTextView: UIViewRepresentable {
         // MARK: Правки
 
         func textViewDidChange(_ view: UITextView) {
+            isEditing = false
             parent.controller.textDidChange(view.text)
             parent.text = view.text
             restyle(view)
@@ -108,13 +112,14 @@ struct MarkdownTextView: UIViewRepresentable {
                 parent.controller.apply(edit)
                 return false
             }
+            isEditing = true
             return true
         }
 
         // MARK: Курсор
 
         func textViewDidChangeSelection(_ view: UITextView) {
-            guard !isSnapping else { return }
+            guard !isSnapping, !isEditing else { return }
             snap(view)
             parent.controller.update(selection: view.selectedRange, text: view.text)
         }
