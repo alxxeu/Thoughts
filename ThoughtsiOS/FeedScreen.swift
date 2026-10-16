@@ -384,80 +384,22 @@ private struct SpacesBar: View {
     var onExpand: () -> Void
     var onRename: (Workspace) -> Void
 
-    /// Положение ленты имён — дробный индекс Space в центре. Своя лента вместо
-    /// ScrollView: прокрутка с трением и ровная доводка к центру, без рывков.
-    @State private var position: CGFloat = 0
-    @State private var dragStart: CGFloat?
-    @State private var widths: [Int: CGFloat] = [:]
+    /// Имя в центре ленты. Живёт и при свёрнутой полосе — раскрытая сразу стоит на нём.
+    @State private var centered: Int?
     @State private var barWidth: CGFloat = 400
-    private static let spacing: CGFloat = 4
-    /// Доля броска, которую лента пролетает после отпускания (трение).
-    private static let friction: CGFloat = 0.25
-
-    private var focused: Int { min(max(Int(position.rounded()), 0), max(workspaces.count - 1, 0)) }
+    /// Все имена одной ширины: системная доводка (viewAligned) ставит имя ровно в центр.
+    private static let itemWidth: CGFloat = 96
 
     var body: some View {
         Group {
             if collapsed { dots } else { names }
         }
-        .onAppear { position = CGFloat(index(of: slot)) }
-        .onChange(of: focused) { _, i in
-            if workspaces.indices.contains(i), workspaces[i].slot != slot { withAnimation(.snappy) { slot = workspaces[i].slot } }
-        }
+        .onAppear { centered = slot }
         .onChange(of: slot) { _, s in
-            guard dragStart == nil, workspaces.indices.contains(focused), workspaces[focused].slot != s else { return }
-            withAnimation(.snappy) { position = CGFloat(index(of: s)) }
+            if centered != s { withAnimation(.snappy) { centered = s } }
         }
     }
 
-    private func index(of slot: Int) -> Int { workspaces.firstIndex { $0.slot == slot } ?? 0 }
-
-    // MARK: Геометрия ленты
-
-    private func width(_ i: Int) -> CGFloat { widths[workspaces[i].slot] ?? 70 }
-
-    /// Центр имени i от левого края ряда.
-    private func center(_ i: Int) -> CGFloat {
-        (0..<i).reduce(0) { $0 + width($1) + Self.spacing } + width(i) / 2
-    }
-
-    /// Центр дробного положения — между центрами соседних имён.
-    private func center(at position: CGFloat) -> CGFloat {
-        guard !workspaces.isEmpty else { return 0 }
-        let p = min(max(position, 0), CGFloat(workspaces.count - 1))
-        let i = Int(p.rounded(.down)), t = p - CGFloat(i)
-        guard i + 1 < workspaces.count else { return center(i) }
-        return center(i) + (center(i + 1) - center(i)) * t
-    }
-
-    /// Обратное: какое дробное положение у точки x ряда.
-    private func position(at x: CGFloat) -> CGFloat {
-        guard workspaces.count > 1 else { return 0 }
-        for i in 0..<(workspaces.count - 1) where x <= center(i + 1) {
-            return CGFloat(i) + max(0, (x - center(i)) / (center(i + 1) - center(i)))
-        }
-        return CGFloat(workspaces.count - 1)
-    }
-
-    private var drag: some Gesture {
-        DragGesture(minimumDistance: 4)
-            .onChanged { value in
-                let start = dragStart ?? position
-                if dragStart == nil { dragStart = start }
-                position = self.position(at: center(at: start) - value.translation.width)
-            }
-            .onEnded { value in
-                let start = dragStart ?? position
-                let fling = (value.predictedEndTranslation.width - value.translation.width) * Self.friction
-                let target = self.position(at: center(at: start) - value.translation.width - fling).rounded()
-                dragStart = nil
-                withAnimation(.snappy) { position = target }
-            }
-    }
-
-    // MARK: Вид
-
-    /// Свёрнуто: ряд точек.
     private var dots: some View {
         HStack(spacing: 8) {
             ForEach(workspaces) { ws in
@@ -469,43 +411,47 @@ private struct SpacesBar: View {
         .frame(maxWidth: .infinity, minHeight: 28)
         .contentShape(.rect)
         .onTapGesture(perform: onExpand) // тап по точкам — раскрыть
-        .transition(.scale(scale: 0.6, anchor: .bottom).combined(with: .opacity))
+        .transition(.opacity)
     }
 
-    /// Раскрыто: имена всплывают снизу из точек; имя в центре — текущий Space,
-    /// оно крупнее и жирнее остальных.
+    /// Имя в центре — текущий Space: ярче и чуть крупнее (масштаб — плавно, без скачков ширины).
     private var names: some View {
-        HStack(spacing: Self.spacing) {
-            ForEach(Array(workspaces.enumerated()), id: \.element.id) { i, ws in
-                Text(ws.name)
-                    .font(.system(size: i == focused ? 17 : 15, weight: i == focused ? .bold : .medium))
-                    .foregroundStyle(i == focused ? Theme.text : Theme.secondary)
-                    .padding(.horizontal, 12)
-                    .padding(.vertical, 8)
-                    .fixedSize()
-                    .onGeometryChange(for: CGFloat.self) { $0.size.width } action: { widths[ws.slot] = $0 }
-                    .contentShape(.rect)
-                    .onTapGesture { withAnimation(.snappy) { position = CGFloat(i) } }
-                    .contextMenu { Button("Rename…", systemImage: "pencil") { onRename(ws) } }
+        ScrollView(.horizontal, showsIndicators: false) {
+            HStack(spacing: 0) {
+                ForEach(workspaces) { ws in
+                    let isCurrent = ws.slot == centered
+                    Text(ws.name)
+                        .font(.system(size: 15, weight: .semibold))
+                        .lineLimit(1)
+                        .foregroundStyle(isCurrent ? Theme.text : Theme.secondary)
+                        .scaleEffect(isCurrent ? 1.15 : 1)
+                        .frame(width: Self.itemWidth, height: 40)
+                        .contentShape(.rect)
+                        .onTapGesture { withAnimation(.snappy) { centered = ws.slot } }
+                        .contextMenu { Button("Rename…", systemImage: "pencil") { onRename(ws) } }
+                        .id(ws.slot)
+                }
             }
+            .scrollTargetLayout()
         }
-        .fixedSize()
-        .offset(x: barWidth / 2 - center(at: position))
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .frame(height: 40)
-        .contentShape(.rect)
-        .gesture(drag)
+        .scrollTargetBehavior(.viewAligned(limitBehavior: .alwaysByFew))
+        .scrollPosition(id: $centered, anchor: .center)
+        // Лента Spaces переключается, когда полоса встала: на лету она не успевала за
+        // несколькими сменами за один бросок и застревала на промежуточном Space.
+        .onScrollPhaseChange { _, phase in
+            if phase == .idle, let c = centered, c != slot { withAnimation(.snappy) { slot = c } }
+        }
+        .contentMargins(.horizontal, max((barWidth - Self.itemWidth) / 2, 0), for: .scrollContent)
         .onGeometryChange(for: CGFloat.self) { $0.size.width } action: { barWidth = $0 }
-        .clipped()
+        .animation(.snappy, value: centered)
+        .frame(height: 40)
         .mask {
             LinearGradient(stops: [
-                .init(color: .clear, location: 0), .init(color: .black, location: 0.12),
-                .init(color: .black, location: 0.88), .init(color: .clear, location: 1),
+                .init(color: .clear, location: 0), .init(color: .black, location: 0.15),
+                .init(color: .black, location: 0.85), .init(color: .clear, location: 1),
             ], startPoint: .leading, endPoint: .trailing)
         }
-        .transition(.asymmetric(
-            insertion: .offset(y: 14).combined(with: .scale(scale: 0.7, anchor: .bottom)).combined(with: .opacity),
-            removal: .scale(scale: 0.7, anchor: .bottom).combined(with: .opacity)))
+        .transition(.opacity)
     }
 }
 
