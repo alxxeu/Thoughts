@@ -14,6 +14,8 @@ struct FeedScreen: View {
     @State private var renaming: Workspace?
     @State private var newName = ""
     @State private var showSpaceSettings = false
+    /// Сдвиг ленты при дальнем переходе по полосе: она встаёт на место сбоку.
+    @State private var arrival: CGFloat = 0
     @AppStorage("hideEmptySpaces") private var hideEmptySpaces = false
     @FocusState private var composerFocused: Bool
     @Environment(\.scenePhase) private var scenePhase
@@ -54,6 +56,8 @@ struct FeedScreen: View {
         .scrollIndicators(.hidden)
         .scrollClipDisabled()
         .ignoresSafeArea()
+        .offset(x: arrival)
+        .opacity(arrival == 0 ? 1 : 0.4)
         EdgeFade(edge: .top, height: geo.safeAreaInsets.top + 64)
         // Снизу — выше баров: захватывает папки и часть поля ввода.
         EdgeFade(edge: .bottom, height: geo.safeAreaInsets.bottom + bottomBarHeight * 0.8 + 30)
@@ -99,7 +103,8 @@ struct FeedScreen: View {
                 SpacesBar(workspaces: visibleWorkspaces, slot: $slot, collapsed: spacesCollapsed,
                           onExpand: { withAnimation(.snappy) { spacesCollapsed = false } },
                           onRename: { renaming = $0; newName = $0.name },
-                          onSettings: { showSpaceSettings = true })
+                          onSettings: { showSpaceSettings = true },
+                          onSelect: select)
             }
         }
         .padding(.bottom, 4)
@@ -128,6 +133,22 @@ struct FeedScreen: View {
     }
 
     // MARK: - Действия
+
+    /// Тап по имени в полосе. Соседний Space — обычная прокрутка; дальний — без
+    /// пролёта через все промежуточные: лента сразу встаёт на нужный и коротко
+    /// въезжает сбоку, как будто переход на соседний.
+    private func select(_ target: Int) {
+        let ids = visibleWorkspaces.map(\.slot)
+        guard let from = ids.firstIndex(of: slot), let to = ids.firstIndex(of: target), from != to else { return }
+        if abs(to - from) == 1 { withAnimation(.snappy) { slot = target }; return }
+        var jump = Transaction()
+        jump.disablesAnimations = true
+        withTransaction(jump) {
+            slot = target
+            arrival = to > from ? 60 : -60
+        }
+        Task { @MainActor in withAnimation(.snappy(duration: 0.3)) { arrival = 0 } }
+    }
 
     private func send() {
         let text = draft.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -418,6 +439,7 @@ private struct SpacesBar: View {
     var onExpand: () -> Void
     var onRename: (Workspace) -> Void
     var onSettings: () -> Void
+    var onSelect: (Int) -> Void
 
     @State private var barWidth: CGFloat = 400
 
@@ -454,7 +476,7 @@ private struct SpacesBar: View {
                             .padding(.horizontal, 14)
                             .frame(height: 40)
                             .contentShape(.rect)
-                            .onTapGesture { withAnimation(.snappy) { slot = ws.slot } }
+                            .onTapGesture { onSelect(ws.slot) }
                             .contextMenu {
                                 Button("Rename…", systemImage: "pencil") { onRename(ws) }
                                 Button("Space Settings…", systemImage: "slider.horizontal.3", action: onSettings)
@@ -531,7 +553,7 @@ private struct EdgeDeleteSwipe: ViewModifier {
                 }
             }
             .sensoryFeedback(.impact(weight: .medium), trigger: armed) { _, new in new }
-            .onChange(of: armed) { _, a in withAnimation(.snappy) { iconAtEdge = a } }
+            .onChange(of: armed) { _, a in withAnimation(.spring(duration: 0.22, bounce: 0.35)) { iconAtEdge = a } }
             .onChange(of: swipeReset) { if offset != 0 { close() } }
             .overlay(alignment: .trailing) {
                 if isOpen {
