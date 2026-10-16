@@ -35,8 +35,8 @@ struct EditorSheet: View {
                             .onTapGesture { withAnimation(.bouncy) { showTags = false } }
                     }
                     TagControl(card: card, board: board, expanded: $showTags)
-                        .padding(.leading, 12)
-                        .padding(.top, 20)
+                        .padding(.leading, 16)
+                        .padding(.top, 26)
                 }
             }
         .presentationDetents([.medium, .large], selection: $detent)
@@ -55,7 +55,7 @@ struct EditorSheet: View {
 
     private var header: some View {
         HStack {
-            Color.clear.frame(width: 44, height: 44) // место кнопки тега (она в оверлее)
+            Color.clear.frame(width: 32, height: 44) // место кнопки тега (она в оверлее)
             Spacer()
             Menu {
                 Button("Copy", systemImage: "doc.on.doc") { UIPasteboard.general.string = card.text }
@@ -66,7 +66,7 @@ struct EditorSheet: View {
                     .font(.system(size: 17, weight: .semibold))
                     .foregroundStyle(Theme.text)
                     .frame(width: 44, height: 44)
-                    .glassEffect(.regular.interactive(), in: .circle)
+                    .contentShape(.rect) // без стеклянного фона (доводка 3)
             }
         }
         .padding(.horizontal, 12)
@@ -179,7 +179,7 @@ private struct TagControl: View {
             } else {
                 Button { withAnimation(.bouncy) { expanded = true } } label: {
                     // Прозрачная «начинка» сама тапы не ловит — нужна форма касания.
-                    Color.clear.frame(width: 44, height: 44).contentShape(.circle)
+                    Color.clear.frame(width: 32, height: 32).contentShape(.circle)
                 }
                 .buttonStyle(.plain)
                 .glassEffect(.regular.tint(card.tagColor?.color ?? .white.opacity(0.15)).interactive(), in: .circle)

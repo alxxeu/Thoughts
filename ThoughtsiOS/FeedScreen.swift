@@ -17,6 +17,9 @@ struct FeedScreen: View {
     @Environment(\.scenePhase) private var scenePhase
 
     @State private var bottomBarHeight: CGFloat = 110
+    /// Верх нижних баров в глобальных координатах: клавиатура сжимает GeometryReader,
+    /// а лента под ней — нет, так что отступ ленты снизу считается от поля ввода.
+    @State private var barTop: CGFloat = 0
 
     var body: some View {
         GeometryReader { geo in
@@ -25,12 +28,12 @@ struct FeedScreen: View {
         // даны прозрачные бары той же высоты (отступы), а у краёв — свои затухания с
         // размытием, чуть темнее фона.
         let insets = EdgeInsets(top: geo.safeAreaInsets.top + 56, leading: 0,
-                                bottom: geo.safeAreaInsets.bottom + bottomBarHeight, trailing: 0)
+                                bottom: 0, trailing: 0)
         ZStack {
         ScrollView(.horizontal) {
             LazyHStack(spacing: 0) {
                 ForEach(board.workspaces) { workspace in
-                    FeedList(board: board, slot: workspace.slot, revealed: revealed, insets: insets,
+                    FeedList(board: board, slot: workspace.slot, revealed: revealed, insets: insets, barTop: barTop,
                              onOpen: { editing = EditorTarget(card: $0, detent: .medium) },
                              onReveal: reveal,
                              onCollapse: { collapsed in if collapsed != spacesCollapsed { withAnimation(.snappy) { spacesCollapsed = collapsed } } })
@@ -47,13 +50,15 @@ struct FeedScreen: View {
         .ignoresSafeArea()
         EdgeFade(edge: .top, height: geo.safeAreaInsets.top + 64)
         // Снизу — выше баров: захватывает папки и часть поля ввода.
-        EdgeFade(edge: .bottom, height: geo.safeAreaInsets.bottom + bottomBarHeight * 0.75 + 30)
+        EdgeFade(edge: .bottom, height: geo.safeAreaInsets.bottom + bottomBarHeight * 0.8 + 30)
         }
         }
         // Бары — поверх, в безопасной зоне (клавиатура поднимает поле ввода сама).
         .overlay(alignment: .top) { HStack { Spacer(); moreButton }.padding(.top, 6) }
         .overlay(alignment: .bottom) {
-            bottomBar.onGeometryChange(for: CGFloat.self) { $0.size.height } action: { bottomBarHeight = $0 }
+            bottomBar.onGeometryChange(for: CGRect.self) { $0.frame(in: .global) } action: {
+                barTop = $0.minY; bottomBarHeight = $0.height
+            }
         }
         .background(Theme.background.ignoresSafeArea())
         // Клавиатура закрывается свайпом по ленте (scrollDismissesKeyboard).
@@ -141,6 +146,7 @@ struct FeedScreen: View {
 private struct ScrollState: Equatable {
     var offset: CGFloat
     var toBottom: CGFloat
+    var height: CGFloat
 }
 
 /// Мягкое затухание с размытием у края экрана, чуть темнее фона.
@@ -151,7 +157,8 @@ private struct EdgeFade: View {
     var body: some View {
         let toEdge: (UnitPoint, UnitPoint) = edge == .top ? (.bottom, .top) : (.top, .bottom)
         ZStack {
-            Rectangle().fill(.ultraThinMaterial)
+            // Снизу размытие сильнее (доводка 3).
+            Rectangle().fill(edge == .top ? .ultraThinMaterial : .thinMaterial)
                 .mask(LinearGradient(colors: [.clear, .black], startPoint: toEdge.0, endPoint: toEdge.1))
             LinearGradient(colors: [Theme.fade.opacity(0), Theme.fade.opacity(0.92)], startPoint: toEdge.0, endPoint: toEdge.1)
         }
@@ -174,8 +181,9 @@ private struct FeedList: View {
     @Bindable var board: BoardModel
     let slot: Int
     let revealed: Set<UUID>
-    /// Высота баров экрана (статус-бар + «…» сверху, поле ввода + Spaces снизу).
+    /// Высота верхних баров (статус-бар + «…»); снизу отступ — до верха поля ввода.
     let insets: EdgeInsets
+    let barTop: CGFloat
     var onOpen: (Card) -> Void
     var onReveal: (Card) -> Void
     var onCollapse: (Bool) -> Void
@@ -183,6 +191,9 @@ private struct FeedList: View {
     /// Порядок замораживается: лента не перестраивается под пальцем — новый
     /// порядок при открытии Space и при возврате из редактора.
     @State private var order: [UUID] = []
+    @State private var isDragging = false
+    @State private var atBottom = true
+    @State private var listBottom: CGFloat = 0
 
     private var cards: [Card] { board.cardsByWorkspace[slot] ?? [] }
 
@@ -252,21 +263,29 @@ private struct FeedList: View {
         }
         .listStyle(.plain)
         .safeAreaBar(edge: .top, spacing: 0) { Color.clear.frame(height: insets.top) }
-        .safeAreaBar(edge: .bottom, spacing: 0) { Color.clear.frame(height: insets.bottom) }
+        .safeAreaBar(edge: .bottom, spacing: 0) { Color.clear.frame(height: max(listBottom - barTop, 0)) }
+        .onGeometryChange(for: CGFloat.self) { $0.frame(in: .global).maxY } action: { listBottom = $0 }
         .scrollEdgeEffectHidden(true, for: .all) // затухания свои, темнее фона (EdgeFade)
         .scrollDismissesKeyboard(.interactively)
         .scrollContentBackground(.hidden)
         .defaultScrollAnchor(.bottom)
-        // Полоса Spaces: свайп пальцем сверху вниз — разворачивается, снизу вверх —
-        // сворачивается в точки (Р12, пересмотрено); у самого низа — всегда развёрнута.
+        // Полоса Spaces: палец вверх — сворачивается в точки, вниз — разворачивается
+        // (Р12). Только от пальца: сдвиги от смены высоты баров не в счёт.
+        .onScrollPhaseChange { _, phase in isDragging = phase == .interacting } // отскок у края — не палец
         .onScrollGeometryChange(for: ScrollState.self) { geo in
             ScrollState(offset: geo.contentOffset.y,
-                        toBottom: geo.contentSize.height - geo.contentOffset.y - geo.containerSize.height + geo.contentInsets.bottom)
+                        toBottom: geo.contentSize.height - geo.contentOffset.y - geo.containerSize.height + geo.contentInsets.bottom,
+                        height: geo.containerSize.height - geo.contentInsets.bottom)
         } action: { old, new in
-            if new.toBottom < 24 { onCollapse(false); return }
+            // Клавиатура или поле ввода сжали видимую часть — лента у низа поднимается вместе с ними.
+            if new.height != old.height, atBottom { scrollToBottom(proxy, animated: false); return }
+            if isDragging || old.toBottom >= 24 { atBottom = new.toBottom < 24 }
+            guard isDragging else { return }
             let delta = new.offset - old.offset
-            if delta < -4 { onCollapse(false) } else if delta > 4 { onCollapse(true) }
+            if delta > 4 { onCollapse(true) } else if delta < -4 { onCollapse(false) }
         }
+        // shortcut: держится только низ ленты; из середины карточки под клавиатурой
+        // не поднимаются — нужен сдвиг contentOffset, если попросят.
         .onAppear {
             order = Self.sorted(cards).map(\.id)
             // List не держит defaultScrollAnchor(.bottom) — прокручиваем к свежей сами.
