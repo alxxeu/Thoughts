@@ -17,6 +17,7 @@ struct FeedScreen: View {
     /// Порядок страниц на время дальнего перехода по полосе: нужный Space ставится
     /// рядом с текущим, лента прокручивается на одну страницу, потом порядок обратно.
     @State private var pageOrder: [Int]?
+    @State private var realign = 0
     @AppStorage("hideEmptySpaces") private var hideEmptySpaces = false
     @FocusState private var composerFocused: Bool
     @Environment(\.scenePhase) private var scenePhase
@@ -37,6 +38,7 @@ struct FeedScreen: View {
         let insets = EdgeInsets(top: geo.safeAreaInsets.top + 56, leading: 0,
                                 bottom: 0, trailing: 0)
         ZStack {
+        ScrollViewReader { pager in
         ScrollView(.horizontal) {
             LazyHStack(spacing: 0) {
                 ForEach(pages) { workspace in
@@ -57,6 +59,10 @@ struct FeedScreen: View {
         .scrollIndicators(.hidden)
         .scrollClipDisabled()
         .ignoresSafeArea()
+        // Порядок страниц вернули после дальнего перехода — лента держит место по
+        // номеру страницы, а не по Space; ставим её обратно на текущий Space.
+        .onChange(of: realign) { pager.scrollTo(slot) }
+        }
         EdgeFade(edge: .top, height: geo.safeAreaInsets.top + 64)
         // Снизу — выше баров: захватывает папки и часть поля ввода.
         EdgeFade(edge: .bottom, height: geo.safeAreaInsets.bottom + bottomBarHeight * 0.8 + 30)
@@ -154,7 +160,7 @@ struct FeedScreen: View {
         withTransaction(still) { pageOrder = ids }
         Task { @MainActor in
             withAnimation(.snappy) { slot = target } completion: {
-                withTransaction(still) { pageOrder = nil }
+                withTransaction(still) { pageOrder = nil; realign += 1 }
             }
         }
     }
