@@ -40,7 +40,10 @@ struct FeedScreen: View {
         ZStack {
         ScrollViewReader { pager in
         ScrollView(.horizontal) {
-            LazyHStack(spacing: 0) {
+            // Не Lazy: страницы всех Spaces собраны заранее. Иначе при дальнем переходе
+            // нужная страница строилась (ленту, Markdown) прямо посреди прокрутки — фриз,
+            // тем заметнее, чем больше в Space карточек. Строки внутри List и так ленивые.
+            HStack(spacing: 0) {
                 ForEach(pages) { workspace in
                     FeedList(board: board, slot: workspace.slot, revealed: revealed, insets: insets, barTop: barTop,
                              onOpen: { editing = EditorTarget(card: $0, detent: .medium) },
