@@ -26,12 +26,12 @@ struct FeedScreen: View {
     /// лента перескакивала.
     @State private var visibleSlots: [Int]?
     @FocusState private var composerFocused: Bool
+    /// Фокус поля — тем же значением, но с анимацией: фокус приходит из UIKit без неё,
+    /// и полоса Spaces исчезала за кадр — лента дёргалась до подъёма клавиатуры.
+    @State private var typing = false
     @Environment(\.scenePhase) private var scenePhase
 
     @State private var bottomBarHeight: CGFloat = 110
-    /// Верх нижних баров в глобальных координатах: клавиатура сжимает GeometryReader,
-    /// а лента под ней — нет, так что отступ ленты снизу считается от поля ввода.
-    @State private var barTop: CGFloat = 0
     /// Растёт, когда начинают листать Spaces, — открытые кнопки удаления закрываются.
     @State private var swipeReset = 0
 
@@ -51,7 +51,7 @@ struct FeedScreen: View {
             // тем заметнее, чем больше в Space карточек. Строки внутри List и так ленивые.
             HStack(spacing: 0) {
                 ForEach(pages) { workspace in
-                    FeedList(board: board, slot: workspace.slot, revealed: revealed, insets: insets, barTop: barTop,
+                    FeedList(board: board, slot: workspace.slot, revealed: revealed, insets: insets,
                              onOpen: { editing = EditorTarget(card: $0, detent: .medium) },
                              onReveal: reveal,
                              onAskDelete: { pendingDelete = $0 },
@@ -69,7 +69,9 @@ struct FeedScreen: View {
         .scrollPosition(id: Binding(get: { Optional(slot) }, set: { if let s = $0 { slot = s } }))
         .scrollIndicators(.hidden)
         .scrollClipDisabled()
-        .ignoresSafeArea()
+        // Сверху лента уходит под статус-бар (свои отступ и затухание); снизу — системная
+        // вставка с полем ввода: клавиатуру и рост панели iOS отрабатывает сама, в одной анимации.
+        .ignoresSafeArea(.container, edges: .top)
         // Порядок страниц вернули после дальнего перехода — лента держит место по
         // номеру страницы, а не по Space; ставим её обратно на текущий Space.
         .onChange(of: realign) { pager.scrollTo(slot) }
@@ -79,12 +81,11 @@ struct FeedScreen: View {
         EdgeFade(edge: .bottom, height: geo.safeAreaInsets.bottom + bottomBarHeight * 0.8 + 30)
         }
         }
-        // Бары — поверх, в безопасной зоне (клавиатура поднимает поле ввода сама).
         .overlay(alignment: .top) { HStack { Spacer(); moreButton }.padding(.top, 6) }
-        .overlay(alignment: .bottom) {
-            bottomBar.onGeometryChange(for: CGRect.self) { $0.frame(in: .global) } action: {
-                barTop = $0.minY; bottomBarHeight = $0.height
-            }
+        // Поле ввода и Spaces — системная вставка снизу: лента прокручивается под ней,
+        // клавиатура поднимает её вместе с лентой без ручных замеров.
+        .safeAreaInset(edge: .bottom, spacing: 0) {
+            bottomBar.onGeometryChange(for: CGFloat.self) { $0.size.height } action: { bottomBarHeight = $0 }
         }
         .background(Theme.background.ignoresSafeArea())
         // Клавиатура закрывается свайпом по ленте (scrollDismissesKeyboard).
@@ -123,10 +124,10 @@ struct FeedScreen: View {
     private var bottomBar: some View {
         VStack(spacing: 8) {
             // К старым карточкам поле чуть сжимается: на 30 pt с боков и на 6 pt сверху.
-            let compact = spacesCollapsed && !composerFocused
+            let compact = spacesCollapsed && !typing
             Composer(text: $draft, focused: $composerFocused, compact: compact, onSend: send, onExpand: expand)
                 .padding(.horizontal, compact ? 46 : 16)
-            if !composerFocused {
+            if !typing {
                 // Полоса Spaces — во всю ширину, края уходят за экран с мягким затуханием.
                 SpacesBar(workspaces: visibleWorkspaces, slot: $slot, collapsed: spacesCollapsed,
                           onExpand: { withAnimation(.snappy) { spacesCollapsed = false } },
@@ -136,8 +137,8 @@ struct FeedScreen: View {
             }
         }
         .padding(.bottom, 4)
-        .animation(.snappy, value: composerFocused)
         .animation(.snappy, value: spacesCollapsed)
+        .onChange(of: composerFocused) { _, focused in withAnimation(.snappy) { typing = focused } }
     }
 
     private var moreButton: some View {
@@ -268,7 +269,6 @@ private struct FeedList: View {
     let revealed: Set<UUID>
     /// Высота верхних баров (статус-бар + «…»); снизу отступ — до верха поля ввода.
     let insets: EdgeInsets
-    let barTop: CGFloat
     var onOpen: (Card) -> Void
     var onReveal: (Card) -> Void
     var onAskDelete: (Card) -> Void
@@ -280,12 +280,10 @@ private struct FeedList: View {
     @State private var order: [UUID] = []
     @State private var isDragging = false
     @State private var listReset = 0
-    @State private var listBottom: CGFloat = 0
     /// Лента «как в чате»: стоит на свежих внизу. Начальное положение, полупустой
     /// Space у поля и подъём вместе с клавиатурой — всё делает defaultScrollAnchor(.bottom).
     @State private var position = ScrollPosition(edge: .bottom)
 
-    private var bottomInset: CGFloat { max(listBottom - barTop + 5, 0) } // +5: зазор до поля = зазору между карточками
 
     private var cards: [Card] { board.cardsByWorkspace[slot] ?? [] }
 
@@ -350,13 +348,12 @@ private struct FeedList: View {
                         .padding(.horizontal, 16)
                 }
             }
-            .padding(.vertical, 5)
+            .padding(.top, 5)
+            .padding(.bottom, 10) // зазор до поля = зазору между карточками
         }
         .scrollPosition($position)
         .defaultScrollAnchor(.bottom)
         .safeAreaBar(edge: .top, spacing: 0) { Color.clear.frame(height: insets.top) }
-        .safeAreaBar(edge: .bottom, spacing: 0) { Color.clear.frame(height: bottomInset) }
-        .onGeometryChange(for: CGFloat.self) { $0.frame(in: .global).maxY } action: { listBottom = $0 }
         .scrollEdgeEffectHidden(true, for: .all) // затухания свои, темнее фона (EdgeFade)
         .scrollDismissesKeyboard(.interactively)
         // Полоса Spaces: палец вверх (к свежим) — разворачивается, вниз (к старым) —
