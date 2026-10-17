@@ -675,11 +675,13 @@ private struct CardSwipe: ViewModifier {
                     .scaleEffect(min(1, w / side))
                     .modifier(IconShift(progress: shift, width: w))
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
-                    .background(tint, in: .capsule)
+                    // Сплошной цвет + скругление слоя, а не Capsule: форма-путь при ширине,
+                    // меняющейся каждый кадр, перерисовывалась в новую поверхность (лаги).
+                    .background(tint)
             }
             .buttonStyle(.plain)
             .frame(width: w, height: min(side, w))
-            .clipShape(.capsule)
+            .clipShape(.rect(cornerRadius: min(side, w) / 2))
             if showsTitles {
                 Text(title)
                     .font(.system(size: 12, weight: .medium))
