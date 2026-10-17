@@ -40,8 +40,14 @@ struct SpaceSettingsView: View {
                 }
                 Section("Names") {
                     ForEach($board.workspaces) { $ws in
-                        TextField(Workspace.defaultName(forSlot: ws.slot), text: $ws.name)
-                            .onChange(of: ws.name) { if ws.name.count > Workspace.maxNameLength { ws.name = String(ws.name.prefix(Workspace.maxNameLength)) } }
+                        HStack {
+                            TextField(Workspace.defaultName(forSlot: ws.slot), text: $ws.name)
+                                .onChange(of: ws.name) { if ws.name.count > Workspace.maxNameLength { ws.name = String(ws.name.prefix(Workspace.maxNameLength)) } }
+                            let count = board.cardsByWorkspace[ws.slot]?.count ?? 0
+                            Text("^[\(count) Card](inflect: true)")
+                                .foregroundStyle(.secondary)
+                                .monospacedDigit()
+                        }
                     }
                 }
             }

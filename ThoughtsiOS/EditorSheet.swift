@@ -140,8 +140,8 @@ struct EditorSheet: View {
         .animation(.bouncy, value: editor.hasSelection)
     }
 
-    /// 4 значка по 44 + ✕ 44 + поля по краям капсулы.
-    private static let starterWidth: CGFloat = 4 * 44 + 44 + 12 + 7
+    /// 6 значков по 44 + ✕ 44 + поля по краям капсулы.
+    private static let starterWidth: CGFloat = 6 * 44 + 44 + 12 + 7
 
     /// Без выделения — только то, с чего начинают строку.
     @ViewBuilder
@@ -150,6 +150,8 @@ struct EditorSheet: View {
         tool("list.bullet", block: "- ") { editor.block("- ") }
         tool("list.number", block: "1. ") { editor.block("1. ") }
         tool("checklist", block: "- [ ] ") { editor.block("- [ ] ") }
+        tool("text.quote", block: "> ") { editor.block("> ") }
+        tool("curlybraces", block: "```") { editor.codeBlock() }
     }
 
     /// С выделением — всё: оформление строки и блока.
@@ -166,8 +168,6 @@ struct EditorSheet: View {
         Divider().frame(height: 24).padding(.horizontal, 6)
         // Блок
         starterTools
-        tool("text.quote", block: "> ") { editor.block("> ") }
-        tool("curlybraces", block: "```") { editor.codeBlock() }
     }
 
     /// Кнопка панели: один набор значков, один размер и вес; активный стиль — акцентом.
