@@ -19,6 +19,11 @@ struct StarFieldCanvas: View {
 
     private static let maxStarCount = 300
 
+    /// Остановить анимацию (звёзды замирают): карточка не видна — лента iPhone
+    /// держит собранными страницы всех Spaces, и невидимые звёзды иначе
+    /// перерисовывались бы постоянно, занимая главный поток.
+    var isPaused = false
+
     /// Общий на все карточки/процесс массив — детерминированная функция от
     /// индекса, так что карточкам с одинаковым числом звёзд не нужно иметь
     /// каждой свою копию.
@@ -50,7 +55,7 @@ struct StarFieldCanvas: View {
     var body: some View {
         // 24 кадра/сек вместо частоты экрана (до 120 Гц) — движение
         // медленное, разницы на глаз нет, а работы в 3-5 раз меньше.
-        TimelineView(.animation(minimumInterval: 1.0 / 24.0)) { timeline in
+        TimelineView(.animation(minimumInterval: 1.0 / 24.0, paused: isPaused)) { timeline in
             Canvas { context, size in
                 let now = timeline.date.timeIntervalSinceReferenceDate
 

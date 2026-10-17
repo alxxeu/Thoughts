@@ -36,8 +36,12 @@ struct CardRow: View {
     /// Тап по квадратику задачи — правка `[ ]` ↔ `[x]` в тексте карточки.
     var onToggleTask: (MarkdownFormatting.Edit) -> Void
     var onOpen: () -> Void
+    /// Карточка на странице не текущего Space — звёзды Spoiler/Lock стоят.
+    var isOffPage = false
 
     @State private var probe = MarkdownLabelProbe()
+    /// В видимой части ленты — только тогда звёзды движутся.
+    @State private var isOnScreen = true
     @Environment(\.openURL) private var openURL
 
     /// 15 pt и межстрочный 4 — как в LiveMarkdownStyler для ленты.
@@ -70,7 +74,7 @@ struct CardRow: View {
                 Color.clear.glassEffect(.clear.tint(.black.opacity(0.2)), in: .rect(cornerRadius: Theme.cardRadius))
                 if isHidden {
                     RoundedRectangle(cornerRadius: Theme.cardRadius).fill(.black.opacity(0.2))
-                    StarFieldCanvas()
+                    StarFieldCanvas(isPaused: isOffPage || !isOnScreen)
                         .mask { Self.edgeFade } // звёзды гаснут у верхнего и нижнего края
                         .clipShape(RoundedRectangle(cornerRadius: Theme.cardRadius))
                 }
@@ -82,6 +86,7 @@ struct CardRow: View {
             }
         }
         .contentShape(.rect(cornerRadius: Theme.cardRadius))
+        .onScrollVisibilityChange(threshold: 0.01) { isOnScreen = $0 }
         .simultaneousGesture(TapGesture().onEnded { if isHidden { onReveal() } }, isEnabled: isHidden)
     }
 

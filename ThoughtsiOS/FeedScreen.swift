@@ -51,7 +51,7 @@ struct FeedScreen: View {
             // тем заметнее, чем больше в Space карточек. Строки внутри List и так ленивые.
             HStack(spacing: 0) {
                 ForEach(pages) { workspace in
-                    FeedList(board: board, slot: workspace.slot, revealed: revealed, insets: insets,
+                    FeedList(board: board, slot: workspace.slot, isCurrent: workspace.slot == slot, revealed: revealed, insets: insets,
                              onOpen: { editing = EditorTarget(card: $0, detent: .medium) },
                              onReveal: reveal,
                              onAskDelete: { pendingDelete = $0 },
@@ -266,6 +266,7 @@ struct EditorTarget: Identifiable {
 private struct FeedList: View {
     @Bindable var board: BoardModel
     let slot: Int
+    let isCurrent: Bool
     let revealed: Set<UUID>
     /// Высота верхних баров (статус-бар + «…»); снизу отступ — до верха поля ввода.
     let insets: EdgeInsets
@@ -336,7 +337,8 @@ private struct FeedList: View {
                     CardRow(card: card, isRevealed: revealed.contains(card.id),
                             onReveal: { onReveal(card) },
                             onToggleTask: { toggle(card, $0) },
-                            onOpen: { if !isHidden { onOpen(card) } })
+                            onOpen: { if !isHidden { onOpen(card) } },
+                            isOffPage: !isCurrent)
                         .onTapGesture { if !isHidden { onOpen(card) } }
                         .modifier(CardMenu(card: card, isHidden: isHidden, onDelete: { onAskDelete(card) }))
                         // Нераскрытую карточку нельзя ни удалить, ни сменить ей защиту свайпом.
