@@ -563,6 +563,7 @@ private struct CardSwipe: ViewModifier {
     @State private var offset: CGFloat = 0
     @State private var openOffset: CGFloat = 0
     @State private var width: CGFloat = 0
+    @State private var height: CGFloat = 0
     /// Значок у края капсулы — отдельным состоянием с явной анимацией: неявная
     /// тонула в непрерывных обновлениях свайпа.
     @State private var iconAtEdge = false
@@ -581,7 +582,7 @@ private struct CardSwipe: ViewModifier {
         if isEnabled {
             content
                 .offset(x: offset)
-                .onGeometryChange(for: CGFloat.self) { $0.size.width } action: { width = $0 }
+                .onGeometryChange(for: CGSize.self) { $0.size } action: { width = $0.width; height = $0.height }
                 .background(alignment: .trailing) { if offset < 0 { deleteButton } }
                 .background(alignment: .leading) { if offset > 0 { privacyButtons } }
                 .sensoryFeedback(.impact(weight: .medium), trigger: armed) { _, new in new }
@@ -611,21 +612,14 @@ private struct CardSwipe: ViewModifier {
 
     // MARK: Кнопки
 
-    /// Круг 52 pt по центру высоты; дальше тянется за карточкой в капсулу.
+    /// Подпись под кнопкой (как в Telegram) — если карточка достаточно высокая;
+    /// на однострочной она залезла бы на соседнюю карточку.
+    private var showsTitles: Bool { height >= 76 }
+
     private var deleteButton: some View {
-        let w = max(-offset - gap * 2, 0)
-        return Button { close(); onAskDelete() } label: {
-            Image(systemName: "trash")
-                .font(.system(size: 17, weight: .semibold))
-                .foregroundStyle(.white)
-                .scaleEffect(min(1, w / button))
-                .modifier(IconShift(progress: iconAtEdge ? -1 : 0, width: w))
-                .frame(maxWidth: .infinity, maxHeight: .infinity)
-                .background(.red, in: .capsule)
+        action("trash", title: "Delete", tint: .red, width: max(-offset - gap * 2, 0), shift: iconAtEdge ? -1 : 0) {
+            close(); onAskDelete()
         }
-        .buttonStyle(.plain)
-        .frame(width: w, height: min(button, w))
-        .clipShape(.capsule)
         .padding(.trailing, gap)
     }
 
@@ -635,29 +629,46 @@ private struct CardSwipe: ViewModifier {
         let spoiler = iconAtEdge ? 0 : min(button, max(0, (w - gap) / 2))
         let lock = max(0, w - spoiler - (spoiler > 0 ? gap : 0))
         return HStack(spacing: spoiler > 0 ? gap : 0) {
-            circle(privacy == .lock ? "lock.open.fill" : "lock.fill", tint: Theme.accent, width: lock, shift: true) {
+            action(privacy == .lock ? "lock.open.fill" : "lock.fill", title: privacy == .lock ? "Unlock" : "Lock",
+                   tint: Theme.accent, width: lock, shift: iconAtEdge ? 1 : 0) {
                 close(); onPrivacy(privacy == .lock ? .none : .lock)
             }
-            circle(privacy == .spoiler ? "eye.fill" : "sparkles", tint: Color(white: 0.32), width: spoiler, shift: false) {
+            action(privacy == .spoiler ? "eye.fill" : "sparkles", title: privacy == .spoiler ? "Unblur" : "Spoiler",
+                   tint: Color(white: 0.32), width: spoiler, shift: 0) {
                 close(); onPrivacy(privacy == .spoiler ? .none : .spoiler)
             }
         }
         .padding(.leading, gap)
     }
 
-    private func circle(_ symbol: String, tint: Color, width w: CGFloat, shift: Bool, action: @escaping () -> Void) -> some View {
-        Button(action: action) {
-            Image(systemName: symbol)
-                .font(.system(size: 17, weight: .semibold))
-                .foregroundStyle(.white)
-                .scaleEffect(min(1, w / button))
-                .modifier(IconShift(progress: shift && iconAtEdge ? 1 : 0, width: w))
-                .frame(maxWidth: .infinity, maxHeight: .infinity)
-                .background(tint, in: .capsule)
+    /// Круг 52 pt (44 с подписью) по центру высоты; дальше тянется за карточкой в капсулу.
+    /// shift — куда уходит значок за порогом: −1 к левому краю капсулы, +1 к правому.
+    private func action(_ symbol: String, title: String, tint: Color, width w: CGFloat, shift: CGFloat,
+                        perform: @escaping () -> Void) -> some View {
+        let side = showsTitles ? 44 : button
+        return VStack(spacing: 5) {
+            Button(action: perform) {
+                Image(systemName: symbol)
+                    .font(.system(size: 17, weight: .semibold))
+                    .foregroundStyle(.white)
+                    .scaleEffect(min(1, w / side))
+                    .modifier(IconShift(progress: shift, width: w))
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+                    .background(tint, in: .capsule)
+            }
+            .buttonStyle(.plain)
+            .frame(width: w, height: min(side, w))
+            .clipShape(.capsule)
+            if showsTitles {
+                Text(title)
+                    .font(.system(size: 12, weight: .medium))
+                    .foregroundStyle(Theme.secondary)
+                    .lineLimit(1)
+                    .fixedSize()
+                    .frame(width: w)
+                    .opacity(min(1, w / side))
+            }
         }
-        .buttonStyle(.plain)
-        .frame(width: w, height: min(button, w))
-        .clipShape(.capsule)
     }
 
     // MARK: Жест
