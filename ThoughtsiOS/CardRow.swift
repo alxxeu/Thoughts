@@ -75,7 +75,7 @@ struct CardRow: View {
                 Color.clear.glassEffect(.clear.tint(.black.opacity(0.2)), in: .rect(cornerRadius: Theme.cardRadius))
                 if isHidden {
                     RoundedRectangle(cornerRadius: Theme.cardRadius).fill(.black.opacity(0.2))
-                    StarFieldCanvas(isPaused: isOffPage || !isOnScreen)
+                    StarEmitter(isPaused: isOffPage || !isOnScreen)
                         .mask { Self.edgeFade } // звёзды гаснут у верхнего и нижнего края
                         .clipShape(RoundedRectangle(cornerRadius: Theme.cardRadius))
                 }
