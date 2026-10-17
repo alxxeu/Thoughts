@@ -694,41 +694,69 @@ private struct CardSwipe: ViewModifier {
 
     // MARK: Жест
 
+    /// Как системный свайп (UIContextualAction): карточка идёт за пальцем, за краем —
+    /// с сопротивлением; открыть/закрыть решает и путь, и скорость (бросок открывает);
+    /// отпускание — пружиной, которая продолжает скорость пальца.
     /// side: −1 — правый край (удаление), +1 — левый (Spoiler / Lock).
     private func drag(_ side: CGFloat) -> some Gesture {
         DragGesture(minimumDistance: 8)
             .onChanged { value in
-                let next = openOffset + value.translation.width
-                offset = side < 0 ? min(0, next) : max(0, next)
+                let raw = side < 0 ? min(0, openOffset + value.translation.width) : max(0, openOffset + value.translation.width)
+                offset = rubberBand(raw)
             }
-            .onEnded { _ in
+            .onEnded { value in
+                let velocity = value.velocity.width
                 if armed {
-                    if offset < 0 { deleteOut() } else { fullPrivacy() }
+                    if offset < 0 { deleteOut(velocity: velocity) } else { fullPrivacy(velocity: velocity) }
                     return
                 }
                 let revealed = offset < 0 ? deleteRevealed : privacyRevealed
-                withAnimation(.snappy) {
-                    openOffset = abs(offset) > revealed / 2 ? (offset < 0 ? -revealed : revealed) : 0
-                    offset = openOffset
-                }
+                // Куда карточка доехала бы по инерции — как decelerationRate у UIScrollView.
+                let projected = abs(openOffset + value.predictedEndTranslation.width)
+                let open = projected > revealed / 2 && (openOffset + value.predictedEndTranslation.width) * side > 0
+                let target = open ? (side < 0 ? -revealed : revealed) : 0
+                settle(to: target, velocity: velocity)
             }
     }
 
-    private func close() { withAnimation(.snappy) { openOffset = 0; offset = 0 } }
+    /// За шириной карточки — сопротивление, как у края UIScrollView.
+    private func rubberBand(_ raw: CGFloat) -> CGFloat {
+        let limit = max(width * 0.85, 1)
+        let distance = abs(raw)
+        guard distance > limit else { return raw }
+        let over = distance - limit
+        let damped = limit + over * 0.55 / (1 + over / limit)
+        return raw < 0 ? -damped : damped
+    }
 
-    /// Карточка уезжает влево вместе с растянутой кнопкой, потом удаляется.
-    private func deleteOut() {
-        withAnimation(.easeIn(duration: 0.2)) { offset = -width - gap * 4 }
+    /// Пружина, стартующая со скоростью пальца (скорость — в долях пути, как у UIKit).
+    private func settle(to target: CGFloat, velocity: CGFloat) {
+        let distance = target - offset
+        let relative = abs(distance) > 1 ? velocity / distance : 0
+        withAnimation(.interpolatingSpring(mass: 1, stiffness: 280, damping: 30, initialVelocity: relative)) {
+            openOffset = target
+            offset = target
+        }
+    }
+
+    private func close() { settle(to: 0, velocity: 0) }
+
+    /// Карточка уезжает влево вместе с растянутой кнопкой — со скоростью пальца, потом удаляется.
+    private func deleteOut(velocity: CGFloat = 0) {
+        let target = -width - gap * 4
+        let speed = max(abs(velocity), 900)
+        let duration = min(0.25, max(0.12, Double(abs(target - offset) / speed)))
+        withAnimation(.easeOut(duration: duration)) { offset = target }
         Task { @MainActor in
-            try? await Task.sleep(for: .milliseconds(200))
+            try? await Task.sleep(for: .seconds(duration))
             onDelete()
         }
     }
 
     /// Полный свайп вправо: Lock (или снять защиту), карточка возвращается на место.
-    private func fullPrivacy() {
+    private func fullPrivacy(velocity: CGFloat = 0) {
         onPrivacy(privacy == .none ? .lock : .none)
-        withAnimation(.spring(duration: 0.35, bounce: 0.2)) { openOffset = 0; offset = 0 }
+        settle(to: 0, velocity: velocity)
     }
 }
 
