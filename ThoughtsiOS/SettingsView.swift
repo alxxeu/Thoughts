@@ -40,14 +40,20 @@ struct SpaceSettingsView: View {
                 }
                 Section("Names") {
                     ForEach($board.workspaces) { $ws in
+                        let count = board.cardsByWorkspace[ws.slot]?.count ?? 0
+                        // С «Hide empty Spaces» пустые Spaces скрыты в ленте — здесь они серые.
+                        let isHidden = hideEmptySpaces && count == 0
                         HStack {
                             TextField(Workspace.defaultName(forSlot: ws.slot), text: $ws.name)
                                 .onChange(of: ws.name) { if ws.name.count > Workspace.maxNameLength { ws.name = String(ws.name.prefix(Workspace.maxNameLength)) } }
-                            let count = board.cardsByWorkspace[ws.slot]?.count ?? 0
+                                .foregroundStyle(isHidden ? .secondary : .primary)
                             Text("^[\(count) Card](inflect: true)")
-                                .foregroundStyle(.secondary)
+                                .foregroundStyle(isHidden ? .tertiary : .secondary)
                                 .monospacedDigit()
                         }
+                        // Разделитель — от края строки: иначе iOS начинает его от первого Text (счётчика).
+                        .alignmentGuide(.listRowSeparatorLeading) { _ in 0 }
+                        .animation(.snappy, value: isHidden)
                     }
                 }
             }
