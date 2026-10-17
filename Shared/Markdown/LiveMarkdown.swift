@@ -91,8 +91,14 @@ nonisolated enum LiveMarkdown {
     static func backspaceRange(at location: Int, text: String, paragraphs: [MarkdownStyler.Paragraph]? = nil) -> NSRange? {
         guard location > 0 else { return nil }
         let paragraphs = paragraphs ?? MarkdownStyler.parse(text)
-        for paragraph in paragraphs {
+        for (index, paragraph) in paragraphs.enumerated() {
             guard let marker = paragraph.blockMarker, NSMaxRange(marker) == location else { continue }
+            // Пустая строка цитаты под другой строкой цитаты — убрать её целиком, курсор —
+            // в конец строки выше (как в Заметках). Одиночная цитата — просто снять `> `.
+            if paragraph.block == .quote, NSMaxRange(paragraph.range) == location,
+               index > 0, paragraphs[index - 1].block == .quote {
+                return NSRange(location: paragraph.range.location - 1, length: marker.length + 1)
+            }
             switch paragraph.block {
             case .heading, .quote, .task, .bullet: return marker
             default: break

@@ -97,4 +97,16 @@ struct LiveMarkdownTests {
         // Пустая первая строка нового блока — не выход.
         #expect(LiveMarkdown.newline(at: 4, text: "```\n\n```") == nil)
     }
+
+    /// Backspace на пустой строке цитаты под цитатой — в конец строки выше; одиночную — снять.
+    @Test func backspaceOnEmptyQuoteLineJoinsPreviousQuoteLine() {
+        let text = "> one\n> "
+        let range = LiveMarkdown.backspaceRange(at: 8, text: text)
+        #expect(range == NSRange(location: 5, length: 3))
+        #expect((text as NSString).replacingCharacters(in: range!, with: "") == "> one")
+        // Одна пустая цитата — снимается только маркер.
+        #expect(LiveMarkdown.backspaceRange(at: 2, text: "> ") == NSRange(location: 0, length: 2))
+        // Непустая строка цитаты в начале — снять маркер, как раньше.
+        #expect(LiveMarkdown.backspaceRange(at: 8, text: "> one\n> two") == NSRange(location: 6, length: 2))
+    }
 }
