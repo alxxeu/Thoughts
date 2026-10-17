@@ -127,6 +127,9 @@ struct FeedScreen: View {
             let compact = spacesCollapsed && !typing
             Composer(text: $draft, focused: $composerFocused, compact: compact, onSend: send, onExpand: expand)
                 .padding(.horizontal, compact ? 46 : 16)
+                // Сжатое поле на 6 pt ниже — добираем сверху: высота панели не меняется,
+                // и лента под ней не сдвигается (иначе сдвиг читался как свайп — петля).
+                .padding(.top, compact ? 6 : 0)
             if !typing {
                 // Полоса Spaces — во всю ширину, края уходят за экран с мягким затуханием.
                 SpacesBar(workspaces: visibleWorkspaces, slot: $slot, collapsed: spacesCollapsed,
@@ -255,6 +258,11 @@ private struct EdgeFade: View {
     }
 }
 
+private struct ScrollSpot: Equatable {
+    var offset: CGFloat
+    var inBounds: Bool
+}
+
 struct EditorTarget: Identifiable {
     let card: Card
     let detent: PresentationDetent
@@ -280,6 +288,8 @@ private struct FeedList: View {
     /// порядок при открытии Space и при возврате из редактора.
     @State private var order: [UUID] = []
     @State private var isDragging = false
+    /// Путь пальца в одну сторону — полоса Spaces меняется после порога, а не на каждый пиксель.
+    @State private var travel: CGFloat = 0
     @State private var listReset = 0
     /// Лента «как в чате»: стоит на свежих внизу. Начальное положение, полупустой
     /// Space у поля и подъём вместе с клавиатурой — всё делает defaultScrollAnchor(.bottom).
@@ -362,12 +372,22 @@ private struct FeedList: View {
         // сворачивается в точки (Р12). Только от пальца: сдвиги от смены высоты баров не в счёт.
         .onScrollPhaseChange { _, phase in
             isDragging = phase == .interacting // отскок у края — не палец
+            if phase == .interacting { travel = 0 }
             if phase == .interacting { listReset += 1 } // прокрутка ленты закрывает кнопки удаления
         }
         .transformEnvironment(\.swipeReset) { $0 += listReset }
-        .onScrollGeometryChange(for: CGFloat.self) { $0.contentOffset.y } action: { old, new in
-            guard isDragging else { return }
-            if new - old > 4 { onCollapse(false) } else if new - old < -4 { onCollapse(true) }
+        .onScrollGeometryChange(for: ScrollSpot.self) { geo in
+            let top = -geo.contentInsets.top
+            let bottom = max(top, geo.contentSize.height - geo.containerSize.height + geo.contentInsets.bottom)
+            return ScrollSpot(offset: geo.contentOffset.y, inBounds: geo.contentOffset.y >= top && geo.contentOffset.y <= bottom)
+        } action: { old, new in
+            // Оверсвайп (пружина у края) и сдвиги не от пальца — не в счёт.
+            guard isDragging, old.inBounds, new.inBounds else { return }
+            let delta = new.offset - old.offset
+            if delta == 0 { return }
+            if (delta > 0) != (travel > 0) { travel = 0 } // сменилось направление — считаем заново
+            travel += delta
+            if travel > 24 { onCollapse(false) } else if travel < -24 { onCollapse(true) }
         }
         .onAppear { order = Self.sorted(cards).map(\.id) }
         .onChange(of: board.editingCardID) { _, id in if id == nil { withAnimation { order = Self.sorted(cards).map(\.id) } } }
@@ -461,7 +481,8 @@ private struct SpacesBar: View {
                     .frame(width: ws.slot == slot ? 16 : 6, height: 6)
             }
         }
-        .frame(maxWidth: .infinity, minHeight: 28)
+        .frame(maxWidth: .infinity)
+        .frame(height: 40) // как у имён: свёрнутая полоса не меняет высоту панели
         .contentShape(.rect)
         .onTapGesture(perform: onExpand) // тап по точкам — раскрыть
         .transition(.opacity)
