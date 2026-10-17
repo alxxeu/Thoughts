@@ -51,7 +51,7 @@ struct CardRow: View {
     @State private var contentHeight: CGFloat = 0
 
     private var isHidden: Bool { card.privacyMode != .none && !isRevealed }
-    private var maxHeight: CGFloat { Self.lineHeight * Self.maxLines }
+    private var maxHeight: CGFloat { Self.lineHeight * Self.maxLines + MarkdownLabel.margin }
 
     var body: some View {
         ZStack {
@@ -63,10 +63,11 @@ struct CardRow: View {
                     .foregroundStyle(Theme.text)
             }
         }
-        .padding(.horizontal, 20)
-        .padding(.top, 16)
+        // Отступы карточки минус поля метки (MarkdownLabel.margin) — текст там же, где был.
+        .padding(.horizontal, 20 - MarkdownLabel.margin)
+        .padding(.top, 16 - MarkdownLabel.margin)
         // Длинная карточка: текст гаснет маской прямо у нижнего края, без отступа под ним.
-        .padding(.bottom, contentHeight > maxHeight ? 0 : 16)
+        .padding(.bottom, contentHeight > maxHeight ? 0 : 16 - MarkdownLabel.margin)
         .background {
             ZStack {
                 // Стекло с тёмным оттенком: чистое .clear на тёмном фоне выходит слишком светлым.

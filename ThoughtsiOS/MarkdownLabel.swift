@@ -8,6 +8,8 @@ struct MarkdownLabel: UIViewRepresentable {
     let text: String
     let probe: MarkdownLabelProbe
     var size: CGFloat = 15
+    /// Поля метки под подложки блоков; карточка отнимает их из своих отступов.
+    static let margin: CGFloat = 6
 
     func makeUIView(context: Context) -> UITextView {
         let storage = NSTextStorage()
@@ -24,7 +26,8 @@ struct MarkdownLabel: UIViewRepresentable {
         view.isScrollEnabled = false
         view.isUserInteractionEnabled = false // касания — в SwiftUI (CardRow)
         view.backgroundColor = .clear
-        view.textContainerInset = .zero
+        // Подложки цитаты и кода шире текста на 6 pt (как в редакторе) — без полей их срезало.
+        view.textContainerInset = UIEdgeInsets(top: Self.margin, left: Self.margin, bottom: Self.margin, right: Self.margin)
         return view
     }
 
@@ -52,8 +55,9 @@ final class MarkdownLabelProbe {
 
     func hit(at point: CGPoint) -> Hit? {
         guard let layout = textView?.layoutManager as? LiveLayoutManager else { return nil }
-        if let edit = layout.taskToggle(at: point, origin: .zero) { return .task(edit) }
-        if let url = layout.link(at: point, origin: .zero) { return .link(url) }
+        let origin = CGPoint(x: MarkdownLabel.margin, y: MarkdownLabel.margin)
+        if let edit = layout.taskToggle(at: point, origin: origin) { return .task(edit) }
+        if let url = layout.link(at: point, origin: origin) { return .link(url) }
         return nil
     }
 }
