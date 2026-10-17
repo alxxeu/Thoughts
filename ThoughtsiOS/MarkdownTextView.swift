@@ -32,7 +32,7 @@ struct MarkdownTextView: UIViewRepresentable {
         container.lineFragmentPadding = 0
         layout.addTextContainer(container)
 
-        let view = UITextView(frame: .zero, textContainer: container)
+        let view = MarkdownUITextView(frame: .zero, textContainer: container)
         view.backgroundColor = .clear
         view.textContainerInset = UIEdgeInsets(top: 8, left: 16, bottom: 120, right: 16)
         view.isScrollEnabled = false
@@ -68,6 +68,8 @@ struct MarkdownTextView: UIViewRepresentable {
     final class Coordinator: NSObject, UITextViewDelegate, UIGestureRecognizerDelegate {
         var parent: MarkdownTextView
         private var atoms: [LiveMarkdown.Atom] = []
+        /// Разбор текущего текста — один на правку; его берут панель, Backspace и Return.
+        private var paragraphs: [MarkdownStyler.Paragraph] = []
         private var isSnapping = false
         /// Правку вносит сам редактор (Backspace, Return, панель) — не перехватывать её снова.
         var isApplying = false
@@ -79,7 +81,7 @@ struct MarkdownTextView: UIViewRepresentable {
 
         func restyle(_ view: UITextView) {
             guard view.markedTextRange == nil else { return } // идёт набор с подсказками — не мешать
-            let paragraphs = LiveMarkdownStyler.style(view.textStorage)
+            paragraphs = LiveMarkdownStyler.style(view.textStorage)
             atoms = LiveMarkdown.atoms(paragraphs, length: view.textStorage.length)
             if let pending = parent.controller.pendingPair, NSMaxRange(pending) <= view.textStorage.length {
                 LiveMarkdownStyler.hide(pending, in: view.textStorage)
@@ -88,7 +90,7 @@ struct MarkdownTextView: UIViewRepresentable {
             }
             // Набор продолжается обычным шрифтом; оформление дорисует перекраска.
             view.typingAttributes = LiveMarkdownStyler.baseAttributes
-            parent.controller.update(selection: view.selectedRange, text: view.text)
+            parent.controller.update(selection: view.selectedRange, text: view.text, paragraphs: paragraphs)
         }
 
         // MARK: Правки
@@ -104,11 +106,11 @@ struct MarkdownTextView: UIViewRepresentable {
         func textView(_ view: UITextView, shouldChangeTextIn range: NSRange, replacementText text: String) -> Bool {
             guard !isApplying, view.markedTextRange == nil, view.selectedRange.length == 0 else { return true }
             if text.isEmpty, range.length == 1,
-               let delete = LiveMarkdown.backspaceRange(at: NSMaxRange(range), text: view.text), delete != range {
+               let delete = LiveMarkdown.backspaceRange(at: NSMaxRange(range), text: view.text, paragraphs: paragraphs), delete != range {
                 parent.controller.apply(.init(range: delete, replacement: "", selection: NSRange(location: delete.location, length: 0)))
                 return false
             }
-            if text == "\n", let edit = LiveMarkdown.newline(at: range.location, text: view.text) {
+            if text == "\n", let edit = LiveMarkdown.newline(at: range.location, text: view.text, paragraphs: paragraphs) {
                 parent.controller.apply(edit)
                 return false
             }
@@ -121,7 +123,7 @@ struct MarkdownTextView: UIViewRepresentable {
         func textViewDidChangeSelection(_ view: UITextView) {
             guard !isSnapping, !isEditing else { return }
             snap(view)
-            parent.controller.update(selection: view.selectedRange, text: view.text)
+            parent.controller.update(selection: view.selectedRange, text: view.text, paragraphs: paragraphs)
         }
 
         /// Курсор не встаёт внутрь скрытых символов.
@@ -183,6 +185,25 @@ struct MarkdownTextView: UIViewRepresentable {
     }
 }
 
+/// Курсор высотой со шрифт строки: UIKit тянул его на всю строку вместе с полями
+/// абзаца — у первой и последней строки цитаты он выходил огромным.
+final class MarkdownUITextView: UITextView {
+    override func caretRect(for position: UITextPosition) -> CGRect {
+        let rect = super.caretRect(for: position)
+        let length = textStorage.length
+        let index = offset(from: beginningOfDocument, to: position)
+        let ns = textStorage.string as NSString
+        // В конце текста после перевода строки — пустая «лишняя» строка, у неё свой расчёт.
+        guard length > 0, !(index >= length && ns.character(at: length - 1) == 0x0A) else { return rect }
+        let char = min(index, length - 1)
+        let font = textStorage.attribute(.font, at: char, effectiveRange: nil) as? UIFont ?? LiveMarkdownStyler.font
+        let glyph = layoutManager.glyphIndexForCharacter(at: char)
+        let line = layoutManager.lineFragmentRect(forGlyphAt: glyph, effectiveRange: nil)
+        let baseline = textContainerInset.top + line.minY + layoutManager.location(forGlyphAt: glyph).y
+        return CGRect(x: rect.minX, y: baseline - font.ascender, width: rect.width, height: font.ascender - font.descender)
+    }
+}
+
 /// Команды панели Markdown и состояние для неё: выделение, активные стили.
 @Observable
 final class MarkdownEditorController {
@@ -199,7 +220,7 @@ final class MarkdownEditorController {
 
     // MARK: Состояние
 
-    func update(selection: NSRange, text: String) {
+    func update(selection: NSRange, text: String, paragraphs: [MarkdownStyler.Paragraph]) {
         if self.selection != selection { self.selection = selection }
         if let pending = pendingPair, !NSLocationInRange(selection.location, NSRange(location: pending.location, length: pending.length + 1)) {
             // Ушли из пустой пары, так ничего и не напечатав, — убрать её.
@@ -210,7 +231,6 @@ final class MarkdownEditorController {
                 }
             }
         }
-        let paragraphs = MarkdownStyler.parse(text)
         let location = selection.location
         guard let line = paragraphs.first(where: { $0.range.location <= location && location <= NSMaxRange($0.range) }) else {
             activeInlines = []; activeBlock = nil; return

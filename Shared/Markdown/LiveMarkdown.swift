@@ -87,9 +87,10 @@ nonisolated enum LiveMarkdown {
     /// - перед курсором скрытые символы — стереть видимый символ перед ними;
     /// - если это последняя буква фрагмента (`**a**`) — стереть фрагмент целиком,
     ///   иначе останутся голые `****`.
-    static func backspaceRange(at location: Int, text: String) -> NSRange? {
+    /// `paragraphs` — готовый разбор `text`, если он уже есть (редактор не разбирает заново).
+    static func backspaceRange(at location: Int, text: String, paragraphs: [MarkdownStyler.Paragraph]? = nil) -> NSRange? {
         guard location > 0 else { return nil }
-        let paragraphs = MarkdownStyler.parse(text)
+        let paragraphs = paragraphs ?? MarkdownStyler.parse(text)
         for paragraph in paragraphs {
             guard let marker = paragraph.blockMarker, NSMaxRange(marker) == location else { continue }
             switch paragraph.block {
@@ -114,9 +115,8 @@ nonisolated enum LiveMarkdown {
     /// Return на пустой строке блока кода после строки кода (второй Return подряд) —
     /// выйти из блока: пустая строка убирается, курсор — на строку после ```
     /// (у незакрытого блока ``` дописывается). Как у списков и цитат.
-    private static func codeBlockExit(at location: Int, text: String) -> MarkdownFormatting.Edit? {
+    private static func codeBlockExit(at location: Int, text: String, paragraphs: [MarkdownStyler.Paragraph]) -> MarkdownFormatting.Edit? {
         let ns = text as NSString
-        let paragraphs = MarkdownStyler.parse(text)
         // Пустая последняя строка незакрытого блока разбор отдаёт абзацем, а не кодом.
         guard let index = paragraphs.firstIndex(where: { $0.range.length == 0 && $0.range.location == location }),
               index > 0, paragraphs[index - 1].block == .code,
@@ -139,9 +139,9 @@ nonisolated enum LiveMarkdown {
 
     /// Return в пункте списка: продолжить список (`- `, `- [ ] `, `> `, `2. `);
     /// в пустом пункте — снять маркер. nil — обычный перевод строки.
-    static func newline(at location: Int, text: String) -> MarkdownFormatting.Edit? {
+    static func newline(at location: Int, text: String, paragraphs: [MarkdownStyler.Paragraph]? = nil) -> MarkdownFormatting.Edit? {
         let ns = text as NSString
-        if let exit = codeBlockExit(at: location, text: text) { return exit }
+        if let exit = codeBlockExit(at: location, text: text, paragraphs: paragraphs ?? MarkdownStyler.parse(text)) { return exit }
         let line = MarkdownStyler.paragraph(in: ns, lineRange: ns.lineRange(for: NSRange(location: location, length: 0)))
         guard location == NSMaxRange(line.range) else { return nil }
         let content = ns.substring(with: line.range)
