@@ -13,17 +13,6 @@ struct MarkdownFormattingTests {
         return (result as String, result.substring(with: edit.selection))
     }
 
-    /// Тап по задаче в ленте iPhone: `[ ]` ↔ `[x]`, остальное не трогается.
-    @Test func togglingTask() {
-        let text = "Shopping\n- [ ] Oat milk\n- [x] Bread"
-        let lines = MarkdownStyler.parse(text)
-        let checked = MarkdownFormatting.togglingTask(in: text, paragraph: lines[1])
-        #expect(checked == "Shopping\n- [x] Oat milk\n- [x] Bread")
-        let unchecked = MarkdownFormatting.togglingTask(in: text, paragraph: lines[2])
-        #expect(unchecked == "Shopping\n- [ ] Oat milk\n- [ ] Bread")
-        #expect(MarkdownFormatting.togglingTask(in: text, paragraph: lines[0]) == nil)
-    }
-
     @Test func wrapAndUnwrap() {
         let wrapped = apply("**", "make it bold", "bold")
         #expect(wrapped.text == "make it **bold**")

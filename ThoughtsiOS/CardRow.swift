@@ -33,9 +33,15 @@ struct CardRow: View {
     let card: Card
     let isRevealed: Bool
     var onReveal: () -> Void
-    var onToggleTask: (MarkdownStyler.Paragraph) -> Void
+    /// Тап по квадратику задачи — правка `[ ]` ↔ `[x]` в тексте карточки.
+    var onToggleTask: (MarkdownFormatting.Edit) -> Void
+    var onOpen: () -> Void
 
-    private static let lineHeight: CGFloat = 20
+    @State private var probe = MarkdownLabelProbe()
+    @Environment(\.openURL) private var openURL
+
+    /// 15 pt и межстрочный 4 — как в LiveMarkdownStyler для ленты.
+    private static let lineHeight: CGFloat = 22
     private static let maxLines: CGFloat = 10
     private static let fade: CGFloat = 15 // как маска CardView на Mac
     @State private var contentHeight: CGFloat = 0
@@ -79,6 +85,15 @@ struct CardRow: View {
         .simultaneousGesture(TapGesture().onEnded { if isHidden { onReveal() } }, isEnabled: isHidden)
     }
 
+    /// Квадратик — отметить задачу, ссылка — открыть, остальное — открыть карточку.
+    private func tap(_ point: CGPoint) {
+        switch probe.hit(at: point) {
+        case .task(let edit): onToggleTask(edit)
+        case .link(let url): openURL(url)
+        case nil: onOpen()
+        }
+    }
+
     /// Маска мягкого края сверху и снизу — та же высота затухания, что у длинного текста.
     private static var edgeFade: some View {
         VStack(spacing: 0) {
@@ -90,7 +105,9 @@ struct CardRow: View {
 
     /// Превью: естественная высота, обрезка на 10 строках, затухание — только если не влезло.
     private var preview: some View {
-        MarkdownPreview(text: card.text, onToggleTask: isHidden ? nil : onToggleTask)
+        MarkdownLabel(text: card.text, probe: probe)
+            .contentShape(.rect) // UIKit-вид касаний не берёт — область касания даёт SwiftUI
+            .gesture(SpatialTapGesture().onEnded { tap($0.location) }, isEnabled: !isHidden)
             .fixedSize(horizontal: false, vertical: true)
             .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { contentHeight = $0 }
             .frame(maxHeight: maxHeight, alignment: .top)

@@ -337,14 +337,16 @@ private struct FeedList: View {
                     let isHidden = card.privacyMode != .none && !revealed.contains(card.id)
                     CardRow(card: card, isRevealed: revealed.contains(card.id),
                             onReveal: { onReveal(card) },
-                            onToggleTask: { toggle(card, $0) })
+                            onToggleTask: { toggle(card, $0) },
+                            onOpen: { if !isHidden { onOpen(card) } })
                         .onTapGesture { if !isHidden { onOpen(card) } }
                         .modifier(CardMenu(card: card, isHidden: isHidden, onDelete: { onAskDelete(card) }))
                         // Нераскрытую карточку нельзя ни удалить, ни сменить ей защиту свайпом.
                         .modifier(CardSwipe(isEnabled: !isHidden, privacy: card.privacyMode,
                                             onDelete: { withAnimation { board.deleteCard(id: card.id) } },
                                             onAskDelete: { onAskDelete(card) },
-                                            onPrivacy: { onPrivacy(card, $0) }))
+                                            onPrivacy: { onPrivacy(card, $0) },
+                                            onTap: { onOpen(card) }))
                         .padding(.horizontal, 16)
                 }
             }
@@ -373,9 +375,8 @@ private struct FeedList: View {
         .onChange(of: cards.count) { old, new in if new > old { withAnimation(.snappy) { position.scrollTo(edge: .bottom) } } }
     }
 
-    private func toggle(_ card: Card, _ paragraph: MarkdownStyler.Paragraph) {
-        guard let text = MarkdownFormatting.togglingTask(in: card.text, paragraph: paragraph) else { return }
-        card.text = text
+    private func toggle(_ card: Card, _ edit: MarkdownFormatting.Edit) {
+        card.text = (card.text as NSString).replacingCharacters(in: edit.range, with: edit.replacement)
         board.saveImmediately()
     }
 }
@@ -543,7 +544,7 @@ private struct CardMenu: ViewModifier {
 
 // MARK: - Свайпы по краям карточки
 
-/// Свайпы ловят только края карточки (56 pt); по остальной карточке горизонтальный
+/// Свайпы ловят только края карточки (справа 56 pt, слева 20 pt); по остальной карточке горизонтальный
 /// свайп листает Spaces. Повторяют системные: круги тянутся за карточкой в капсулу,
 /// за порогом полного свайпа — отклик, значок уходит к карточке, отпустил — действие.
 /// Короткий свайп оставляет кнопки открытыми.
@@ -556,6 +557,8 @@ private struct CardSwipe: ViewModifier {
     var onDelete: () -> Void
     var onAskDelete: () -> Void
     var onPrivacy: (CardPrivacyMode) -> Void
+    /// Тап по краю карточки: зоны свайпа лежат поверх и иначе глотали бы его.
+    var onTap: () -> Void
 
     /// < 0 — карточка уехала влево (удаление), > 0 — вправо (Spoiler / Lock).
     @State private var offset: CGFloat = 0
@@ -565,7 +568,9 @@ private struct CardSwipe: ViewModifier {
     /// тонула в непрерывных обновлениях свайпа.
     @State private var iconAtEdge = false
     @Environment(\.swipeReset) private var swipeReset
+    /// Правый край — 56 pt (удаление); левый — 20 pt: дальше уже квадратики задач.
     private let zone: CGFloat = 56
+    private let leadingZone: CGFloat = 20
     private let button: CGFloat = 52
     private let gap: CGFloat = 8
     private var deleteRevealed: CGFloat { button + gap * 2 }
@@ -592,9 +597,11 @@ private struct CardSwipe: ViewModifier {
                             .highPriorityGesture(drag(openOffset < 0 ? -1 : 1))
                     } else {
                         HStack {
-                            Color.clear.frame(width: zone).contentShape(.rect).highPriorityGesture(drag(1))
+                            Color.clear.frame(width: leadingZone).contentShape(.rect)
+                                .onTapGesture(perform: onTap).highPriorityGesture(drag(1))
                             Spacer()
-                            Color.clear.frame(width: zone).contentShape(.rect).highPriorityGesture(drag(-1))
+                            Color.clear.frame(width: zone).contentShape(.rect)
+                                .onTapGesture(perform: onTap).highPriorityGesture(drag(-1))
                         }
                     }
                 }

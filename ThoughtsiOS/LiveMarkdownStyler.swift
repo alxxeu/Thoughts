@@ -18,22 +18,25 @@ enum LiveMarkdownStyler {
     /// Адрес ссылки (URL) на её тексте — тап открывает (не .link: тот мешал бы правке).
     static let linkKey = NSAttributedString.Key("thoughts.markdownLink")
 
-    static let font = UIFont.systemFont(ofSize: 17)
+    /// Размер текста редактора; лента рисует тем же движком мельче (MarkdownLabel).
+    static let editorSize: CGFloat = 17
+    static let font = UIFont.systemFont(ofSize: editorSize)
     static let color = UIColor(Theme.text)
     static let accent = UIColor(Theme.accent)
     static let codeColor = UIColor(white: 1, alpha: 0.7)
-    /// Отступ под квадратик чек-листа.
-    static let taskIndent: CGFloat = 26
+    /// Отступ под квадратик чек-листа — от размера текста.
+    static func taskIndent(_ size: CGFloat) -> CGFloat { (size * 1.53).rounded() }
 
-    static var baseAttributes: [NSAttributedString.Key: Any] {
-        [.font: font, .foregroundColor: color, .paragraphStyle: blockStyle()]
+    static func baseAttributes(size: CGFloat = editorSize) -> [NSAttributedString.Key: Any] {
+        [.font: UIFont.systemFont(ofSize: size), .foregroundColor: color, .paragraphStyle: blockStyle()]
     }
 
     /// Перекрашивает весь текст; возвращает разбор (для курсора и панели).
     /// shortcut: каждый раз целиком — для заметок это доли миллисекунды; на очень
     /// длинных текстах перекрашивать только изменённые абзацы.
     @discardableResult
-    static func style(_ storage: NSTextStorage) -> [MarkdownStyler.Paragraph] {
+    static func style(_ storage: NSTextStorage, size: CGFloat = editorSize) -> [MarkdownStyler.Paragraph] {
+        let font = UIFont.systemFont(ofSize: size)
         let full = NSRange(location: 0, length: storage.length)
         let paragraphs = MarkdownStyler.parse(storage.string)
         guard full.length > 0 else { return paragraphs }
@@ -41,7 +44,7 @@ enum LiveMarkdownStyler {
         var fenceLines: [NSRange] = []
 
         storage.beginEditing()
-        storage.setAttributes(baseAttributes, range: full)
+        storage.setAttributes(baseAttributes(size: size), range: full)
 
         for paragraph in paragraphs where paragraph.range.length > 0 {
             var paragraphFont = font
@@ -69,7 +72,7 @@ enum LiveMarkdownStyler {
             case .task(let done):
                 guard let marker = paragraph.blockMarker else { break }
                 storage.addAttribute(taskBoxKey, value: done, range: NSRange(location: NSMaxRange(marker) - 1, length: 1))
-                storage.addAttribute(.paragraphStyle, value: blockStyle(indent: taskIndent), range: paragraph.range)
+                storage.addAttribute(.paragraphStyle, value: blockStyle(indent: taskIndent(size)), range: paragraph.range)
                 let body = NSRange(location: NSMaxRange(marker), length: NSMaxRange(paragraph.range) - NSMaxRange(marker))
                 if done, body.length > 0 {
                     storage.addAttribute(.strikethroughStyle, value: NSUnderlineStyle.single.rawValue, range: body)

@@ -89,7 +89,7 @@ struct MarkdownTextView: UIViewRepresentable {
                 atoms.append(.init(lower: pending.location, upper: NSMaxRange(pending), target: middle))
             }
             // Набор продолжается обычным шрифтом; оформление дорисует перекраска.
-            view.typingAttributes = LiveMarkdownStyler.baseAttributes
+            view.typingAttributes = LiveMarkdownStyler.baseAttributes()
             parent.controller.update(selection: view.selectedRange, text: view.text, paragraphs: paragraphs)
         }
 
@@ -162,17 +162,8 @@ struct MarkdownTextView: UIViewRepresentable {
             return taskEdit(at: point, in: view) != nil || link(at: point, in: view) != nil
         }
 
-        /// Ссылка под пальцем: символ с адресом, и палец действительно на его глифе.
         private func link(at point: CGPoint, in view: UITextView) -> URL? {
-            let layout = view.layoutManager
-            let local = CGPoint(x: point.x - view.textContainerInset.left, y: point.y - view.textContainerInset.top)
-            var fraction: CGFloat = 0
-            let index = layout.characterIndex(for: local, in: view.textContainer, fractionOfDistanceBetweenInsertionPoints: &fraction)
-            guard index < view.textStorage.length,
-                  let url = view.textStorage.attribute(LiveMarkdownStyler.linkKey, at: index, effectiveRange: nil) as? URL else { return nil }
-            let glyph = layout.glyphIndexForCharacter(at: index)
-            let rect = layout.boundingRect(forGlyphRange: NSRange(location: glyph, length: 1), in: view.textContainer)
-            return rect.insetBy(dx: -4, dy: -6).contains(local) ? url : nil
+            (view.layoutManager as? LiveLayoutManager)?.link(at: point, origin: CGPoint(x: view.textContainerInset.left, y: view.textContainerInset.top))
         }
 
         func gestureRecognizer(_ gesture: UIGestureRecognizer, shouldRecognizeSimultaneouslyWith other: UIGestureRecognizer) -> Bool { false }

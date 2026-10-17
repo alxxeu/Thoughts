@@ -133,6 +133,18 @@ final class LiveLayoutManager: NSLayoutManager, NSLayoutManagerDelegate {
         return edit
     }
 
+    /// Ссылка под пальцем (в координатах текста): символ с адресом, и палец на его глифе.
+    func link(at point: CGPoint, origin: CGPoint) -> URL? {
+        guard let storage = textStorage, let container = textContainers.first, storage.length > 0 else { return nil }
+        let local = CGPoint(x: point.x - origin.x, y: point.y - origin.y)
+        var fraction: CGFloat = 0
+        let index = characterIndex(for: local, in: container, fractionOfDistanceBetweenInsertionPoints: &fraction)
+        guard index < storage.length,
+              let url = storage.attribute(LiveMarkdownStyler.linkKey, at: index, effectiveRange: nil) as? URL else { return nil }
+        let rect = boundingRect(forGlyphRange: NSRange(location: glyphIndexForCharacter(at: index), length: 1), in: container)
+        return rect.insetBy(dx: -4, dy: -6).contains(local) ? url : nil
+    }
+
     // MARK: - Геометрия
 
     /// Поля блоков на всю ширину. Код — по строкам целиком (узкие строки ``` и
@@ -174,7 +186,7 @@ final class LiveLayoutManager: NSLayoutManager, NSLayoutManagerDelegate {
         let glyph = glyphIndexForCharacter(at: range.location)
         let line = lineFragmentRect(forGlyphAt: glyph, effectiveRange: nil)
         let baseline = location(forGlyphAt: glyph).y
-        let font = LiveMarkdownStyler.font
+        let font = storage.attribute(.font, at: range.location, effectiveRange: nil) as? UIFont ?? LiveMarkdownStyler.font
         let side = (font.capHeight * 1.45).rounded()
         let centerY = origin.y + line.minY + baseline - font.xHeight / 2
         return CGRect(x: origin.x + 1, y: centerY - side / 2, width: side, height: side)
