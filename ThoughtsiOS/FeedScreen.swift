@@ -31,7 +31,6 @@ struct FeedScreen: View {
     @State private var typing = false
     @Environment(\.scenePhase) private var scenePhase
 
-    @State private var bottomBarHeight: CGFloat = 110
     /// Растёт, когда начинают листать Spaces, — открытые кнопки удаления закрываются.
     @State private var swipeReset = 0
 
@@ -77,15 +76,18 @@ struct FeedScreen: View {
         .onChange(of: realign) { pager.scrollTo(slot) }
         }
         EdgeFade(edge: .top, height: geo.safeAreaInsets.top + 64)
-        // Снизу — выше баров: захватывает папки и часть поля ввода.
-        EdgeFade(edge: .bottom, height: geo.safeAreaInsets.bottom + bottomBarHeight * 0.8 + 30)
         }
         }
         .overlay(alignment: .top) { HStack { Spacer(); moreButton }.padding(.top, 6) }
         // Поле ввода и Spaces — системная вставка снизу: лента прокручивается под ней,
         // клавиатура поднимает её вместе с лентой без ручных замеров.
         .safeAreaInset(edge: .bottom, spacing: 0) {
-            bottomBar.onGeometryChange(for: CGFloat.self) { $0.size.height } action: { bottomBarHeight = $0 }
+            // Нижнее затухание — фон самой панели: выше неё на 40 pt и до низа экрана.
+            // Двигается вместе с панелью в той же анимации клавиатуры (раньше высота
+            // считалась из GeometryReader и прыгала при скрытии клавиатуры).
+            bottomBar.background(alignment: .bottom) {
+                BottomFade().padding(.top, -40).ignoresSafeArea(edges: .bottom)
+            }
         }
         .background(Theme.background.ignoresSafeArea())
         // Клавиатура закрывается свайпом по ленте (scrollDismissesKeyboard).
@@ -238,21 +240,32 @@ struct FeedScreen: View {
     }
 }
 
-/// Мягкое затухание с размытием у края экрана, чуть темнее фона.
+/// Затухание с размытием под нижней панелью, чуть темнее фона; растягивается по
+/// панели, сверху прозрачное.
+private struct BottomFade: View {
+    var body: some View {
+        ZStack {
+            Rectangle().fill(.thinMaterial)
+                .mask(LinearGradient(colors: [.clear, .black], startPoint: .top, endPoint: .bottom))
+            LinearGradient(colors: [Theme.fade.opacity(0), Theme.fade.opacity(0.92)], startPoint: .top, endPoint: .bottom)
+        }
+        .allowsHitTesting(false)
+    }
+}
+
+/// Мягкое затухание с размытием у верхнего края экрана, чуть темнее фона.
 private struct EdgeFade: View {
     let edge: VerticalEdge
     let height: CGFloat
 
     var body: some View {
-        let toEdge: (UnitPoint, UnitPoint) = edge == .top ? (.bottom, .top) : (.top, .bottom)
         ZStack {
-            // Снизу размытие сильнее (доводка 3).
-            Rectangle().fill(edge == .top ? .ultraThinMaterial : .thinMaterial)
-                .mask(LinearGradient(colors: [.clear, .black], startPoint: toEdge.0, endPoint: toEdge.1))
-            LinearGradient(colors: [Theme.fade.opacity(0), Theme.fade.opacity(0.92)], startPoint: toEdge.0, endPoint: toEdge.1)
+            Rectangle().fill(.ultraThinMaterial)
+                .mask(LinearGradient(colors: [.clear, .black], startPoint: .bottom, endPoint: .top))
+            LinearGradient(colors: [Theme.fade.opacity(0), Theme.fade.opacity(0.92)], startPoint: .bottom, endPoint: .top)
         }
         .frame(height: height)
-        .frame(maxHeight: .infinity, alignment: edge == .top ? .top : .bottom)
+        .frame(maxHeight: .infinity, alignment: .top)
         .ignoresSafeArea()
         .allowsHitTesting(false)
     }
