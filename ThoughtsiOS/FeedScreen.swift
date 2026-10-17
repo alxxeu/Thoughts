@@ -213,12 +213,6 @@ struct FeedScreen: View {
     }
 }
 
-private struct ScrollState: Equatable {
-    var offset: CGFloat
-    var toBottom: CGFloat
-    var height: CGFloat
-}
-
 /// Мягкое затухание с размытием у края экрана, чуть темнее фона.
 private struct EdgeFade: View {
     let edge: VerticalEdge
@@ -263,22 +257,12 @@ private struct FeedList: View {
     @State private var order: [UUID] = []
     @State private var isDragging = false
     @State private var listReset = 0
-    @State private var atBottom = true
     @State private var listBottom: CGFloat = 0
-    /// Высоты карточек и самой ленты — чтобы в полупустом Space карточки стояли внизу,
-    /// у поля. Считается по размерам, а не по прокрутке: замер на каждом кадре
-    /// прокрутки ломал горизонтальный свайп между Spaces.
-    @State private var rowHeights: [UUID: CGFloat] = [:]
-    @State private var listHeight: CGFloat = 0
+    /// Лента «как в чате»: стоит на свежих внизу. Начальное положение, полупустой
+    /// Space у поля и подъём вместе с клавиатурой — всё делает defaultScrollAnchor(.bottom).
+    @State private var position = ScrollPosition(edge: .bottom)
 
     private var bottomInset: CGFloat { max(listBottom - barTop + 5, 0) } // +5: зазор до поля = зазору между карточками
-
-    /// Пустое место над карточками (строка-распорка сверху).
-    private var topFill: CGFloat {
-        guard !cards.isEmpty else { return 0 }
-        let content = ordered.reduce(0) { $0 + (rowHeights[$1.id] ?? 0) + 10 } // 10 — отступы строки
-        return max(0, listHeight - insets.top - bottomInset - content)
-    }
 
     private var cards: [Card] { board.cardsByWorkspace[slot] ?? [] }
 
@@ -318,45 +302,34 @@ private struct FeedList: View {
     }
 
     private var list: some View {
-        ScrollViewReader { proxy in
-        List {
-            if topFill > 0 {
-                Color.clear.frame(height: topFill)
-                    .listRowBackground(Color.clear)
-                    .listRowSeparator(.hidden)
-                    .listRowInsets(EdgeInsets())
+        ScrollView {
+            LazyVStack(spacing: 10) {
+                if cards.isEmpty {
+                    Text("Here’s nothing.\nTry to create your first Card")
+                        .multilineTextAlignment(.center)
+                        .foregroundStyle(Theme.secondary)
+                        .frame(maxWidth: .infinity, minHeight: 300)
+                }
+                ForEach(ordered) { card in
+                    CardRow(card: card, isRevealed: revealed.contains(card.id),
+                            onReveal: { onReveal(card) },
+                            onToggleTask: { toggle(card, $0) })
+                        .onTapGesture { if card.privacyMode == .none || revealed.contains(card.id) { onOpen(card) } }
+                        .modifier(CardMenu(card: card, isHidden: card.privacyMode != .none && !revealed.contains(card.id),
+                                           onDelete: { board.deleteCard(id: card.id) }))
+                        .modifier(EdgeDeleteSwipe { withAnimation { board.deleteCard(id: card.id) } })
+                        .padding(.horizontal, 16)
+                }
             }
-            if cards.isEmpty {
-                Text("Here’s nothing.\nTry to create your first Card")
-                    .multilineTextAlignment(.center)
-                    .foregroundStyle(Theme.secondary)
-                    .frame(maxWidth: .infinity, minHeight: 300)
-                    .listRowBackground(Color.clear)
-                    .listRowSeparator(.hidden)
-            }
-            ForEach(ordered) { card in
-                CardRow(card: card, isRevealed: revealed.contains(card.id),
-                        onReveal: { onReveal(card) },
-                        onToggleTask: { toggle(card, $0) })
-                    .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { rowHeights[card.id] = $0 }
-                    .onTapGesture { if card.privacyMode == .none || revealed.contains(card.id) { onOpen(card) } }
-                    .modifier(CardMenu(card: card, isHidden: card.privacyMode != .none && !revealed.contains(card.id),
-                                       onDelete: { board.deleteCard(id: card.id) }))
-                    .modifier(EdgeDeleteSwipe { withAnimation { board.deleteCard(id: card.id) } })
-                    .listRowBackground(Color.clear)
-                    .listRowSeparator(.hidden)
-                    .listRowInsets(EdgeInsets(top: 5, leading: 16, bottom: 5, trailing: 16))
-            }
+            .padding(.vertical, 5)
         }
-        .listStyle(.plain)
-        .environment(\.defaultMinListRowHeight, 0)
+        .scrollPosition($position)
+        .defaultScrollAnchor(.bottom)
         .safeAreaBar(edge: .top, spacing: 0) { Color.clear.frame(height: insets.top) }
         .safeAreaBar(edge: .bottom, spacing: 0) { Color.clear.frame(height: bottomInset) }
-        .onGeometryChange(for: CGRect.self) { $0.frame(in: .global) } action: { listBottom = $0.maxY; listHeight = $0.height }
+        .onGeometryChange(for: CGFloat.self) { $0.frame(in: .global).maxY } action: { listBottom = $0 }
         .scrollEdgeEffectHidden(true, for: .all) // затухания свои, темнее фона (EdgeFade)
         .scrollDismissesKeyboard(.interactively)
-        .scrollContentBackground(.hidden)
-        .defaultScrollAnchor(.bottom)
         // Полоса Spaces: палец вверх (к свежим) — разворачивается, вниз (к старым) —
         // сворачивается в точки (Р12). Только от пальца: сдвиги от смены высоты баров не в счёт.
         .onScrollPhaseChange { _, phase in
@@ -364,39 +337,13 @@ private struct FeedList: View {
             if phase == .interacting { listReset += 1 } // прокрутка ленты закрывает кнопки удаления
         }
         .transformEnvironment(\.swipeReset) { $0 += listReset }
-        .onScrollGeometryChange(for: ScrollState.self) { geo in
-            ScrollState(offset: geo.contentOffset.y,
-                        toBottom: geo.contentSize.height - geo.contentOffset.y - geo.containerSize.height + geo.contentInsets.bottom,
-                        height: geo.containerSize.height - geo.contentInsets.bottom)
-        } action: { old, new in
-            // Клавиатура или поле ввода сжали видимую часть — лента у низа поднимается вместе с ними.
-            if new.height != old.height, atBottom { scrollToBottom(proxy, animated: false); return }
-            if isDragging || old.toBottom >= 24 { atBottom = new.toBottom < 24 }
+        .onScrollGeometryChange(for: CGFloat.self) { $0.contentOffset.y } action: { old, new in
             guard isDragging else { return }
-            let delta = new.offset - old.offset
-            if delta > 4 { onCollapse(false) } else if delta < -4 { onCollapse(true) }
+            if new - old > 4 { onCollapse(false) } else if new - old < -4 { onCollapse(true) }
         }
-        // shortcut: держится только низ ленты; из середины карточки под клавиатурой
-        // не поднимаются — нужен сдвиг contentOffset, если попросят.
-        .onAppear {
-            order = Self.sorted(cards).map(\.id)
-            // List не держит defaultScrollAnchor(.bottom) — прокручиваем к свежей сами.
-            // Страницы собираются все сразу, при запуске, — вёрстка строк ещё не готова,
-            // поэтому повтор чуть позже.
-            Task { @MainActor in scrollToBottom(proxy, animated: false) }
-            DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) { scrollToBottom(proxy, animated: false) }
-        }
+        .onAppear { order = Self.sorted(cards).map(\.id) }
         .onChange(of: board.editingCardID) { _, id in if id == nil { withAnimation { order = Self.sorted(cards).map(\.id) } } }
-        .onChange(of: cards.count) { old, new in
-            if new > old { scrollToBottom(proxy, animated: true) }
-            rowHeights = rowHeights.filter { id, _ in cards.contains { $0.id == id } } // удалённые — из замеров
-        }
-        }
-    }
-
-    private func scrollToBottom(_ proxy: ScrollViewProxy, animated: Bool) {
-        guard let last = ordered.last?.id else { return }
-        if animated { withAnimation(.snappy) { proxy.scrollTo(last, anchor: .bottom) } } else { proxy.scrollTo(last, anchor: .bottom) }
+        .onChange(of: cards.count) { old, new in if new > old { withAnimation(.snappy) { position.scrollTo(edge: .bottom) } } }
     }
 
     private func toggle(_ card: Card, _ paragraph: MarkdownStyler.Paragraph) {
