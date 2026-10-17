@@ -14,6 +14,8 @@ struct FeedScreen: View {
     @State private var renaming: Workspace?
     @State private var newName = ""
     @State private var showSpaceSettings = false
+    /// Карточка, удаление которой ждёт подтверждения (меню, кнопка-корзина). Полный свайп — без него.
+    @State private var pendingDelete: Card?
     /// Порядок страниц на время дальнего перехода по полосе: нужный Space ставится
     /// рядом с текущим, лента прокручивается на одну страницу, потом порядок обратно.
     @State private var pageOrder: [Int]?
@@ -52,6 +54,8 @@ struct FeedScreen: View {
                     FeedList(board: board, slot: workspace.slot, revealed: revealed, insets: insets, barTop: barTop,
                              onOpen: { editing = EditorTarget(card: $0, detent: .medium) },
                              onReveal: reveal,
+                             onAskDelete: { pendingDelete = $0 },
+                             onPrivacy: setPrivacy,
                              onCollapse: { collapsed in if collapsed != spacesCollapsed { withAnimation(.snappy) { spacesCollapsed = collapsed } } })
                         .containerRelativeFrame(.horizontal)
                         .id(workspace.slot)
@@ -94,6 +98,14 @@ struct FeedScreen: View {
                 .onChange(of: newName) { if newName.count > Workspace.maxNameLength { newName = String(newName.prefix(Workspace.maxNameLength)) } }
             Button("Cancel", role: .cancel) {}
             Button("Rename") { rename() }
+        }
+        .alert("Delete card?", isPresented: Binding(get: { pendingDelete != nil }, set: { if !$0 { pendingDelete = nil } })) {
+            Button("Delete", role: .destructive) {
+                if let card = pendingDelete { withAnimation { board.deleteCard(id: card.id) } }
+            }
+            Button("Cancel", role: .cancel) {}
+        } message: {
+            Text("This can’t be undone.")
         }
         .onChange(of: slot) { revealed = [] }
         .onAppear(perform: refreshVisibleSlots)
@@ -200,6 +212,15 @@ struct FeedScreen: View {
         editing = EditorTarget(card: card, detent: .large)
     }
 
+    /// Spoiler / Lock со свайпа: карточка сразу прячется (раскрытие сбрасывается).
+    private func setPrivacy(_ card: Card, _ mode: CardPrivacyMode) {
+        withAnimation(.snappy) {
+            card.privacyMode = mode
+            revealed.remove(card.id)
+        }
+        board.saveImmediately()
+    }
+
     private func reveal(_ card: Card) {
         if card.privacyMode == .spoiler { withAnimation { _ = revealed.insert(card.id) } ; return }
         Task {
@@ -250,6 +271,8 @@ private struct FeedList: View {
     let barTop: CGFloat
     var onOpen: (Card) -> Void
     var onReveal: (Card) -> Void
+    var onAskDelete: (Card) -> Void
+    var onPrivacy: (Card, CardPrivacyMode) -> Void
     var onCollapse: (Bool) -> Void
 
     /// Порядок замораживается: лента не перестраивается под пальцем — новый
@@ -311,13 +334,17 @@ private struct FeedList: View {
                         .frame(maxWidth: .infinity, minHeight: 300)
                 }
                 ForEach(ordered) { card in
+                    let isHidden = card.privacyMode != .none && !revealed.contains(card.id)
                     CardRow(card: card, isRevealed: revealed.contains(card.id),
                             onReveal: { onReveal(card) },
                             onToggleTask: { toggle(card, $0) })
-                        .onTapGesture { if card.privacyMode == .none || revealed.contains(card.id) { onOpen(card) } }
-                        .modifier(CardMenu(card: card, isHidden: card.privacyMode != .none && !revealed.contains(card.id),
-                                           onDelete: { board.deleteCard(id: card.id) }))
-                        .modifier(EdgeDeleteSwipe { withAnimation { board.deleteCard(id: card.id) } })
+                        .onTapGesture { if !isHidden { onOpen(card) } }
+                        .modifier(CardMenu(card: card, isHidden: isHidden, onDelete: { onAskDelete(card) }))
+                        // Нераскрытую карточку нельзя ни удалить, ни сменить ей защиту свайпом.
+                        .modifier(CardSwipe(isEnabled: !isHidden, privacy: card.privacyMode,
+                                            onDelete: { withAnimation { board.deleteCard(id: card.id) } },
+                                            onAskDelete: { onAskDelete(card) },
+                                            onPrivacy: { onPrivacy(card, $0) }))
                         .padding(.horizontal, 16)
                 }
             }
@@ -514,94 +541,162 @@ private struct CardMenu: ViewModifier {
     }
 }
 
-// MARK: - Удаление свайпом с правого края
+// MARK: - Свайпы по краям карточки
 
-/// Свайп удаления ловит только правый край карточки (56 pt); по остальной карточке
-/// горизонтальный свайп листает Spaces. Повторяет системный: красный круг
-/// тянется за карточкой в капсулу, за порогом полного свайпа (с отдачей) значок уходит
-/// к краю карточки, отпустил — карточка уезжает и удаляется. Короткий свайп —
-/// кнопка остаётся открытой.
-private struct EdgeDeleteSwipe: ViewModifier {
+/// Свайпы ловят только края карточки (56 pt); по остальной карточке горизонтальный
+/// свайп листает Spaces. Повторяют системные: круги тянутся за карточкой в капсулу,
+/// за порогом полного свайпа — отклик, значок уходит к карточке, отпустил — действие.
+/// Короткий свайп оставляет кнопки открытыми.
+/// - справа ← удаление: кнопка-корзина спрашивает подтверждение, полный свайп удаляет сразу;
+/// - слева → Spoiler и Lock: кнопки переключают режим, полный свайп включает Lock,
+///   а на уже защищённой карточке снимает защиту.
+private struct CardSwipe: ViewModifier {
+    let isEnabled: Bool
+    let privacy: CardPrivacyMode
     var onDelete: () -> Void
+    var onAskDelete: () -> Void
+    var onPrivacy: (CardPrivacyMode) -> Void
+
+    /// < 0 — карточка уехала влево (удаление), > 0 — вправо (Spoiler / Lock).
     @State private var offset: CGFloat = 0
-    @State private var isOpen = false
+    @State private var openOffset: CGFloat = 0
     @State private var width: CGFloat = 0
     /// Значок у края капсулы — отдельным состоянием с явной анимацией: неявная
     /// тонула в непрерывных обновлениях свайпа.
     @State private var iconAtEdge = false
     @Environment(\.swipeReset) private var swipeReset
     private let zone: CGFloat = 56
-    private let revealed: CGFloat = 80
+    private let button: CGFloat = 52
     private let gap: CGFloat = 8
+    private var deleteRevealed: CGFloat { button + gap * 2 }
+    private var privacyRevealed: CGFloat { button * 2 + gap * 3 }
     private var fullSwipe: CGFloat { max(width * 0.55, 160) }
-    private var armed: Bool { -offset > fullSwipe }
+    private var armed: Bool { abs(offset) > fullSwipe }
 
     func body(content: Content) -> some View {
-        content
-            .offset(x: offset)
-            .onGeometryChange(for: CGFloat.self) { $0.size.width } action: { width = $0 }
-            .background(alignment: .trailing) {
-                if offset < 0 {
-                    // Круг 52 pt по центру высоты; дальше тянется за карточкой в капсулу.
-                    let w = max(-offset - gap * 2, 0)
-                    Button(action: delete) {
-                        Image(systemName: "trash")
-                            .font(.system(size: 17, weight: .semibold))
-                            .foregroundStyle(.white)
-                            .scaleEffect(min(1, w / 52))
-                            .modifier(IconShift(progress: iconAtEdge ? 1 : 0, width: w))
-                            .frame(maxWidth: .infinity, maxHeight: .infinity)
-                            .background(.red, in: .capsule)
+        if isEnabled {
+            content
+                .offset(x: offset)
+                .onGeometryChange(for: CGFloat.self) { $0.size.width } action: { width = $0 }
+                .background(alignment: .trailing) { if offset < 0 { deleteButton } }
+                .background(alignment: .leading) { if offset > 0 { privacyButtons } }
+                .sensoryFeedback(.impact(weight: .medium), trigger: armed) { _, new in new }
+                .onChange(of: armed) { _, a in withAnimation(.spring(duration: 0.22, bounce: 0.35)) { iconAtEdge = a } }
+                .onChange(of: swipeReset) { if offset != 0 { close() } }
+                .overlay {
+                    if openOffset != 0 {
+                        // Открыто: тап по карточке — закрыть, тянуть дальше — полный свайп.
+                        Color.clear.contentShape(.rect)
+                            .padding(openOffset < 0 ? .trailing : .leading, abs(openOffset))
+                            .onTapGesture { close() }
+                            .highPriorityGesture(drag(openOffset < 0 ? -1 : 1))
+                    } else {
+                        HStack {
+                            Color.clear.frame(width: zone).contentShape(.rect).highPriorityGesture(drag(1))
+                            Spacer()
+                            Color.clear.frame(width: zone).contentShape(.rect).highPriorityGesture(drag(-1))
+                        }
                     }
-                    .buttonStyle(.plain)
-                    .frame(width: w, height: min(52, w))
-                    .clipShape(.capsule)
-                    .padding(.trailing, gap)
                 }
-            }
-            .sensoryFeedback(.impact(weight: .medium), trigger: armed) { _, new in new }
-            .onChange(of: armed) { _, a in withAnimation(.spring(duration: 0.22, bounce: 0.35)) { iconAtEdge = a } }
-            .onChange(of: swipeReset) { if offset != 0 { close() } }
-            .overlay(alignment: .trailing) {
-                if isOpen {
-                    // Открыто: тап по карточке — закрыть, кнопка справа — удалить, тянуть дальше — полный свайп.
-                    Color.clear.contentShape(.rect)
-                        .padding(.trailing, revealed)
-                        .onTapGesture { close() }
-                        .highPriorityGesture(drag)
-                } else {
-                    Color.clear.frame(width: zone).contentShape(.rect)
-                        .highPriorityGesture(drag)
-                }
-            }
+        } else {
+            content
+        }
     }
 
-    private var drag: some Gesture {
+    // MARK: Кнопки
+
+    /// Круг 52 pt по центру высоты; дальше тянется за карточкой в капсулу.
+    private var deleteButton: some View {
+        let w = max(-offset - gap * 2, 0)
+        return Button { close(); onAskDelete() } label: {
+            Image(systemName: "trash")
+                .font(.system(size: 17, weight: .semibold))
+                .foregroundStyle(.white)
+                .scaleEffect(min(1, w / button))
+                .modifier(IconShift(progress: iconAtEdge ? -1 : 0, width: w))
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+                .background(.red, in: .capsule)
+        }
+        .buttonStyle(.plain)
+        .frame(width: w, height: min(button, w))
+        .clipShape(.capsule)
+        .padding(.trailing, gap)
+    }
+
+    /// Lock у края экрана — он и тянется в капсулу при полном свайпе; Spoiler — ближе к карточке.
+    private var privacyButtons: some View {
+        let w = max(offset - gap * 2, 0)
+        let spoiler = iconAtEdge ? 0 : min(button, max(0, (w - gap) / 2))
+        let lock = max(0, w - spoiler - (spoiler > 0 ? gap : 0))
+        return HStack(spacing: spoiler > 0 ? gap : 0) {
+            circle(privacy == .lock ? "lock.open.fill" : "lock.fill", tint: Theme.accent, width: lock, shift: true) {
+                close(); onPrivacy(privacy == .lock ? .none : .lock)
+            }
+            circle(privacy == .spoiler ? "eye.fill" : "sparkles", tint: Color(white: 0.32), width: spoiler, shift: false) {
+                close(); onPrivacy(privacy == .spoiler ? .none : .spoiler)
+            }
+        }
+        .padding(.leading, gap)
+    }
+
+    private func circle(_ symbol: String, tint: Color, width w: CGFloat, shift: Bool, action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            Image(systemName: symbol)
+                .font(.system(size: 17, weight: .semibold))
+                .foregroundStyle(.white)
+                .scaleEffect(min(1, w / button))
+                .modifier(IconShift(progress: shift && iconAtEdge ? 1 : 0, width: w))
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+                .background(tint, in: .capsule)
+        }
+        .buttonStyle(.plain)
+        .frame(width: w, height: min(button, w))
+        .clipShape(.capsule)
+    }
+
+    // MARK: Жест
+
+    /// side: −1 — правый край (удаление), +1 — левый (Spoiler / Lock).
+    private func drag(_ side: CGFloat) -> some Gesture {
         DragGesture(minimumDistance: 8)
-            .onChanged { offset = min(0, (isOpen ? -revealed : 0) + $0.translation.width) }
+            .onChanged { value in
+                let next = openOffset + value.translation.width
+                offset = side < 0 ? min(0, next) : max(0, next)
+            }
             .onEnded { _ in
-                if armed { delete(); return }
+                if armed {
+                    if offset < 0 { deleteOut() } else { fullPrivacy() }
+                    return
+                }
+                let revealed = offset < 0 ? deleteRevealed : privacyRevealed
                 withAnimation(.snappy) {
-                    isOpen = -offset > revealed / 2
-                    offset = isOpen ? -revealed : 0
+                    openOffset = abs(offset) > revealed / 2 ? (offset < 0 ? -revealed : revealed) : 0
+                    offset = openOffset
                 }
             }
     }
 
-    private func close() { withAnimation(.snappy) { isOpen = false; offset = 0 } }
+    private func close() { withAnimation(.snappy) { openOffset = 0; offset = 0 } }
 
     /// Карточка уезжает влево вместе с растянутой кнопкой, потом удаляется.
-    private func delete() {
+    private func deleteOut() {
         withAnimation(.easeIn(duration: 0.2)) { offset = -width - gap * 4 }
         Task { @MainActor in
             try? await Task.sleep(for: .milliseconds(200))
             onDelete()
         }
     }
+
+    /// Полный свайп вправо: Lock (или снять защиту), карточка возвращается на место.
+    private func fullPrivacy() {
+        onPrivacy(privacy == .none ? .lock : .none)
+        withAnimation(.spring(duration: 0.35, bounce: 0.2)) { openOffset = 0; offset = 0 }
+    }
 }
 
-/// Сдвиг значка корзины от центра капсулы к её левому краю. Анимируется только
-/// progress, ширина берётся живой — иначе каждое обновление свайпа обрывало анимацию.
+/// Сдвиг значка от центра капсулы к её краю (progress < 0 — к левому, > 0 — к правому).
+/// Анимируется только progress, ширина берётся живой — иначе каждое обновление
+/// свайпа обрывало анимацию.
 private struct IconShift: ViewModifier, Animatable {
     var progress: CGFloat
     let width: CGFloat
@@ -611,11 +706,11 @@ private struct IconShift: ViewModifier, Animatable {
     }
 
     func body(content: Content) -> some View {
-        content.offset(x: -max(width / 2 - 26, 0) * progress)
+        content.offset(x: max(width / 2 - 26, 0) * progress)
     }
 }
 
 extension EnvironmentValues {
-    /// Счётчик «закрыть открытые свайпы удаления» (листают Spaces или ленту).
+    /// Счётчик «закрыть открытые свайпы карточек» (листают Spaces или ленту).
     @Entry var swipeReset = 0
 }

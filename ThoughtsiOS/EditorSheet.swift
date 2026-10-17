@@ -19,6 +19,7 @@ struct EditorSheet: View {
     @State private var linkNeedsTitle = false
     @Namespace private var glass
     @State private var viewport: CGFloat = 0
+    @State private var confirmDelete = false
     @Environment(\.dismiss) private var dismiss
 
     var body: some View {
@@ -30,7 +31,7 @@ struct EditorSheet: View {
         .scrollEdgeEffectStyle(.soft, for: .top)
         .scrollDismissesKeyboard(.interactively)
         .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { viewport = $0 }
-        .safeAreaBar(edge: .top) { EditorHeader(card: card, onDelete: delete) }
+        .safeAreaBar(edge: .top) { EditorHeader(card: card, onDelete: { confirmDelete = true }) }
             .overlay(alignment: .topLeading) {
                 // Поповер тега «вытекает» из кнопки (морфинг стекла); тап мимо — закрыть.
                 ZStack(alignment: .topLeading) {
@@ -62,6 +63,12 @@ struct EditorSheet: View {
             Button("Cancel", role: .cancel) {}
             Button("Add") { editor.insertLink(title: linkTitle, url: linkURL) }
                 .disabled(linkURL.trimmingCharacters(in: .whitespaces).isEmpty)
+        }
+        .alert("Delete card?", isPresented: $confirmDelete) {
+            Button("Delete", role: .destructive, action: delete)
+            Button("Cancel", role: .cancel) {}
+        } message: {
+            Text("This can’t be undone.")
         }
         .onChange(of: focused) { _, isFocused in if isFocused { withAnimation { detent = .large } } }
         .onChange(of: card.text) { board.scheduleDebouncedSave() }
