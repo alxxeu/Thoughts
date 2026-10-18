@@ -1,3 +1,4 @@
+import CoreGraphics
 import Foundation
 import Testing
 @testable import Thoughts
@@ -98,5 +99,18 @@ struct BoardModelCardTests {
         #expect(board.workspaces.first { $0.slot == 2 }?.name.count == Workspace.maxNameLength)
         board.renameWorkspace(slot: 2, to: "   ")
         #expect(board.workspaces.first { $0.slot == 2 }?.name == Workspace.defaultName(forSlot: 2))
+    }
+
+    @Test func unplacedCardsLandInFreeSpotsAndStayPut() {
+        let placed = Card(position: CGPoint(x: 24, y: 40), size: BoardModel.phoneCardSize, text: "a")
+        let fresh = Card(position: Card.unplacedPosition, size: BoardModel.phoneCardSize, text: "b")
+        let canvas = CGSize(width: 900, height: 600)
+
+        #expect(BoardViewModel.placeUnplaced(in: [placed, fresh], canvasSize: canvas, topInset: 40))
+        #expect(!fresh.isUnplaced)
+        #expect(!CGRect(origin: fresh.position, size: fresh.size).intersects(CGRect(origin: placed.position, size: placed.size)))
+        let spot = fresh.position
+        #expect(!BoardViewModel.placeUnplaced(in: [placed, fresh], canvasSize: canvas, topInset: 40))
+        #expect(fresh.position == spot)
     }
 }

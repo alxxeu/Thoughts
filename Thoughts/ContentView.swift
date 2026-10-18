@@ -489,10 +489,12 @@ struct ContentView: View {
             .onChange(of: proxy.size) { _, newValue in
                 canvasSize = newValue
                 viewModel.lastCanvasSize = newValue
+                viewModel.placeUnplacedCards()
             }
             .onAppear {
                 canvasSize = proxy.size
                 viewModel.lastCanvasSize = proxy.size
+                viewModel.placeUnplacedCards()
             }
         }
         .background(Color.clear)
@@ -538,6 +540,7 @@ struct ContentView: View {
         }
         .onChange(of: viewModel.activeSlot) { _, _ in
             updateEmptyHintState()
+            viewModel.placeUnplacedCards()
         }
         .onChange(of: viewModel.cards.isEmpty) { _, _ in
             updateEmptyHintState()

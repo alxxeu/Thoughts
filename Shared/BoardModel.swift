@@ -20,6 +20,8 @@ final class BoardModel: SyncableBoard {
     @ObservationIgnored var onSaved: ((_ contentChanged: Bool) -> Void)?
     /// Карточки, удалённые с другого устройства.
     @ObservationIgnored var onRemoteDeletion: ((Set<UUID>) -> Void)?
+    /// После того как правки из iCloud применены и сохранены.
+    @ObservationIgnored var onRemoteApplied: (() -> Void)?
 
     init(store: BoardStore = .shared) {
         self.store = store
@@ -107,9 +109,7 @@ final class BoardModel: SyncableBoard {
 
     @discardableResult
     func addCard(text: String, slot: Int) -> Card {
-        // shortcut: позиция по умолчанию — на холсте Mac карточки с iPhone встанут
-        // стопкой; «первое свободное место» (Р2) — доработка Mac.
-        let card = Card(position: CGPoint(x: 40, y: 80), size: Self.phoneCardSize, text: text)
+        let card = Card(position: Card.unplacedPosition, size: Self.phoneCardSize, text: text)
         cardsByWorkspace[slot, default: []].append(card)
         saveImmediately()
         return card
@@ -284,6 +284,7 @@ final class BoardModel: SyncableBoard {
         store.save(workspaces: workspaces, cardsByWorkspace: cardsByWorkspace)
         onSaved?(true)
         changeTracker.accept(cards: accepted, deletedCards: deletedCardIDs, workspaces: acceptedWorkspaces)
+        onRemoteApplied?()
     }
 
     /// "Use iCloud" при первом включении синка: доска становится ровно

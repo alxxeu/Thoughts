@@ -59,6 +59,11 @@ final class Card: Identifiable, Codable {
     /// сдвигало бы индексы у всех карточек от одного подъёма одной.
     var raisedAt: Date = Card.unknownDate
 
+    /// Позиция «не задана»: iPhone не знает холста Mac. Mac ставит такую карточку в первое
+    /// свободное место (BoardViewModel.placeUnplacedCards), когда открывает её Space.
+    static let unplacedPosition = CGPoint(x: -100_000, y: -100_000)
+    var isUnplaced: Bool { position == Card.unplacedPosition }
+
     /// "Неизвестно когда" для данных, сохранённых до появления этих полей.
     static let unknownDate = Date(timeIntervalSince1970: 0)
 

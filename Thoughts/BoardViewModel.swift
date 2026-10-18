@@ -98,6 +98,7 @@ final class BoardViewModel {
         board.onRemoteDeletion = { [weak self] ids in
             self?.aiHighlightedCardIDs.subtract(ids)
         }
+        board.onRemoteApplied = { [weak self] in self?.placeUnplacedCards() }
         reindexSpotlight()
     }
 
@@ -214,6 +215,29 @@ final class BoardViewModel {
     /// Quick Capture, который добавляет карточку, пока само окно может быть
     /// скрыто/свёрнуто. Не наблюдается: ни одна View от него не зависит.
     @ObservationIgnored var lastCanvasSize: CGSize = .zero
+
+    /// Карточки с iPhone приходят без позиции (Card.unplacedPosition) — ставим их в первые
+    /// свободные места активного Space. Остальные Spaces — когда их откроют: размер холста
+    /// известен только у видимого.
+    func placeUnplacedCards() {
+        guard lastCanvasSize != .zero, cards.contains(where: \.isUnplaced) else { return }
+        let topInset = desktopOverlay.isEnabled ? Self.desktopOverlayTopInset : Self.topCreationLimit
+        if Self.placeUnplaced(in: cards, canvasSize: lastCanvasSize, topInset: topInset) { saveGeometry() }
+    }
+
+    /// Чистая часть: расставляет карточки без позиции, возвращает, менялось ли что-то.
+    @discardableResult
+    static func placeUnplaced(in cards: [Card], canvasSize: CGSize, topInset: CGFloat) -> Bool {
+        var placed = cards.filter { !$0.isUnplaced }
+        var changed = false
+        for card in cards where card.isUnplaced {
+            card.size = CGSize(width: snap(card.size.width), height: snap(card.size.height))
+            card.position = firstFreeOrigin(size: card.size, among: placed, canvasSize: canvasSize, topInset: topInset)
+            placed.append(card)
+            changed = true
+        }
+        return changed
+    }
 
     static let quickCaptureCardSize = CGSize(width: snap(224), height: snap(164))
 
