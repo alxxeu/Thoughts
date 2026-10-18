@@ -49,7 +49,7 @@ final class CloudSyncEngine: CKSyncEngineDelegate {
     private weak var viewModel: SyncableBoard?
     /// Спрашивает пользователя при первом синке (алерт приложения);
     /// задаётся до `start`. Без него — Merge: он ничего не теряет.
-    var askInitialSyncChoice: (_ remote: BoardSnapshot, _ local: BoardSnapshot) -> InitialSyncChoice = { _, _ in .merge }
+    var askInitialSyncChoice: (_ remote: BoardSnapshot, _ local: BoardSnapshot) async -> InitialSyncChoice = { _, _ in .merge }
     private var engine: CKSyncEngine?
     private var container: CKContainer?
 
@@ -298,7 +298,7 @@ final class CloudSyncEngine: CKSyncEngineDelegate {
             return
         }
 
-        switch askInitialSyncChoice(remote, viewModel.makeSnapshot()) {
+        switch await askInitialSyncChoice(remote, viewModel.makeSnapshot()) {
         case .merge:
             viewModel.applyRemote(cards: remote.cards, deletedCardIDs: [], workspaces: remote.workspaces)
             // Объединение должно оказаться и в iCloud: карточки, которые

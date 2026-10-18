@@ -8,13 +8,21 @@ struct SettingsView: View {
     var body: some View {
         NavigationStack {
             List {
-                Section("iCloud") {
-                    LabeledContent("Status", value: sync.status.text)
-                    Button("Sync Now") { Task { await CloudSyncEngine.shared.syncNow() } }
-                }
                 Section {
-                    Text("Your Mac and iPhone share the same Thoughts.")
-                        .foregroundStyle(.secondary)
+                    Toggle("Sync with iCloud", isOn: Binding(
+                        get: { sync.isEnabled },
+                        set: { on in
+                            if on { Task { await CloudSyncEngine.shared.enable() } } else { CloudSyncEngine.shared.disable() }
+                        }
+                    ))
+                    if sync.isEnabled {
+                        LabeledContent("Status", value: sync.status.text)
+                        Button("Sync Now") { Task { await CloudSyncEngine.shared.syncNow() } }
+                    }
+                } header: {
+                    Text("iCloud")
+                } footer: {
+                    Text("Keeps your Mac and iPhone in step. Without it, Thoughts on this iPhone stays on this iPhone.")
                 }
             }
             .navigationTitle("Settings")
