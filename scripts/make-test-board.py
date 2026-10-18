@@ -93,6 +93,9 @@ names = {1: "Full", 2: "Half", 3: "Empty", 4: "Locked", 5: "Privacy", 6: "Markdo
 old_ids = {}
 if len(sys.argv) > 2:
     old_ids = {w["slot"]: w["id"] for w in json.load(open(sys.argv[2]))["workspaces"]}
+# Слот 1 — личный Space автора (EXECUTE.md, правило 8): в фикстуру не входит.
+cards.pop(1, None)
+names.pop(1, None)
 board = {
     "workspaces": [{"id": old_ids.get(s, uid("ws", s)), "slot": s, "name": n, "isProtected": s == 4, "modifiedAt": NOW} for s, n in names.items()],
     "cardsByWorkspace": {str(s): v for s, v in cards.items()},
