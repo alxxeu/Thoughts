@@ -34,13 +34,17 @@ struct FeedScreen: View {
     /// Растёт, когда начинают листать Spaces, — открытые кнопки удаления закрываются.
     @State private var swipeReset = 0
 
+    /// Верхний отступ безопасной зоны. Не GeometryReader: он перестраивал весь экран (со всеми лентами)
+    /// на каждый кадр анимации клавиатуры — менялся нижний отступ, который тут не нужен.
+    @State private var topInset: CGFloat = UIApplication.shared.connectedScenes
+        .compactMap { ($0 as? UIWindowScene)?.keyWindow?.safeAreaInsets.top }.first ?? 59
+
     var body: some View {
-        GeometryReader { geo in
         // Страницы Spaces — горизонтальная прокрутка без обрезки (страничный TabView
         // обрезал ленту). Настоящие бары лежат поверх и не уезжают при свайпе; ленте
         // даны прозрачные бары той же высоты (отступы), а у краёв — свои затухания с
         // размытием, чуть темнее фона.
-        let insets = EdgeInsets(top: geo.safeAreaInsets.top + 56, leading: 0,
+        let insets = EdgeInsets(top: topInset + 56, leading: 0,
                                 bottom: 0, trailing: 0)
         ZStack {
         ScrollViewReader { pager in
@@ -82,9 +86,9 @@ struct FeedScreen: View {
         // номеру страницы, а не по Space; ставим её обратно на текущий Space.
         .onChange(of: realign) { pager.scrollTo(slot) }
         }
-        EdgeFade(edge: .top, height: geo.safeAreaInsets.top + 64)
+        EdgeFade(edge: .top, height: topInset + 64)
         }
-        }
+        .onGeometryChange(for: CGFloat.self) { $0.safeAreaInsets.top } action: { topInset = $0 }
         .overlay(alignment: .top) { HStack { Spacer(); moreButton }.padding(.top, 6) }
         // Поле ввода и Spaces — системная вставка снизу: лента прокручивается под ней,
         // клавиатура поднимает её вместе с лентой без ручных замеров.
