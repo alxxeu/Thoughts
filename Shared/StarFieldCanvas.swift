@@ -8,7 +8,7 @@ struct StarFieldCanvas: View {
     /// яркость. Раньше пересчитывалось заново на каждом кадре (до 120
     /// раз/сек на ProMotion) для каждой видимой Spoiler/Lock карточки —
     /// это чистые константы, посчитать нужно один раз и переиспользовать.
-    private struct StarIdentity {
+    struct StarIdentity {
         let xFrac: Double
         let yFrac: Double
         let speed: Double
@@ -20,8 +20,8 @@ struct StarFieldCanvas: View {
     private static let maxStarCount = 300
     /// Общее поле — сетка клеток 40×40 pt (1 звезда на 1600 pt², как у поля карточки);
     /// у каждой клетки звезда из таблицы по хешу клетки. Поле бесконечное, без повторов.
-    private static let cell: CGFloat = 40
-    private static let tableCount = 625
+    static let cell: CGFloat = 40
+    static let tableCount = 625
 
     /// Остановить анимацию (звёзды замирают): карточка не видна — лента iPhone
     /// держит собранными страницы всех Spaces, и невидимые звёзды иначе
@@ -31,7 +31,7 @@ struct StarFieldCanvas: View {
     /// Общий на все карточки/процесс массив — детерминированная функция от
     /// индекса, так что карточкам с одинаковым числом звёзд не нужно иметь
     /// каждой свою копию.
-    private static let starIdentities: [StarIdentity] = (0..<tableCount).map { i in
+    static let starIdentities: [StarIdentity] = (0..<tableCount).map { i in
         let seed1 = sin(Double(i) * 12.9898 + 1.0) * 43758.5453
         let seed2 = cos(Double(i) * 78.2330 + 2.0) * 43758.5453
         let seed3 = sin(Double(i) * 45.1640 + 3.0) * 12345.6789

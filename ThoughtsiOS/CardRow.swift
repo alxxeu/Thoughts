@@ -38,10 +38,13 @@ struct CardRow: View {
     var onOpen: () -> Void
     /// Карточка на странице не текущего Space — звёзды Spoiler/Lock стоят.
     var isOffPage = false
+    /// Общее звёздное поле ленты: скрытая карточка сообщает ему свою рамку в окне.
+    var stars: StarVoidModel
 
     @State private var probe = MarkdownLabelProbe()
-    /// В видимой части ленты — только тогда звёзды движутся.
-    @State private var isOnScreen = true
+    /// Последняя рамка в окне — не @State: на каждый кадр прокрутки SwiftUI перерисовываться не должен.
+    @State private var frameBox = FrameBox()
+    private final class FrameBox { var frame = CGRect.zero }
     @Environment(\.openURL) private var openURL
 
     /// 15 pt и межстрочный 4 — как в LiveMarkdownStyler для ленты.
@@ -75,9 +78,6 @@ struct CardRow: View {
                 Color.clear.glassEffect(.clear.tint(.black.opacity(0.2)), in: .rect(cornerRadius: Theme.cardRadius))
                 if isHidden {
                     RoundedRectangle(cornerRadius: Theme.cardRadius).fill(.black.opacity(0.2))
-                    StarEmitter(isPaused: isOffPage || !isOnScreen)
-                        .mask { Self.edgeFade } // звёзды гаснут у верхнего и нижнего края
-                        .clipShape(RoundedRectangle(cornerRadius: Theme.cardRadius))
                 }
             }
         }
@@ -87,7 +87,9 @@ struct CardRow: View {
             }
         }
         .contentShape(.rect(cornerRadius: Theme.cardRadius))
-        .onScrollVisibilityChange(threshold: 0.01) { isOnScreen = $0 }
+        .onGeometryChange(for: CGRect.self) { $0.frame(in: .global) } action: { frameBox.frame = $0; if isHidden { stars.set(card.id, frame: $0) } }
+        .onChange(of: isHidden, initial: true) { stars.set(card.id, frame: isHidden ? frameBox.frame : nil) }
+        .onDisappear { stars.set(card.id, frame: nil) }
         .simultaneousGesture(TapGesture().onEnded { if isHidden { onReveal() } }, isEnabled: isHidden)
     }
 
@@ -97,15 +99,6 @@ struct CardRow: View {
         case .task(let edit): onToggleTask(edit)
         case .link(let url): openURL(url)
         case nil: onOpen()
-        }
-    }
-
-    /// Маска мягкого края сверху и снизу — та же высота затухания, что у длинного текста.
-    private static var edgeFade: some View {
-        VStack(spacing: 0) {
-            LinearGradient(colors: [.clear, .black], startPoint: .top, endPoint: .bottom).frame(height: fade)
-            Color.black
-            LinearGradient(colors: [.black, .clear], startPoint: .top, endPoint: .bottom).frame(height: fade)
         }
     }
 

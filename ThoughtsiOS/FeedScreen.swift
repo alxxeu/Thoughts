@@ -346,6 +346,8 @@ private struct FeedList: View {
         }
     }
 
+    @State private var stars = StarVoidModel()
+
     private var list: some View {
         ScrollView {
             LazyVStack(spacing: 10) {
@@ -361,7 +363,7 @@ private struct FeedList: View {
                             onReveal: { onReveal(card) },
                             onToggleTask: { toggle(card, $0) },
                             onOpen: { if !isHidden { onOpen(card) } },
-                            isOffPage: !isCurrent)
+                            isOffPage: !isCurrent, stars: stars)
                         .onTapGesture { if !isHidden { onOpen(card) } }
                         .modifier(CardMenu(card: card, isHidden: isHidden, onDelete: { onAskDelete(card) }))
                         // Нераскрытую карточку нельзя ни удалить, ни сменить ей защиту свайпом.
@@ -377,6 +379,7 @@ private struct FeedList: View {
             .padding(.bottom, 10) // зазор до поля = зазору между карточками
         }
         .scrollPosition($position)
+        .overlay { StarEmitter(model: stars, isPaused: !isCurrent).allowsHitTesting(false) }
         .defaultScrollAnchor(.bottom)
         .safeAreaBar(edge: .top, spacing: 0) { Color.clear.frame(height: insets.top) }
         .scrollEdgeEffectHidden(true, for: .all) // затухания свои, темнее фона (EdgeFade)
