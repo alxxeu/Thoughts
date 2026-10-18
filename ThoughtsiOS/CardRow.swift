@@ -42,9 +42,6 @@ struct CardRow: View {
     var stars: StarVoidModel
 
     @State private var probe = MarkdownLabelProbe()
-    /// Последняя рамка в окне — не @State: на каждый кадр прокрутки SwiftUI перерисовываться не должен.
-    @State private var frameBox = FrameBox()
-    private final class FrameBox { var frame = CGRect.zero }
     @Environment(\.openURL) private var openURL
 
     /// 15 pt и межстрочный 4 — как в LiveMarkdownStyler для ленты.
@@ -87,8 +84,15 @@ struct CardRow: View {
             }
         }
         .contentShape(.rect(cornerRadius: Theme.cardRadius))
-        .onGeometryChange(for: CGRect.self) { $0.frame(in: .global) } action: { frameBox.frame = $0; if isHidden { stars.set(card.id, frame: $0) } }
-        .onChange(of: isHidden, initial: true) { stars.set(card.id, frame: isHidden ? frameBox.frame : nil) }
+        // Рамку в окне наблюдаем только у скрытых карточек: опрос глобальных координат у каждой
+        // карточки на каждый кадр прокрутки и клавиатуры заметно грузит главный поток.
+        .background {
+            if isHidden {
+                Color.clear
+                    .onGeometryChange(for: CGRect.self) { $0.frame(in: .global) } action: { stars.set(card.id, frame: $0) }
+            }
+        }
+        .onChange(of: isHidden) { if !isHidden { stars.set(card.id, frame: nil) } }
         .onDisappear { stars.set(card.id, frame: nil) }
         .simultaneousGesture(TapGesture().onEnded { if isHidden { onReveal() } }, isEnabled: isHidden)
     }

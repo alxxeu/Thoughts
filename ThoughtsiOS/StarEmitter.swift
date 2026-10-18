@@ -65,17 +65,21 @@ final class StarVoidView: UIView {
         super.layoutSubviews()
         starsLayer.frame = bounds
         maskLayer.frame = bounds
-        if bounds.size != builtSize { buildStars() }
+        // Один раз и с запасом на весь экран: границы ленты меняются на каждом кадре анимации
+        // клавиатуры и панелей, пересборка сотен слоёв там давала лаги. Лишнее срезает маска.
+        let screen = UIScreen.main.bounds.size
+        let need = CGSize(width: max(bounds.width, screen.width), height: max(bounds.height, screen.height))
+        if need.width > builtSize.width || need.height > builtSize.height { buildStars(need) }
         for (id, frame) in frames { place(id, frame) }
     }
 
     /// Те же звёзды и то же поле (сетка 40×40 pt, звезда клетки — по хешу), что на Mac.
-    private func buildStars() {
-        builtSize = bounds.size
+    private func buildStars(_ size: CGSize) {
+        builtSize = size
         starsLayer.sublayers = nil
         let cell = StarFieldCanvas.cell
         let table = StarFieldCanvas.starIdentities
-        let cols = Int(ceil(bounds.width / cell)), rows = Int(ceil(bounds.height / cell))
+        let cols = Int(ceil(size.width / cell)), rows = Int(ceil(size.height / cell))
         guard cols > 0, rows > 0 else { return }
         for gx in 0..<cols {
             for gy in 0..<rows {
@@ -116,6 +120,7 @@ final class StarVoidView: UIView {
             updatePause()
             return
         }
+        guard frames[id] != frame else { return }
         frames[id] = frame
         place(id, frame)
         updatePause()
