@@ -13,7 +13,11 @@ struct StarFieldOverlayView: View {
             CardSurfaceBackground(usesGlassEffect: false, includesMaterial: false, tintOpacity: 0.2)
 
             // 3. Анимированное звездное поле с мягкой маской затухания по краям
-            StarFieldCanvas()
+            // Звёзды — из общего поля холста по положению карточки (см. StarFieldCanvas.origin).
+            GeometryReader { proxy in
+                StarFieldCanvas(origin: proxy.frame(in: .named("canvas")).origin)
+                    .frame(width: proxy.size.width, height: proxy.size.height)
+            }
                 .mask {
                     RoundedRectangle(cornerRadius: 16)
                         .fill(Color.black)

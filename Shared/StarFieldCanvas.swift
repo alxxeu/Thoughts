@@ -18,6 +18,10 @@ struct StarFieldCanvas: View {
     }
 
     private static let maxStarCount = 300
+    /// Общее поле — сетка клеток 40×40 pt (1 звезда на 1600 pt², как у поля карточки);
+    /// у каждой клетки звезда из таблицы по хешу клетки. Поле бесконечное, без повторов.
+    private static let cell: CGFloat = 40
+    private static let tableCount = 625
 
     /// Остановить анимацию (звёзды замирают): карточка не видна — лента iPhone
     /// держит собранными страницы всех Spaces, и невидимые звёзды иначе
@@ -27,7 +31,7 @@ struct StarFieldCanvas: View {
     /// Общий на все карточки/процесс массив — детерминированная функция от
     /// индекса, так что карточкам с одинаковым числом звёзд не нужно иметь
     /// каждой свою копию.
-    private static let starIdentities: [StarIdentity] = (0..<maxStarCount).map { i in
+    private static let starIdentities: [StarIdentity] = (0..<tableCount).map { i in
         let seed1 = sin(Double(i) * 12.9898 + 1.0) * 43758.5453
         let seed2 = cos(Double(i) * 78.2330 + 2.0) * 43758.5453
         let seed3 = sin(Double(i) * 45.1640 + 3.0) * 12345.6789
@@ -52,6 +56,12 @@ struct StarFieldCanvas: View {
         )
     }
 
+    /// Положение этого поля на общем холсте (карточка в координатах окна). Тогда звёзды
+    /// берутся из одного виртуального поля на весь холст: у соседних карточек рисунок
+    /// разный и продолжается на стыках, а при перетаскивании звёзды скользят под
+    /// карточкой, как в пустоте. nil — своё поле от нуля (Space Lock на весь экран).
+    var origin: CGPoint? = nil
+
     var body: some View {
         // 24 кадра/сек вместо частоты экрана (до 120 Гц) — движение
         // медленное, разницы на глаз нет, а работы в 3-5 раз меньше.
@@ -65,6 +75,11 @@ struct StarFieldCanvas: View {
                 // получались бы тысячи звёзд без заметной визуальной разницы.
                 let area = size.width * size.height
                 let starCount = min(Self.maxStarCount, max(6, Int(area / 1600)))
+                let isShared = origin != nil
+                let o = origin ?? .zero
+                let cell = Self.cell
+                let cx = isShared ? Int(floor((o.x - 8) / cell))...Int(floor((o.x + size.width + 8) / cell)) : 0...0
+                let cy = isShared ? Int(floor((o.y - 10) / cell))...Int(floor((o.y + size.height + 10) / cell)) : 0...0
 
                 // Группируем звёзды по округлённой прозрачности и заливаем
                 // каждую группу одним вызовом — вместо отдельного
@@ -75,7 +90,23 @@ struct StarFieldCanvas: View {
                 // число точек в path, определяет стоимость кадра.
                 var pathsByOpacityStep: [Int: Path] = [:]
 
-                for i in 0..<starCount {
+                if isShared {
+                    for gx in cx {
+                        for gy in cy {
+                            let hash = (gx &* 73856093) ^ (gy &* 19349663)
+                            let star = Self.starIdentities[abs(hash % Self.tableCount)]
+                            let xPos = (CGFloat(gx) + star.xFrac) * cell - o.x + cos(now * star.speed * 1.2 + star.yFrac * 10) * 4.0
+                            let yPos = (CGFloat(gy) + star.yFrac) * cell - o.y + sin(now * star.speed * 1.8 + star.xFrac * 10) * 7.0
+                            guard xPos > -8, xPos < size.width + 8, yPos > -10, yPos < size.height + 10 else { continue }
+                            let twinkle = sin(now * star.speed * 2.5 + star.twinklePhase) * 0.25
+                            let opacityStep = Int((max(0.15, min(0.95, star.baseOpacity + twinkle)) * 10).rounded())
+                            pathsByOpacityStep[opacityStep, default: Path()]
+                                .addEllipse(in: CGRect(x: xPos, y: yPos, width: star.starSize, height: star.starSize))
+                        }
+                    }
+                }
+
+                for i in 0..<(isShared ? 0 : starCount) {
                     let star = Self.starIdentities[i]
 
                     // Только это по-настоящему меняется от кадра к кадру —
@@ -89,10 +120,8 @@ struct StarFieldCanvas: View {
                     let yPos = rawY < 0 ? rawY + size.height : rawY.truncatingRemainder(dividingBy: size.height)
 
                     let twinkle = sin(now * star.speed * 2.5 + star.twinklePhase) * 0.25
-                    let finalOpacity = max(0.15, min(0.95, star.baseOpacity + twinkle))
-
+                    let opacityStep = Int((max(0.15, min(0.95, star.baseOpacity + twinkle)) * 10).rounded())
                     let rect = CGRect(x: xPos, y: yPos, width: star.starSize, height: star.starSize)
-                    let opacityStep = Int((finalOpacity * 10).rounded())
                     pathsByOpacityStep[opacityStep, default: Path()].addEllipse(in: rect)
                 }
 
