@@ -48,8 +48,14 @@ struct FeedScreen: View {
             // Не Lazy: страницы всех Spaces собраны заранее. Иначе при дальнем переходе
             // нужная страница строилась (ленту, Markdown) прямо посреди прокрутки — фриз,
             // тем заметнее, чем больше в Space карточек. Строки внутри List и так ленивые.
+            // Собраны страницы текущего Space и соседних: на смену высоты (клавиатура, панели)
+            // перекладывается каждая живая страница, и девять лент разом давали лаги. Остальные — пустые места.
+            let currentPage = pages.firstIndex { $0.slot == slot } ?? 0
             HStack(spacing: 0) {
-                ForEach(pages) { workspace in
+                ForEach(Array(pages.enumerated()), id: \.element.id) { index, workspace in
+                    if abs(index - currentPage) > 1 {
+                        Color.clear.containerRelativeFrame(.horizontal).id(workspace.slot)
+                    } else {
                     FeedList(board: board, slot: workspace.slot, isCurrent: workspace.slot == slot, revealed: revealed, insets: insets,
                              onOpen: { editing = EditorTarget(card: $0, detent: .medium) },
                              onReveal: reveal,
@@ -58,6 +64,7 @@ struct FeedScreen: View {
                              onCollapse: { collapsed in if collapsed != spacesCollapsed { withAnimation(.snappy) { spacesCollapsed = collapsed } } })
                         .containerRelativeFrame(.horizontal)
                         .id(workspace.slot)
+                    }
                 }
             }
             .scrollTargetLayout()
