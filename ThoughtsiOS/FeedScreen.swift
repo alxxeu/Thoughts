@@ -348,15 +348,22 @@ private struct FeedList: View {
 
     @State private var stars = StarVoidModel()
 
+    /// Пустой Space: картинка как эмодзи над подписью, всё по центру экрана.
+    private var emptyState: some View {
+        VStack(spacing: 14) {
+            Image("Tumbleweed").resizable().scaledToFit().frame(width: 96, height: 96)
+                .accessibilityHidden(true)
+            Text("Here’s nothing.\nTry to create your first Card")
+                .multilineTextAlignment(.center)
+                .foregroundStyle(Theme.secondary)
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .allowsHitTesting(false)
+    }
+
     private var list: some View {
         ScrollView {
             LazyVStack(spacing: 10) {
-                if cards.isEmpty {
-                    Text("Here’s nothing.\nTry to create your first Card")
-                        .multilineTextAlignment(.center)
-                        .foregroundStyle(Theme.secondary)
-                        .frame(maxWidth: .infinity, minHeight: 300)
-                }
                 ForEach(ordered) { card in
                     let isHidden = card.privacyMode != .none && !revealed.contains(card.id)
                     CardRow(card: card, isRevealed: revealed.contains(card.id),
@@ -380,6 +387,7 @@ private struct FeedList: View {
         }
         .scrollPosition($position)
         .overlay { StarEmitter(model: stars, isPaused: !isCurrent).allowsHitTesting(false) }
+        .overlay { if cards.isEmpty { emptyState } }
         .defaultScrollAnchor(.bottom)
         .safeAreaBar(edge: .top, spacing: 0) { Color.clear.frame(height: insets.top) }
         .scrollEdgeEffectHidden(true, for: .all) // затухания свои, темнее фона (EdgeFade)
