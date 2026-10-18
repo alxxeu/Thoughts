@@ -139,6 +139,7 @@ struct FeedScreen: View {
                 // Сжатое поле на 6 pt ниже — добираем сверху: высота панели не меняется,
                 // и лента под ней не сдвигается (иначе сдвиг читался как свайп — петля).
                 .padding(.top, compact ? 6 : 0)
+                .animation(.snappy, value: compact)
             if !typing {
                 // Полоса Spaces — во всю ширину, края уходят за экран с мягким затуханием.
                 SpacesBar(workspaces: visibleWorkspaces, slot: $slot, collapsed: spacesCollapsed,
@@ -150,7 +151,7 @@ struct FeedScreen: View {
         }
         .padding(.bottom, 4)
         .animation(.snappy, value: spacesCollapsed)
-        .onChange(of: composerFocused) { _, focused in withAnimation(.snappy) { typing = focused } }
+        .onChange(of: composerFocused) { _, focused in typing = focused } // без своей анимации: панель едет только в анимации клавиатуры
     }
 
     private var moreButton: some View {
