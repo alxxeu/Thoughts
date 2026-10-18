@@ -35,7 +35,8 @@ struct FeedContainer<Feed: View, Bar: View>: UIViewControllerRepresentable {
 final class FeedContainerViewController: UIViewController {
     let feedHost: UIHostingController<AnyView>
     let barHost: UIHostingController<AnyView>
-    private let fadeHost = UIHostingController(rootView: BottomFade())
+    // ignoresSafeArea: иначе затухание не заходит в зону жеста «домой» и под полосой Spaces проступают карточки.
+    private let fadeHost = UIHostingController(rootView: AnyView(BottomFade().ignoresSafeArea()))
 
     init(feed: AnyView, bar: AnyView) {
         feedHost = UIHostingController(rootView: feed)
@@ -84,8 +85,9 @@ final class FeedContainerViewController: UIViewController {
         NSLayoutConstraint.activate([
             barHost.view.leadingAnchor.constraint(equalTo: view.leadingAnchor),
             barHost.view.trailingAnchor.constraint(equalTo: view.trailingAnchor),
-            barHost.view.bottomAnchor.constraint(lessThanOrEqualTo: view.keyboardLayoutGuide.topAnchor, constant: spaces),
-            barHost.view.bottomAnchor.constraint(lessThanOrEqualTo: view.safeAreaLayoutGuide.bottomAnchor),
+            barHost.view.bottomAnchor.constraint(lessThanOrEqualTo: view.keyboardLayoutGuide.topAnchor, constant: spaces - FeedBottomBar.keyboardGap),
+            // Низ панели — почти у края экрана (зона жеста «домой» не оставляет пустой полосы под Spaces).
+            barHost.view.bottomAnchor.constraint(lessThanOrEqualTo: view.bottomAnchor, constant: -FeedBottomBar.bottomGap),
             pull,
             fadeHost.view.leadingAnchor.constraint(equalTo: view.leadingAnchor),
             fadeHost.view.trailingAnchor.constraint(equalTo: view.trailingAnchor),
@@ -117,6 +119,10 @@ final class FeedContainerViewController: UIViewController {
 struct FeedBottomBar: View {
     /// Полоса Spaces 40 pt + отступ снизу 4 pt (как раньше).
     static let spacesHeight: CGFloat = 52 // 8 (зазор) + 40 + 4
+    /// Зазор от нижнего края экрана до панели.
+    static let bottomGap: CGFloat = 10
+    /// Зазор между полем ввода и клавиатурой.
+    static let keyboardGap: CGFloat = 8
     let model: FeedModel
     let workspaces: [Workspace]
     var onSend: () -> Void
