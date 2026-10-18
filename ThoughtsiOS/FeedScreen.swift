@@ -4,11 +4,12 @@ import SwiftUI
 /// свайп по ленте переключает Space, «…» → Settings. Тап по карточке — редактор (S2).
 struct FeedScreen: View {
     @Bindable var board: BoardModel
-    @State private var slot = 1
-    @State private var draft = ""
+    @State private var model = FeedModel()
+    private var slot: Int { get { model.slot } nonmutating set { model.slot = newValue } }
+    private var draft: String { get { model.draft } nonmutating set { model.draft = newValue } }
     @State private var editing: EditorTarget?
     @State private var showSettings = false
-    @State private var spacesCollapsed = false
+    private var spacesCollapsed: Bool { get { model.spacesCollapsed } nonmutating set { model.spacesCollapsed = newValue } }
     @State private var lock = LockSession()
     @State private var revealed = Set<UUID>()
     @State private var renaming: Workspace?
@@ -25,16 +26,13 @@ struct FeedScreen: View {
     /// иначе пустой Space пропадал из страниц прямо во время прокрутки с него, и
     /// лента перескакивала.
     @State private var visibleSlots: [Int]?
-    @FocusState private var composerFocused: Bool
-    /// Фокус поля — тем же значением, но с анимацией: фокус приходит из UIKit без неё,
-    /// и полоса Spaces исчезала за кадр — лента дёргалась до подъёма клавиатуры.
-    @State private var typing = false
+    private var typing: Bool { model.typing }
     @Environment(\.scenePhase) private var scenePhase
 
     /// Растёт, когда начинают листать Spaces, — открытые кнопки удаления закрываются.
     @State private var swipeReset = 0
 
-    var body: some View {
+    private var feedContent: some View {
         GeometryReader { geo in
         // Страницы Spaces — горизонтальная прокрутка без обрезки (страничный TabView
         // обрезал ленту). Настоящие бары лежат поверх и не уезжают при свайпе; ленте
@@ -86,16 +84,16 @@ struct FeedScreen: View {
         }
         }
         .overlay(alignment: .top) { HStack { Spacer(); moreButton }.padding(.top, 6) }
-        // Поле ввода и Spaces — системная вставка снизу: лента прокручивается под ней,
-        // клавиатура поднимает её вместе с лентой без ручных замеров.
-        .safeAreaInset(edge: .bottom, spacing: 0) {
-            // Нижнее затухание — фон самой панели: выше неё на 40 pt и до низа экрана.
-            // Двигается вместе с панелью в той же анимации клавиатуры (раньше высота
-            // считалась из GeometryReader и прыгала при скрытии клавиатуры).
-            bottomBar.background(alignment: .bottom) {
-                BottomFade().padding(.top, -40).ignoresSafeArea(edges: .bottom)
-            }
-        }
+    }
+
+    private var bar: some View {
+        FeedBottomBar(model: model, workspaces: visibleWorkspaces, onSend: send, onExpand: expand, onSelect: select,
+                      onRename: { renaming = $0; newName = $0.name }, onSettings: { showSpaceSettings = true })
+    }
+
+    var body: some View {
+        FeedContainer(feed: feedContent, bar: bar)
+            .ignoresSafeArea()
         .background(Theme.background.ignoresSafeArea())
         // Клавиатура закрывается свайпом по ленте (scrollDismissesKeyboard).
         .sheet(item: $editing) { target in
@@ -126,32 +124,6 @@ struct FeedScreen: View {
             if phase == .active { refreshVisibleSlots() }
         }
         .preferredColorScheme(.dark)
-    }
-
-    // MARK: - Низ: поле ввода + Spaces
-
-    private var bottomBar: some View {
-        VStack(spacing: 8) {
-            // К старым карточкам поле чуть сжимается: на 30 pt с боков и на 6 pt сверху.
-            let compact = spacesCollapsed && !typing
-            Composer(text: $draft, focused: $composerFocused, compact: compact, onSend: send, onExpand: expand)
-                .padding(.horizontal, compact ? 46 : 16)
-                // Сжатое поле на 6 pt ниже — добираем сверху: высота панели не меняется,
-                // и лента под ней не сдвигается (иначе сдвиг читался как свайп — петля).
-                .padding(.top, compact ? 6 : 0)
-                .animation(.snappy, value: compact)
-            if !typing {
-                // Полоса Spaces — во всю ширину, края уходят за экран с мягким затуханием.
-                SpacesBar(workspaces: visibleWorkspaces, slot: $slot, collapsed: spacesCollapsed,
-                          onExpand: { withAnimation(.snappy) { spacesCollapsed = false } },
-                          onRename: { renaming = $0; newName = $0.name },
-                          onSettings: { showSpaceSettings = true },
-                          onSelect: select)
-            }
-        }
-        .padding(.bottom, 4)
-        .animation(.snappy, value: spacesCollapsed)
-        .onChange(of: composerFocused) { _, focused in typing = focused } // без своей анимации: панель едет только в анимации клавиатуры
     }
 
     private var moreButton: some View {
@@ -222,7 +194,7 @@ struct FeedScreen: View {
         guard !text.isEmpty else { return }
         let card = board.addCard(text: text, slot: slot)
         draft = ""
-        composerFocused = false
+        model.dismissKeyboard()
         editing = EditorTarget(card: card, detent: .large)
     }
 
@@ -250,7 +222,7 @@ struct FeedScreen: View {
 
 /// Затухание с размытием под нижней панелью, чуть темнее фона; растягивается по
 /// панели, сверху прозрачное.
-private struct BottomFade: View {
+struct BottomFade: View {
     var body: some View {
         ZStack {
             Rectangle().fill(.thinMaterial)
@@ -434,7 +406,7 @@ private struct FeedList: View {
 
 // MARK: - Поле ввода
 
-private struct Composer: View {
+struct Composer: View {
     @Binding var text: String
     var focused: FocusState<Bool>.Binding
     var compact = false
@@ -490,7 +462,7 @@ private struct Composer: View {
 
 // MARK: - Полоса Spaces
 
-private struct SpacesBar: View {
+struct SpacesBar: View {
     let workspaces: [Workspace]
     @Binding var slot: Int
     let collapsed: Bool
