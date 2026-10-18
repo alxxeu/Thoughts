@@ -251,12 +251,10 @@ struct FeedScreen: View {
 /// панели, сверху прозрачное.
 private struct BottomFade: View {
     var body: some View {
-        ZStack {
-            Rectangle().fill(.thinMaterial)
-                .mask(LinearGradient(colors: [.clear, .black], startPoint: .top, endPoint: .bottom))
-            LinearGradient(colors: [Theme.fade.opacity(0), Theme.fade.opacity(0.92)], startPoint: .top, endPoint: .bottom)
-        }
-        .allowsHitTesting(false)
+        // Только градиент, без материала: размытие фона заново собиралось на каждый кадр
+        // закрытия клавиатуры (чёрная полоса и лаг).
+        LinearGradient(colors: [Theme.fade.opacity(0), Theme.fade.opacity(0.92)], startPoint: .top, endPoint: .bottom)
+            .allowsHitTesting(false)
     }
 }
 
