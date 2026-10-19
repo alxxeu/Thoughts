@@ -148,10 +148,13 @@ enum MarkdownRenderer {
 
         // Голые адреса — тоже ссылки. Автоопределение NSTextView выключено:
         // полная перекраска выше стирала бы его атрибуты.
+        // Адрес внутри скрытого `](url)` ссылкой не делаем: NSTextView рисует .link
+        // синим даже поверх прозрачного цвета — у скрытого текста выйдет «пятно».
+        let hiddenLinkRanges = LiveMarkdown.hiddenRanges(paragraphs)
         if let detector = linkDetector {
             for match in detector.matches(in: storage.string, range: full) {
                 guard let url = match.url,
-                      !(linkedRanges + codeRanges).contains(where: { NSIntersectionRange($0, match.range).length > 0 }),
+                      !(linkedRanges + codeRanges + hiddenLinkRanges).contains(where: { NSIntersectionRange($0, match.range).length > 0 }),
                       ns.substring(with: match.range).contains(".") else { continue }
                 storage.addAttribute(.link, value: url, range: match.range)
             }

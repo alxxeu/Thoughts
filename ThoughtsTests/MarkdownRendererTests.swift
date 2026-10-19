@@ -96,6 +96,12 @@ struct MarkdownRendererTests {
         #expect(code.attribute(MarkdownRenderer.codeBlockKey, at: 6, effectiveRange: nil) != nil)
     }
 
+    @Test func urlInsideHiddenLinkMarkupIsNotALink() {
+        let s = styled("[site](https://example.com)")
+        #expect(s.attribute(.link, at: 1, effectiveRange: nil) != nil) // текст ссылки
+        #expect(s.attribute(.link, at: 10, effectiveRange: nil) == nil) // адрес в скобках
+    }
+
     @Test func emptyFenceIsPlainText() {
         // Одиночный ``` и блок без строк кода — не блок: без поля и кнопки.
         #expect(styled("```").attribute(MarkdownRenderer.codeBlockKey, at: 0, effectiveRange: nil) == nil)

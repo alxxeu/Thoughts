@@ -144,6 +144,14 @@ private final class CardNSTextView: NSTextView {
     /// именованные клавиатурные команды и не видит мышь вообще), это
     /// гарантированно перехватывает абсолютно все пути — поэтому именно здесь
     /// не даём выделению/курсору заходить ДО конца маркера списка.
+    /// После правки `atoms` описывают старый текст: AppKit ставит курсор уже в новом, и
+    /// сдвинутый атом маркера следующей строки уносил бы курсор туда. Пока перекраска
+    /// (textDidChange) не пересчитала их — пусто.
+    override func shouldChangeText(in affectedCharRange: NSRange, replacementString: String?) -> Bool {
+        atoms = []
+        return super.shouldChangeText(in: affectedCharRange, replacementString: replacementString)
+    }
+
     override func setSelectedRange(_ charRange: NSRange, affinity: NSSelectionAffinity, stillSelecting stillSelectingFlag: Bool) {
         super.setSelectedRange(Self.clampSelectionRange(charRange, in: self, from: selectedRange().location), affinity: affinity, stillSelecting: stillSelectingFlag)
         // super сам инвалидирует только разницу между старым и новым
