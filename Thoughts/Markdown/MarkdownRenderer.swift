@@ -172,14 +172,15 @@ enum MarkdownRenderer {
     /// служебных символов пока ничего нет (`# `, `- [ ] `): после первой буквы
     /// курсор съезжал на строку ниже.
     private static func hide(_ range: NSRange, in storage: NSMutableAttributedString) {
-        let ns = storage.string as NSString
         for index in range.location..<NSMaxRange(range) {
             let char = NSRange(location: index, length: 1)
             let font = storage.attribute(.font, at: index, effectiveRange: nil) as? NSFont ?? NSFont.systemFont(ofSize: 15)
-            let width = ns.substring(with: char).size(withAttributes: [.font: font]).width
+            // Глиф скрытого символа — пробел (MarkdownBulletGlyphs), его ширину и гасим.
+            let width = " ".size(withAttributes: [.font: font]).width
             storage.addAttributes([.foregroundColor: NSColor.clear, .kern: -width], range: char)
         }
     }
+
     private static let linkDetector = try? NSDataDetector(types: NSTextCheckingResult.CheckingType.link.rawValue)
 
     /// Цвет кода — блоков и `инлайн`: нейтральный, светлее/бледнее текста.
