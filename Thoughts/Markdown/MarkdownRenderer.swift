@@ -134,7 +134,7 @@ enum MarkdownRenderer {
                     storage.addAttribute(.font, value: mono, range: range)
                     storage.addAttribute(.foregroundColor, value: codeColor(typography), range: range)
                 case .link(let url):
-                    if let target = URL(string: url) {
+                    if let target = linkTarget(url) {
                         storage.addAttribute(.link, value: target, range: range)
                         linkedRanges.append(range)
                     }
@@ -182,6 +182,15 @@ enum MarkdownRenderer {
     }
 
     private static let linkDetector = try? NSDataDetector(types: NSTextCheckingResult.CheckingType.link.rawValue)
+
+    /// Адрес ссылки с протоколом: `[текст](example.com)` без него система открыть
+    /// не может (ошибка -50), поэтому дописываем https://.
+    static func linkTarget(_ raw: String) -> URL? {
+        let trimmed = raw.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return nil }
+        let hasScheme = trimmed.range(of: #"^(?:[A-Za-z][A-Za-z0-9+.-]*://|mailto:|tel:)"#, options: .regularExpression) != nil
+        return URL(string: hasScheme ? trimmed : "https://" + trimmed)
+    }
 
     /// Цвет кода — блоков и `инлайн`: нейтральный, светлее/бледнее текста.
     static func codeColor(_ typography: CardTypography) -> NSColor {

@@ -79,24 +79,34 @@ private final class CardNSTextView: NSTextView {
         apply(MarkdownFormatting.insertDivider(in: string as NSString, selection: selectedRange()))
     }
 
-    /// Ссылка: адрес спрашиваем в окне — в тексте `](адрес)` скрыт, вписать его там
-    /// было бы негде. Выделение становится текстом ссылки; без выделения — сам адрес.
+    /// Ссылка: адрес и текст спрашиваем в окне — в тексте `](адрес)` скрыт, вписать
+    /// его там было бы негде. Выделение попадает в поле текста; пустой текст —
+    /// вставится просто адрес.
     @objc func markdownLink(_ sender: Any?) {
         let selection = selectedRange()
+        let ns = string as NSString
         let alert = NSAlert()
         alert.messageText = "Link"
-        alert.informativeText = "Address to open"
-        let field = NSTextField(frame: NSRect(x: 0, y: 0, width: 280, height: 24))
-        field.placeholderString = "https://"
-        alert.accessoryView = field
+        alert.informativeText = "Text is optional \u{2014} without it the address itself is shown."
+        let textField = NSTextField(frame: NSRect(x: 0, y: 32, width: 280, height: 24))
+        textField.placeholderString = "Text"
+        if selection.length > 0, NSMaxRange(selection) <= ns.length {
+            textField.stringValue = ns.substring(with: selection)
+        }
+        let addressField = NSTextField(frame: NSRect(x: 0, y: 0, width: 280, height: 24))
+        addressField.placeholderString = "https://"
+        let fields = NSView(frame: NSRect(x: 0, y: 0, width: 280, height: 56))
+        fields.addSubview(textField)
+        fields.addSubview(addressField)
+        alert.accessoryView = fields
         alert.addButton(withTitle: "Add")
         alert.addButton(withTitle: "Cancel")
-        alert.window.initialFirstResponder = field
-        guard alert.runModal() == .alertFirstButtonReturn else { return }
-        let url = field.stringValue.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !url.isEmpty, selection.location <= (string as NSString).length else { return }
-        let title = selection.length > 0 ? (string as NSString).substring(with: selection) : url
-        let markdown = "[\(title)](\(url))"
+        alert.window.initialFirstResponder = addressField
+        guard alert.runModal() == .alertFirstButtonReturn,
+              let url = MarkdownRenderer.linkTarget(addressField.stringValue),
+              selection.location <= (string as NSString).length else { return }
+        let title = textField.stringValue.trimmingCharacters(in: .whitespacesAndNewlines)
+        let markdown = title.isEmpty ? url.absoluteString : "[\(title)](\(url.absoluteString))"
         apply(.init(range: selection, replacement: markdown,
                     selection: NSRange(location: selection.location + (markdown as NSString).length, length: 0)))
     }

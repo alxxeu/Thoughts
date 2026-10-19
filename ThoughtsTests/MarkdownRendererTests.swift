@@ -102,6 +102,15 @@ struct MarkdownRendererTests {
         #expect(s.attribute(.link, at: 10, effectiveRange: nil) == nil) // адрес в скобках
     }
 
+    @Test func linkWithoutSchemeGetsHttps() {
+        #expect(MarkdownRenderer.linkTarget("example.com/a")?.absoluteString == "https://example.com/a")
+        #expect(MarkdownRenderer.linkTarget(" https://x.com ")?.absoluteString == "https://x.com")
+        #expect(MarkdownRenderer.linkTarget("mailto:a@b.co")?.absoluteString == "mailto:a@b.co")
+        #expect(MarkdownRenderer.linkTarget("  ") == nil)
+        let s = styled("[site](example.com)")
+        #expect((s.attribute(.link, at: 1, effectiveRange: nil) as? URL)?.absoluteString == "https://example.com")
+    }
+
     @Test func emptyFenceIsPlainText() {
         // Одиночный ``` и блок без строк кода — не блок: без поля и кнопки.
         #expect(styled("```").attribute(MarkdownRenderer.codeBlockKey, at: 0, effectiveRange: nil) == nil)
