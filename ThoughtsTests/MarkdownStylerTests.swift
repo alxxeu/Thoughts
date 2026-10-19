@@ -87,6 +87,15 @@ struct MarkdownStylerTests {
         #expect(MarkdownStyler.plainText("a\n") == "a\n")
     }
 
+    @Test func quoteNeedsSpaceAfterMarker() {
+        // Одинокий `>` и `>text` — обычный текст; `>` внутри цитаты — её пустая строка.
+        #expect(MarkdownStyler.parse(">").map(\.block) == [.paragraph])
+        #expect(MarkdownStyler.parse(">the").map(\.block) == [.paragraph])
+        #expect(MarkdownStyler.parse("> ").map(\.block) == [.quote])
+        #expect(MarkdownStyler.parse("a\n>").map(\.block) == [.paragraph, .paragraph])
+        #expect(MarkdownStyler.parse("> a\n>").map(\.block) == [.quote, .quote])
+    }
+
     @Test func quotesAndTasks() {
         let paragraphs = MarkdownStyler.parse("> said **this**\n>\n- [ ] todo\n- [x] done\n- [ ]no space\n[] a\n[x] b\n[ ] c\n- [] d")
         #expect(paragraphs.map(\.block) == [.quote, .quote, .task(done: false), .task(done: true), .bullet,

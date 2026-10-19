@@ -77,7 +77,7 @@ nonisolated enum MarkdownStyler {
                     openFence = result.count - 1
                 }
             } else {
-                result.append(paragraph(in: ns, lineRange: lineRange))
+                result.append(paragraph(in: ns, lineRange: lineRange, continuesQuote: result.last?.block == .quote))
             }
             location = NSMaxRange(lineRange)
         } while location < ns.length
@@ -115,7 +115,9 @@ nonisolated enum MarkdownStyler {
     }
 
     /// Разбор одной строки вне блока кода; lineRange может включать перевод строки.
-    static func paragraph(in ns: NSString, lineRange: NSRange) -> Paragraph {
+    /// Цитата начинается с `> ` (с пробелом — пока его нет, это просто текст);
+    /// голый `>` — пустая строка внутри цитаты, только если строка выше тоже цитата.
+    static func paragraph(in ns: NSString, lineRange: NSRange, continuesQuote: Bool = false) -> Paragraph {
         let range = contentRange(in: ns, lineRange: lineRange)
         let line = ns.substring(with: range)
 
@@ -141,7 +143,7 @@ nonisolated enum MarkdownStyler {
             block = .task(done: marker.contains("x") || marker.contains("X"))
             blockMarker = NSRange(location: range.location, length: length)
             bodyStart += length
-        } else if line.hasPrefix("> ") || line == ">" {
+        } else if line.hasPrefix("> ") || (continuesQuote && line == ">") {
             let length = min(2, (line as NSString).length)
             block = .quote
             blockMarker = NSRange(location: range.location, length: length)
