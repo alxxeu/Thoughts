@@ -89,7 +89,7 @@ private final class CardNSTextView: NSTextView {
         alert.messageText = "Link"
         alert.informativeText = "Text is optional \u{2014} without it the address itself is shown."
         let textField = NSTextField(frame: NSRect(x: 0, y: 32, width: 280, height: 24))
-        textField.placeholderString = "Text"
+        textField.placeholderString = "Text (optional)"
         if selection.length > 0, NSMaxRange(selection) <= ns.length {
             textField.stringValue = ns.substring(with: selection)
         }
