@@ -9,7 +9,7 @@ open canvas, exactly where they make sense to you.
 ## Features
 
 - **Free-form canvas** — click and drag anywhere to create a card, move and resize it freely
-- **Markdown** — headings, bold, italic, underline, strikethrough, highlight, code, links, lists, task lists, quotes, code blocks and dividers; the formatting characters show next to the cursor and hide everywhere else
+- **Markdown** — headings, bold, italic, underline, strikethrough, highlight, code, links, lists, task lists, quotes, code blocks and dividers; the formatting characters stay out of sight, and the cursor skips over them
 - **Color tags** — tag cards by color to organize at a glance, right from the keyboard with ⌃1–7
 - **Card privacy** — blur a card's contents (Spoiler) or hide it completely behind your passcode (Lock)
 - **Space Lock** — protect an entire Space with a passcode and Touch ID

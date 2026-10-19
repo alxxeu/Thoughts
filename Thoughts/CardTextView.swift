@@ -14,6 +14,9 @@ private final class CardNSTextView: NSTextView {
     var onFirstResponderChange: ((Bool) -> Void)?
     /// Непустой только когда карточка в Focus Mode — см. cancelOperation ниже.
     var onEscape: (() -> Void)?
+    /// Места, где курсору нельзя стоять (внутри скрытых символов Markdown) —
+    /// обновляет restyle; между правкой и перекраской пустые.
+    var atoms: [LiveMarkdown.Atom] = []
 
     // Производный от цвета текста (Settings → Appearance), а не
     // адаптивный labelColor — фон карточки (CardSurfaceStyle) не
@@ -142,7 +145,7 @@ private final class CardNSTextView: NSTextView {
     /// гарантированно перехватывает абсолютно все пути — поэтому именно здесь
     /// не даём выделению/курсору заходить ДО конца маркера списка.
     override func setSelectedRange(_ charRange: NSRange, affinity: NSSelectionAffinity, stillSelecting stillSelectingFlag: Bool) {
-        super.setSelectedRange(Self.clampSelectionRange(charRange, in: self), affinity: affinity, stillSelecting: stillSelectingFlag)
+        super.setSelectedRange(Self.clampSelectionRange(charRange, in: self, from: selectedRange().location), affinity: affinity, stillSelecting: stillSelectingFlag)
         // super сам инвалидирует только разницу между старым и новым
         // диапазоном выделения — но раз мы подменяем диапазон клэмпом,
         // реально нарисованная на экране область не всегда совпадает с тем,
@@ -277,9 +280,21 @@ private final class CardNSTextView: NSTextView {
         return visible.isEmpty ? clickRect : visible
     }
 
-    private static func clampSelectionRange(_ range: NSRange, in textView: NSTextView) -> NSRange {
+    private static func clampSelectionRange(_ range: NSRange, in textView: NSTextView, from old: Int) -> NSRange {
         guard let textStorage = textView.textStorage, textStorage.length > 0 else { return range }
         let ns = textStorage.string as NSString
+        let atoms = (textView as? CardNSTextView)?.atoms ?? []
+        // Сдвиг курсора на один символ (стрелка) идёт сквозь скрытые символы в
+        // сторону движения, иначе ←/→ застревали бы у `**`; остальное
+        // (клик, ⌘←, выделение) — к ближайшему допустимому месту.
+        let isStep = range.length == 0 && abs(range.location - old) == 1
+
+        func snapped(_ location: Int) -> Int {
+            guard let atom = atoms.first(where: { $0.lower <= location && location <= $0.upper }) else { return location }
+            guard isStep else { return LiveMarkdown.snap(location, atoms: atoms) }
+            let through = old < atom.lower ? atom.upper + 1 : old > atom.upper ? atom.lower - 1 : atom.target
+            return (0...ns.length).contains(through) ? LiveMarkdown.snap(through, atoms: atoms) : old
+        }
 
         func clamp(_ location: Int) -> Int {
             guard location >= 0, location <= ns.length, ns.length > 0 else { return location }
@@ -298,8 +313,8 @@ private final class CardNSTextView: NSTextView {
             return contentStart
         }
 
-        let start = clamp(range.location)
-        let end = clamp(range.location + range.length)
+        let start = snapped(clamp(range.location))
+        let end = snapped(clamp(range.location + range.length))
         let newStart = min(start, end)
         let newEnd = max(start, end)
         return NSRange(location: newStart, length: newEnd - newStart)
@@ -515,13 +530,13 @@ struct CardTextView: NSViewRepresentable {
 
     // MARK: - Attributed string helpers
 
-    /// Перекраска с учётом курсора: символы фрагмента рядом с ним видны.
+    /// Перекраска и пересчёт мест, куда курсору нельзя (скрытые символы).
     /// Во время составного ввода (IME) не трогаем — смена атрибутов
     /// посреди набора его ломает; после подтверждения придёт новый вызов.
     fileprivate static func restyle(_ textView: NSTextView, typography: CardTypography) {
         guard !textView.hasMarkedText(), let storage = textView.textStorage else { return }
-        let isFocused = textView.window?.firstResponder === textView
-        MarkdownRenderer.style(storage, typography: typography, selection: isFocused ? textView.selectedRange() : nil)
+        MarkdownRenderer.style(storage, typography: typography)
+        (textView as? CardNSTextView)?.atoms = LiveMarkdown.atoms(MarkdownStyler.parse(storage.string), length: storage.length)
         textView.typingAttributes = MarkdownRenderer.baseAttributes(typography)
     }
 
@@ -550,10 +565,6 @@ struct CardTextView: NSViewRepresentable {
         func undoManager(for view: NSTextView) -> UndoManager? {
             undoManager
         }
-        /// Что было раскрыто при последней перекраске по движению курсора —
-        /// см. MarkdownRenderer.revealedRanges.
-        /// Вне фокуса ничего не раскрыто — новая карточка уже раскрашена так.
-        var lastRevealed: [NSRange]? = []
         private var typography: CardTypography { lastTypography ?? AppearanceSettings.shared.cardTypography }
 
         init(_ parent: CardTextView) {
@@ -616,6 +627,14 @@ struct CardTextView: NSViewRepresentable {
             let cursor = textView.selectedRange()
             guard cursor.length == 0, cursor.location > 0 else { return false }
 
+            // Заголовки, цитаты, пункты, `**`, ссылки, ```: что стереть, решает LiveMarkdown.
+            if let range = LiveMarkdown.backspaceRange(at: cursor.location, text: textView.string) {
+                guard replaceUndoably(range, with: "", in: textView) else { return true }
+                refreshLayout(of: textView, from: range.location)
+                textView.setSelectedRange(NSRange(location: range.location, length: 0))
+                return true
+            }
+
             let ns = textView.string as NSString
             var lineRange = ns.paragraphRange(for: NSRange(location: cursor.location, length: 0))
             if lineRange.length > 0,
@@ -623,6 +642,7 @@ struct CardTextView: NSViewRepresentable {
                 lineRange.length -= 1
             }
 
+            // Остался нумерованный список: `1. ` скрыт не бывает.
             guard let prefix = CardNSTextView.detectListPrefix(in: ns, lineRange: lineRange) else { return false }
             // Курсор должен стоять ровно сразу после маркера — иначе это
             // обычный backspace где-то в тексте пункта, не наша забота.
@@ -664,6 +684,14 @@ struct CardTextView: NSViewRepresentable {
             let cursor = textView.selectedRange()
             guard cursor.length == 0 else { return false }
 
+            // Конец строки списка/цитаты, второй Return в блоке кода: правило — LiveMarkdown.
+            if let edit = LiveMarkdown.newline(at: cursor.location, text: textView.string) {
+                guard replaceUndoably(edit.range, with: edit.replacement, in: textView) else { return true }
+                refreshLayout(of: textView, from: edit.range.location)
+                textView.setSelectedRange(edit.selection)
+                return true
+            }
+
             let ns = textView.string as NSString
             var lineRange = ns.paragraphRange(for: NSRange(location: cursor.location, length: 0))
             if lineRange.length > 0,
@@ -671,6 +699,7 @@ struct CardTextView: NSViewRepresentable {
                 lineRange.length -= 1
             }
 
+            // Остаток: Return в середине пункта (текст после курсора уходит в новый пункт).
             guard let prefix = CardNSTextView.detectListPrefix(in: ns, lineRange: lineRange) else { return false }
 
             let contentRange = NSRange(location: lineRange.location + prefix.length, length: lineRange.length - prefix.length)
@@ -696,7 +725,8 @@ struct CardTextView: NSViewRepresentable {
         func textDidChange(_ notification: Notification) {
             guard let textView = notification.object as? NSTextView else { return }
             CardTextView.restyle(textView, typography: typography)
-            lastRevealed = nil // текст другой — при следующем движении курсора перекрасить
+            // Новая разметка — курсор мог оказаться внутри скрытых символов.
+            textView.setSelectedRange(textView.selectedRange())
             parent.text = textView.string
             parent.onTextChange()
         }
@@ -717,20 +747,6 @@ struct CardTextView: NSViewRepresentable {
             return false
         }
 
-        /// Курсор сдвинулся — показываем символы фрагмента, к которому он
-        /// подошёл, и прячем у того, от которого ушёл.
-        func textViewDidChangeSelection(_ notification: Notification) {
-            guard let textView = notification.object as? NSTextView else { return }
-            let isFocused = textView.window?.firstResponder === textView
-            // Без фокуса выделение меняет только установка текста — разбирать нечего.
-            guard isFocused || lastRevealed != [] else { return }
-            let revealed = MarkdownRenderer.revealedRanges(in: textView.string, selection: isFocused ? textView.selectedRange() : nil)
-            guard revealed != lastRevealed else { return }
-            lastRevealed = revealed
-            CardTextView.restyle(textView, typography: typography)
-            textView.needsDisplay = true
-        }
-
         /// Единственный реальный источник смены фокуса — см. комментарий у
         /// CardNSTextView.onFirstResponderChange. textDidBeginEditing/
         /// textDidEndEditing из NSTextViewDelegate на практике не
@@ -739,11 +755,6 @@ struct CardTextView: NSViewRepresentable {
             DispatchQueue.main.async {
                 self.parent.isFocused = focused
                 self.parent.onFocusChange(focused)
-                // Вне фокуса все служебные символы скрыты.
-                if let textView = self.textView {
-                    CardTextView.restyle(textView, typography: self.typography)
-                    self.lastRevealed = focused ? nil : []
-                }
             }
         }
     }

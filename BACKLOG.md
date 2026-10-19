@@ -11,7 +11,18 @@ Backlog / Идеи → В работе (план согласован) → Го�
 
 ## В работе
 
-_(пусто)_
+### Живой Markdown на Mac — модель из iPhone (план согласован 2026-10-19)
+
+Служебные символы Markdown скрыты всегда (не показываются у курсора), курсор
+не встаёт внутрь маркеров, Backspace/Return — по-блочному. Берём чистый слой
+`LiveMarkdown` с iOS (`feature/ios`, `Shared/Markdown/LiveMarkdown.swift`),
+парсер `MarkdownStyler` уже общий; рисование блоков не трогаем.
+
+- [x] 1. `Thoughts/Markdown/LiveMarkdown.swift` — файл с iOS как есть.
+- [x] 2. `MarkdownRenderer.style` — без `selection`: скрытое по `LiveMarkdown.hiddenRanges`.
+- [x] 3. `CardTextView`: курсор — `LiveMarkdown.snap`, Backspace/Return — `backspaceRange`/`newline`; убрать перекраску по курсору.
+- [x] 4. Тесты (`MarkdownRendererTests`, `LiveMarkdownTests`), README.
+- [ ] 5. Проверка автором: сборка и тесты в Xcode (в облаке Xcode нет — код не компилировался), ручная проверка в Debug на Spaces 2–9: стрелки ←/→ сквозь `**` и `# `, Backspace, Return, ⌘Z.
 
 ## Backlog / Идеи
 
