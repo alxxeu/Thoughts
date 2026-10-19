@@ -57,6 +57,106 @@ enum MarkdownFormatting {
         )
     }
 
+    // MARK: - Блоки (Format → Heading, List, Quote, …)
+
+    /// Маркер блока в начале строки.
+    enum BlockKind: Equatable {
+        case heading(Int), bullet, numbered, task, quote
+
+        func marker(number: Int = 1) -> String {
+            switch self {
+            case .heading(let level): return String(repeating: "#", count: level) + " "
+            case .bullet: return "- "
+            case .numbered: return "\(number). "
+            case .task: return "- [ ] "
+            case .quote: return "> "
+            }
+        }
+    }
+
+    /// Любой маркер блока в начале строки: чтобы заменить им другой, а не наслоить.
+    private static let blockMarkerPattern = #"^(?:#{1,3} |(?:- )?\[[ xX]?\] |- |> |>$|\d+\. )"#
+
+    private static func kind(ofMarker marker: String) -> BlockKind? {
+        if marker.hasPrefix("#") { return .heading(marker.count - 1) }
+        if marker.hasPrefix(">") { return .quote }
+        if marker.contains("[") { return .task }
+        if marker.hasPrefix("-") { return .bullet }
+        return marker.isEmpty ? nil : .numbered
+    }
+
+    /// Блок на строках выделения: если все они уже такого вида — снять, иначе
+    /// поставить (маркер другого вида заменяется). Пустые строки среди
+    /// нескольких не трогаются.
+    static func toggleBlock(_ kind: BlockKind, in text: NSString, selection: NSRange) -> Edit {
+        let lines = text.lineRange(for: selection)
+        var body = lines
+        if body.length > 0, text.character(at: NSMaxRange(body) - 1) == 0x0A { body.length -= 1 }
+        let old = text.substring(with: body).components(separatedBy: "\n")
+        let single = old.count == 1
+
+        func existing(_ line: String) -> String {
+            line.range(of: blockMarkerPattern, options: .regularExpression).map { String(line[$0]) } ?? ""
+        }
+        let targets = old.filter { single || !$0.isEmpty }
+        let remove = !targets.isEmpty && targets.allSatisfy { Self.kind(ofMarker: existing($0)) == kind }
+
+        var number = 0
+        let new = old.map { line -> String in
+            guard single || !line.isEmpty else { return line }
+            let current = existing(line)
+            let rest = String(line.dropFirst(current.count))
+            if remove { return rest }
+            number += 1
+            return kind.marker(number: number) + rest
+        }
+        let replacement = new.joined(separator: "\n")
+        let length = (replacement as NSString).length
+        guard single, selection.length == 0 else {
+            return Edit(range: body, replacement: replacement, selection: NSRange(location: body.location, length: length))
+        }
+        // Курсор остаётся на своём месте в тексте строки — и не раньше конца маркера.
+        let oldMarker = (existing(old[0]) as NSString).length
+        let newMarker = remove ? 0 : (kind.marker() as NSString).length
+        let caret = max(selection.location + newMarker - oldMarker, body.location + newMarker)
+        return Edit(range: body, replacement: replacement, selection: NSRange(location: min(caret, body.location + length), length: 0))
+    }
+
+    /// Разделитель `--` отдельной строкой; курсор — на строке после него.
+    static func insertDivider(in text: NSString, selection: NSRange) -> Edit {
+        let atLineStart = selection.location == 0 || text.character(at: selection.location - 1) == 0x0A
+        let insert = (atLineStart ? "" : "\n") + "--\n"
+        return Edit(range: selection, replacement: insert,
+                    selection: NSRange(location: selection.location + (insert as NSString).length, length: 0))
+    }
+
+    /// Блок кода: обернуть строки выделения в ```` ``` ```` (каждая ограда — своей
+    /// строкой); если они уже стоят строками выше и ниже — снять.
+    static func toggleCodeBlock(in text: NSString, selection: NSRange) -> Edit {
+        let lines = text.lineRange(for: selection)
+        var body = lines
+        if body.length > 0, text.character(at: NSMaxRange(body) - 1) == 0x0A { body.length -= 1 }
+        let offset = selection.location - body.location
+
+        func isFence(_ line: NSRange) -> Bool {
+            text.substring(with: line).trimmingCharacters(in: .whitespacesAndNewlines).hasPrefix("```")
+        }
+        if body.location > 0, NSMaxRange(lines) < text.length {
+            let above = text.lineRange(for: NSRange(location: body.location - 1, length: 0))
+            let below = text.lineRange(for: NSRange(location: NSMaxRange(lines), length: 0))
+            if isFence(above), isFence(below) {
+                var end = NSMaxRange(below)
+                if end > below.location, text.character(at: end - 1) == 0x0A { end -= 1 }
+                return Edit(range: NSRange(location: above.location, length: end - above.location),
+                            replacement: text.substring(with: body),
+                            selection: NSRange(location: above.location + offset, length: selection.length))
+            }
+        }
+        let opening = "```\n"
+        return Edit(range: body, replacement: opening + text.substring(with: body) + "\n```",
+                    selection: NSRange(location: selection.location + (opening as NSString).length, length: selection.length))
+    }
+
     /// Ровно этот маркер, а не часть более длинного: `*` курсива не должен
     /// совпасть со звёздочкой из `**` жирного. Допускается и `***` (жирный
     /// курсив) — курсив снимается из него, жирный остаётся.

@@ -64,9 +64,53 @@ private final class CardNSTextView: NSTextView {
     @objc func markdownStrikethrough(_ sender: Any?) { toggleMarkdown("~~") }
     @objc func markdownHighlight(_ sender: Any?) { toggleMarkdown("==") }
 
-    /// Через shouldChangeText/didChangeText — правка попадает в ⌘Z и в card.text.
+    @objc func markdownCode(_ sender: Any?) { toggleMarkdown("`") }
+    @objc func markdownHeading1(_ sender: Any?) { toggleBlock(.heading(1)) }
+    @objc func markdownHeading2(_ sender: Any?) { toggleBlock(.heading(2)) }
+    @objc func markdownHeading3(_ sender: Any?) { toggleBlock(.heading(3)) }
+    @objc func markdownBulletList(_ sender: Any?) { toggleBlock(.bullet) }
+    @objc func markdownNumberedList(_ sender: Any?) { toggleBlock(.numbered) }
+    @objc func markdownTask(_ sender: Any?) { toggleBlock(.task) }
+    @objc func markdownQuote(_ sender: Any?) { toggleBlock(.quote) }
+    @objc func markdownCodeBlock(_ sender: Any?) {
+        apply(MarkdownFormatting.toggleCodeBlock(in: string as NSString, selection: selectedRange()))
+    }
+    @objc func markdownDivider(_ sender: Any?) {
+        apply(MarkdownFormatting.insertDivider(in: string as NSString, selection: selectedRange()))
+    }
+
+    /// Ссылка: адрес спрашиваем в окне — в тексте `](адрес)` скрыт, вписать его там
+    /// было бы негде. Выделение становится текстом ссылки; без выделения — сам адрес.
+    @objc func markdownLink(_ sender: Any?) {
+        let selection = selectedRange()
+        let alert = NSAlert()
+        alert.messageText = "Link"
+        alert.informativeText = "Address to open"
+        let field = NSTextField(frame: NSRect(x: 0, y: 0, width: 280, height: 24))
+        field.placeholderString = "https://"
+        alert.accessoryView = field
+        alert.addButton(withTitle: "Add")
+        alert.addButton(withTitle: "Cancel")
+        alert.window.initialFirstResponder = field
+        guard alert.runModal() == .alertFirstButtonReturn else { return }
+        let url = field.stringValue.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !url.isEmpty, selection.location <= (string as NSString).length else { return }
+        let title = selection.length > 0 ? (string as NSString).substring(with: selection) : url
+        let markdown = "[\(title)](\(url))"
+        apply(.init(range: selection, replacement: markdown,
+                    selection: NSRange(location: selection.location + (markdown as NSString).length, length: 0)))
+    }
+
     private func toggleMarkdown(_ marker: String) {
-        let edit = MarkdownFormatting.toggle(marker, in: string as NSString, selection: selectedRange())
+        apply(MarkdownFormatting.toggle(marker, in: string as NSString, selection: selectedRange()))
+    }
+
+    private func toggleBlock(_ kind: MarkdownFormatting.BlockKind) {
+        apply(MarkdownFormatting.toggleBlock(kind, in: string as NSString, selection: selectedRange()))
+    }
+
+    /// Через shouldChangeText/didChangeText — правка попадает в ⌘Z и в card.text.
+    private func apply(_ edit: MarkdownFormatting.Edit) {
         guard shouldChangeText(in: edit.range, replacementString: edit.replacement) else { return }
         textStorage?.replaceCharacters(in: edit.range, with: edit.replacement)
         didChangeText()
@@ -256,14 +300,18 @@ private final class CardNSTextView: NSTextView {
         item.target = self
         item.image = NSImage(systemSymbolName: "sparkle", accessibilityDescription: nil)
 
+        let format = FormatCommand.contextMenuItem(target: self)
+
         // "Siri" — имя бренда, в локализациях не переводится. Сразу под Ask
         // Siri macOS 27 не рисует иконку пункта — так и задумано, не
         // переставляем.
         if let siriIndex = menu.items.firstIndex(where: { $0.title.contains("Siri") }) {
             menu.insertItem(item, at: siriIndex + 1)
+            menu.insertItem(format, at: siriIndex + 2)
         } else {
             menu.insertItem(item, at: 0)
-            menu.insertItem(.separator(), at: 1)
+            menu.insertItem(format, at: 1)
+            menu.insertItem(.separator(), at: 2)
         }
         return menu
     }

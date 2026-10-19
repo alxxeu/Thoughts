@@ -65,6 +65,14 @@ struct ThoughtsApp: App {
                 formatButton("Underline", "markdownUnderline:", "u")
                 formatButton("Strikethrough", "markdownStrikethrough:", "x", modifiers: [.command, .shift])
                 formatButton("Highlight", "markdownHighlight:", "h", modifiers: [.command, .shift])
+                Button(FormatCommand.code.title) { FormatCommand.code.send() }
+                Button(FormatCommand.link.title) { FormatCommand.link.send() }
+
+                Divider()
+
+                ForEach(FormatCommand.blocks, id: \.self) { command in
+                    Button(command.title) { command.send() }
+                }
 
                 Divider()
 

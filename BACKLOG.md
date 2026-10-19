@@ -11,6 +11,17 @@ Backlog / Идеи → В работе (план согласован) → Го�
 
 ## В работе
 
+### Format: все Markdown-элементы в меню и в правом клике (план согласован 2026-10-19)
+
+Меню Format и подменю «Format» в правом клике по карточке: Bold, Italic,
+Underline, Strikethrough, Highlight, Code, Link…; Heading 1/2/3, Bullet List,
+Numbered List, Task, Quote, Code Block, Divider. Шорткаты — только
+существующие (новых нет, Settings → Shortcuts не трогаем). Блочные команды —
+чистые функции в `MarkdownFormatting` (+ тесты), общий список команд
+`FormatCommand`; `toggleCodeBlock` — как на iOS (`feature/ios`).
+
+- [ ] Реализация; проверка автором в Xcode (⌘U, ручная проверка в Spaces 2–9).
+
 ### Живой Markdown на Mac — модель из iPhone (план согласован 2026-10-19)
 
 Служебные символы Markdown скрыты всегда (не показываются у курсора), курсор
