@@ -7,10 +7,10 @@ import AppKit
 enum MarkdownRenderer {
     /// Отметка строки-разделителя `---` — по ней CardNSTextView рисует линию.
     static let dividerKey = NSAttributedString.Key("thoughts.markdownDivider")
-    /// Служебные символы Markdown (скрыты всегда): прозрачные и
-    /// крохотного размера. Не глифы нулевой ширины (.null) — такие AppKit
-    /// прикрепляет к концу предыдущей строки, и `> `/`# ` в начале строки
-    /// уезжали в строку выше вместе со своим абзацем.
+    /// Служебные символы Markdown (скрыты всегда): прозрачные и нулевой ширины
+    /// (кернинг). Не глифы нулевой ширины (.null) — такие AppKit прикрепляет к
+    /// концу предыдущей строки, и `> `/`# ` в начале строки уезжали в строку
+    /// выше вместе со своим абзацем.
     static let hiddenKey = NSAttributedString.Key("thoughts.markdownHidden")
     /// `-` маркера списка, который рисуется как `•`.
     static let bulletKey = NSAttributedString.Key("thoughts.markdownBullet")
@@ -159,12 +159,24 @@ enum MarkdownRenderer {
         // Скрытое — прозрачное и почти нулевой ширины, но остаётся в своей строке.
         storage.enumerateAttribute(hiddenKey, in: full) { value, range, _ in
             guard value != nil else { return }
-            storage.addAttributes([.font: hiddenFont, .foregroundColor: NSColor.clear], range: range)
+            hide(range, in: storage)
         }
         storage.endEditing()
     }
 
-    private static let hiddenFont = NSFont.systemFont(ofSize: 0.1)
+    /// Прозрачно и без ширины (кернинг минус ширина символа), но шрифтом своей
+    /// строки — как в редакторе iPhone. Крохотный шрифт сжимал строку, где кроме
+    /// служебных символов пока ничего нет (`# `, `- [ ] `): после первой буквы
+    /// курсор съезжал на строку ниже.
+    private static func hide(_ range: NSRange, in storage: NSMutableAttributedString) {
+        let ns = storage.string as NSString
+        for index in range.location..<NSMaxRange(range) {
+            let char = NSRange(location: index, length: 1)
+            let font = storage.attribute(.font, at: index, effectiveRange: nil) as? NSFont ?? NSFont.systemFont(ofSize: 15)
+            let width = ns.substring(with: char).size(withAttributes: [.font: font]).width
+            storage.addAttributes([.foregroundColor: NSColor.clear, .kern: -width], range: char)
+        }
+    }
     private static let linkDetector = try? NSDataDetector(types: NSTextCheckingResult.CheckingType.link.rawValue)
 
     /// Цвет кода — блоков и `инлайн`: нейтральный, светлее/бледнее текста.
