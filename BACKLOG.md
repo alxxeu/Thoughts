@@ -78,6 +78,17 @@ _(сюда попадают новые задачи и идеи до того, �
 
 ## Готово
 
+### Debug отдельно от App Store — в develop (2026-10-19)
+
+В `develop` Debug и App Store делили `Application Support/Thoughts` и ключ
+`sync.isEnabled`: Debug (Development-CloudKit) втянул тестовую доску в
+настоящую, рабочая доска была перезаписана (восстановлена из бэкапа
+`before-markdown-2026-10-14`). Перенесён коммит `fa8a2f7` из `feature/ios`:
+`BoardStore.dataFolder` (в Debug — `Thoughts-Debug`) для доски, Sync/ и
+Backups/; ключ синка в Debug — `sync.isEnabled.debug`. Первый запуск Debug из
+`develop` стартует с выключенным синком и своей папкой.
+
+
 ### Keychain: окно «Thoughts wants to use… login keychain» при смене App Store ↔ DMG (2026-10-15)
 
 Пароль Space Lock и API-ключи AI (локальная копия, `SyncableKeychainItem`,

@@ -11,10 +11,7 @@ enum AutomaticBackups {
     private static let keepCount = 10
 
     static var folder: URL {
-        let appSupport = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first!
-        return appSupport
-            .appendingPathComponent("Thoughts", isDirectory: true)
-            .appendingPathComponent("Backups", isDirectory: true)
+        BoardStore.dataFolder.appendingPathComponent("Backups", isDirectory: true)
     }
 
     /// - Parameter reason: короткий префикс имени файла, напр. "before-import".
