@@ -10,7 +10,7 @@ struct PluginsSettingsTab: View {
     @State private var isDropTargeted = false
     @State private var pluginToRemove: InstalledPlugin?
 
-    private static let docsURL = URL(string: "https://github.com/alxxeu/thoughts-plugins/blob/main/docs/plugins.md")!
+    private static let docsURL = URL(string: "https://github.com/alxxeu/thoughts-plugins/blob/main/CREATE.md")!
 
     var body: some View {
         Form {

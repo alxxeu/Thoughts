@@ -24,8 +24,9 @@ Backlog / Идеи → В работе (план согласован) → Го�
 - [x] Интерфейс: Settings → Plugins (список, Enable, Remove, Reveal, Install, Reload,
   drag-and-drop), Appearance (пункты плагинов, строка Theme Preset), Templates, пазл.
 - [x] Тесты валидатора (`PluginValidatorTests.swift`).
-- [ ] thoughts-plugins: статус в `docs/plugins.md`, инструкция «Create a plugin»
-  (`AGENTS.md`), пример `examples/Midnight.thoughtsplugin`.
+- [x] thoughts-plugins: статус в `docs/plugins.md`, инструкция «Create a plugin»
+  (`CREATE.md` + `AGENTS.md`), пример `examples/Midnight.thoughtsplugin`; «Build Your
+  Own» в Settings ведёт на `CREATE.md`.
 - [ ] Проверка автором в Xcode (код не собирался): ⌘U, установка примера, вкл/выкл,
   удаление, битый пакет, перезапуск.
 - Не входит (следующие шаги): `aiActions`, паттерны-картинки, двойной клик по пакету,
