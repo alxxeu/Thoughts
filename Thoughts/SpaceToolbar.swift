@@ -490,14 +490,14 @@ struct SpaceToolbar: View {
 
     private func openWhatsNew(_ note: ReleaseNote) {
         WhatsNew.markSeen()
-        let size = CGSize(width: 360, height: 440)
+        let size = WhatsNew.cardSize(for: note)
         let origin = CGPoint(
             x: max(0, (canvasSize.width - size.width) / 2),
             y: max(0, (canvasSize.height - size.height) / 2)
         )
         withAnimation(spaceAISpring) {
             // Свечение по краям, как у карточки ответа AI, — до первого касания.
-            let card = viewModel.addCard(at: origin, size: size, text: WhatsNew.markdown(for: note))
+            let card = viewModel.addCard(at: origin, size: size, text: WhatsNew.cardText(for: note))
             viewModel.aiHighlightedCardIDs.insert(card.id)
             whatsNewNote = nil
         }

@@ -242,6 +242,12 @@ Keychain с подстановкой).
 
 ## Готово
 
+### Релиз 1.5 (2026-10-20)
+
+Версия 1.5 (сборка 14), Release Notes 1.5; карточка What’s new — канбан-доска
+(New / Improved / Fixed, короткие пункты из `ReleaseNote.board`). Плагины в релиз не
+входят (флаг `PLUGINS` выключен).
+
 ### Debug отдельно от App Store — в develop (2026-10-19)
 
 В `develop` Debug и App Store делили `Application Support/Thoughts` и ключ
