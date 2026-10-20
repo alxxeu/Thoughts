@@ -478,13 +478,17 @@ struct ContentView: View {
                         .allowsHitTesting(false)
                 }
                 
-                HStack(spacing: 0) {
-                    Color.clear
-                        .frame(width: 76)
-                    WindowDragArea()
+                // Зона перетаскивания окна — только в обычном режиме: в Desktop Overlay окно
+                // закреплено на весь экран и двигаться не должно.
+                if !viewModel.desktopOverlay.isEnabled {
+                    HStack(spacing: 0) {
+                        Color.clear
+                            .frame(width: 76)
+                        WindowDragArea()
+                    }
+                    .frame(height: effectiveTopInset)
+                    .frame(maxWidth: .infinity, alignment: .topLeading)
                 }
-                .frame(height: effectiveTopInset)
-                .frame(maxWidth: .infinity, alignment: .topLeading)
             }
             
             .coordinateSpace(name: "canvas")
