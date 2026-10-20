@@ -55,12 +55,22 @@ extension View {
     /// Тулбар полной высоты: без элементов macOS делает строку заголовка ниже, и
     /// кнопки окна уезжают вверх. Невидимый элемент держит высоту.
     func fullHeightToolbar() -> some View {
-        toolbar {
-            ToolbarItem(placement: .primaryAction) {
-                Color.clear.frame(width: 1, height: 1).accessibilityHidden(true)
-            }
-            .sharedBackgroundVisibility(.hidden)
+        toolbar { FullHeightToolbarItem() }
+    }
+}
+
+private struct FullHeightToolbarItem: ToolbarContent {
+    var body: some ToolbarContent {
+        if #available(macOS 26.0, *) {
+            ToolbarItem(placement: .primaryAction) { spacer }
+                .sharedBackgroundVisibility(.hidden)
+        } else {
+            ToolbarItem(placement: .primaryAction) { spacer }
         }
+    }
+
+    private var spacer: some View {
+        Color.clear.frame(width: 1, height: 1).accessibilityHidden(true)
     }
 }
 
@@ -100,6 +110,6 @@ struct SidebarLimits: NSViewRepresentable {
             if item.isCollapsed { item.isCollapsed = false }
         }
 
-        isolated deinit { if let observer { NotificationCenter.default.removeObserver(observer) } }
+        deinit { if let observer { NotificationCenter.default.removeObserver(observer) } }
     }
 }
