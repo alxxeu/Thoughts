@@ -250,9 +250,25 @@ private final class CardNSTextView: NSTextView {
         let attributes: [NSAttributedString.Key: Any] = [.font: font, .foregroundColor: NSColor.tertiaryLabelColor]
         let size = (ghost.suffix as NSString).size(withAttributes: attributes)
         let origin = textContainerOrigin
+        let right = origin.x + textContainer.size.width - textContainer.lineFragmentPadding
         let x = glyphRect.maxX + origin.x
-        guard x + size.width <= origin.x + textContainer.size.width - textContainer.lineFragmentPadding else { return }
-        (ghost.suffix as NSString).draw(at: NSPoint(x: x, y: baseline + origin.y - font.ascender), withAttributes: attributes)
+        if x + size.width <= right {
+            (ghost.suffix as NSString).draw(at: NSPoint(x: x, y: baseline + origin.y - font.ascender), withAttributes: attributes)
+            return
+        }
+
+        // Не влезает после строки (узкая карточка, длинный результат) — строкой ниже,
+        // от левого края строки, на подложке: там может быть текст следующей строки.
+        // Не влезает и там — обрезаем с «…»; Tab всё равно вставит результат целиком.
+        let text = ghost.suffix.trimmingCharacters(in: .whitespaces) as NSString
+        let left = origin.x + lineRect.minX + textContainer.lineFragmentPadding
+        let lineHeight = layoutManager.defaultLineHeight(for: font)
+        let width = min(text.size(withAttributes: attributes).width, right - left)
+        guard width > 0 else { return }
+        let box = NSRect(x: left, y: origin.y + lineRect.maxY, width: width, height: lineHeight)
+        NSColor.black.withAlphaComponent(0.55).setFill()
+        NSBezierPath(roundedRect: box.insetBy(dx: -4, dy: -1), xRadius: 5, yRadius: 5).fill()
+        text.draw(with: box, options: [.usesLineFragmentOrigin, .truncatesLastVisibleLine], attributes: attributes)
     }
 
     /// Клик по квадратику отмечает пункт (с ⌘Z); клик по значку в углу блока
