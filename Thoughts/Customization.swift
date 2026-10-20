@@ -163,6 +163,46 @@ struct TextColorOption: Identifiable, Hashable {
     }
 }
 
+// MARK: - Фон в полноэкранном режиме
+
+/// Ровный цвет фона окна в fullscreen — тот же принцип, что у
+/// TextColorOption: несколько готовых тонов и свой через ColorPicker.
+struct FullScreenBackgroundOption: Identifiable, Hashable {
+    let id: String
+    let title: String
+    let color: NSColor
+
+    static let defaultID = "builtin.graphite"
+    private static let customPrefix = "custom:"
+
+    static let builtIn: [FullScreenBackgroundOption] = [
+        preset(defaultID, "Graphite", 0x1E1E20),
+        preset("builtin.midnight", "Midnight", 0x16203A),
+        preset("builtin.plum", "Plum", 0x2A1D2E),
+        preset("builtin.forest", "Forest", 0x18261F),
+        preset("builtin.sand", "Sand", 0xE8E1D5)
+    ]
+
+    private static func preset(_ id: String, _ title: String, _ rgb: Int) -> FullScreenBackgroundOption {
+        FullScreenBackgroundOption(id: id, title: title, color: NSColor(rgb: rgb))
+    }
+
+    static func custom(_ color: NSColor) -> FullScreenBackgroundOption {
+        let hex = color.hexString
+        return FullScreenBackgroundOption(id: customPrefix + hex, title: "Custom", color: NSColor(hex: hex) ?? color)
+    }
+
+    static func resolve(_ id: String) -> FullScreenBackgroundOption {
+        if let option = builtIn.first(where: { $0.id == id }) {
+            return option
+        }
+        if id.hasPrefix(customPrefix), let color = NSColor(hex: String(id.dropFirst(customPrefix.count))) {
+            return FullScreenBackgroundOption(id: id, title: "Custom", color: color)
+        }
+        return builtIn[0]
+    }
+}
+
 // MARK: - Паттерн фона канвы
 
 struct CanvasPattern: Identifiable, Hashable {

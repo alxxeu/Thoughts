@@ -28,6 +28,7 @@ final class AppearanceSettings {
     private static let textSizeKey = "appearance.textSize"
     private static let canvasPatternKey = "appearance.canvasPattern"
     private static let patternOpacityKey = "appearance.patternOpacity"
+    private static let fullScreenBackgroundKey = "appearance.fullScreenBackground"
 
     static let patternOpacityRange: ClosedRange<Double> = 0.04...0.3
 
@@ -64,6 +65,17 @@ final class AppearanceSettings {
         }
     }
 
+    /// Ровный фон окна в fullscreen (там под окном нечего размывать).
+    var fullScreenBackgroundID: String {
+        didSet {
+            UserDefaults.standard.set(fullScreenBackgroundID, forKey: Self.fullScreenBackgroundKey)
+        }
+    }
+
+    var fullScreenBackground: FullScreenBackgroundOption {
+        FullScreenBackgroundOption.resolve(fullScreenBackgroundID)
+    }
+
     var patternOpacity: Double {
         didSet {
             UserDefaults.standard.set(patternOpacity, forKey: Self.patternOpacityKey)
@@ -93,6 +105,7 @@ final class AppearanceSettings {
         textColorID = colorID
         textSize = size
         canvasPatternID = defaults.string(forKey: Self.canvasPatternKey) ?? CanvasPattern.defaultID
+        fullScreenBackgroundID = defaults.string(forKey: Self.fullScreenBackgroundKey) ?? FullScreenBackgroundOption.defaultID
         if defaults.object(forKey: Self.patternOpacityKey) != nil {
             patternOpacity = defaults.double(forKey: Self.patternOpacityKey)
         } else {

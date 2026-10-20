@@ -40,11 +40,7 @@ struct ThoughtsApp: App {
                     // прозрачным — реальный рабочий стол виден без единого
                     // визуального следа Thoughts поверх него.
                     if !viewModel.desktopOverlay.isDesktopModeActive {
-                        #if DEBUG
-                        DebugBackdropView()
-                        #else
-                        VisualEffectBlur(material: .hudWindow, blendingMode: .behindWindow)
-                        #endif
+                        WindowBackdrop(settings: viewModel.appearanceSettings)
                     }
                 }
                 .ignoresSafeArea()
@@ -52,9 +48,6 @@ struct ThoughtsApp: App {
         }
         .windowStyle(.hiddenTitleBar)
         .windowResizability(.contentSize)
-        #if DEBUG
-        .commands { DebugBackdropCommands() }
-        #endif
         .commands {
             // Заменяет системный пункт Quit (и его Cmd+Q) — см. подробное
             // объяснение почему в QuitGuard.swift.
@@ -432,6 +425,73 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         if !overlay.isEnabled { showMainWindow() }
         overlay.isDesktopModeActive = false
         NotificationCenter.default.post(name: .switchWorkspace, object: slot)
+    }
+}
+
+/// Фон главного окна. Ultra Thin Material — живой блюр с наименее заметными
+/// швами (BACKLOG «прямоугольные швы»). В fullscreen и Split View под окном
+/// чёрный фон отдельного Space, блюр съедает цвет — там ровный цвет из
+/// Settings → Appearance → Full Screen.
+private struct WindowBackdrop: View {
+    var settings: AppearanceSettings
+    @State private var isFullScreen = false
+    @State private var host = HostWindow()
+
+    var body: some View {
+        Group {
+            if isFullScreen {
+                Color(nsColor: settings.fullScreenBackground.color)
+            } else {
+                Rectangle().fill(.ultraThinMaterial)
+            }
+        }
+        // Фон пересоздаётся при выходе из Desktop mode — состояние берём у окна.
+        .background(HostWindowReader(host: host) { window in
+            isFullScreen = window.styleMask.contains(.fullScreen)
+        })
+        // На willEnter — чтобы цвет был уже во время анимации перехода.
+        .onReceive(NotificationCenter.default.publisher(for: NSWindow.willEnterFullScreenNotification)) { note in
+            if isOwnWindow(note) { isFullScreen = true }
+        }
+        .onReceive(NotificationCenter.default.publisher(for: NSWindow.didExitFullScreenNotification)) { note in
+            if isOwnWindow(note) { isFullScreen = false }
+        }
+    }
+
+    /// Окно Settings тоже может уйти в fullscreen — реагируем только на своё.
+    private func isOwnWindow(_ note: Notification) -> Bool {
+        guard let window = note.object as? NSWindow else { return false }
+        return window === host.window
+    }
+
+    final class HostWindow {
+        weak var window: NSWindow?
+    }
+
+    private struct HostWindowReader: NSViewRepresentable {
+        let host: HostWindow
+        let onResolve: (NSWindow) -> Void
+
+        func makeNSView(context: Context) -> Probe { Probe(host: host, onResolve: onResolve) }
+        func updateNSView(_ nsView: Probe, context: Context) {}
+
+        final class Probe: NSView {
+            let host: HostWindow
+            let onResolve: (NSWindow) -> Void
+            init(host: HostWindow, onResolve: @escaping (NSWindow) -> Void) {
+                self.host = host
+                self.onResolve = onResolve
+                super.init(frame: .zero)
+            }
+            required init?(coder: NSCoder) { fatalError() }
+            override func viewDidMoveToWindow() {
+                super.viewDidMoveToWindow()
+                host.window = window
+                guard let window else { return }
+                // Не менять @State посреди обновления вида.
+                DispatchQueue.main.async { [onResolve] in onResolve(window) }
+            }
+        }
     }
 }
 

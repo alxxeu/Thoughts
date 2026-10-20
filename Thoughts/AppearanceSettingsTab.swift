@@ -72,7 +72,7 @@ struct AppearanceSettingsTab: View {
                 }
             }
 
-            Section("Background") {
+            Section {
                 Picker("Pattern", selection: Binding(
                     get: { settings.canvasPatternID },
                     set: { settings.canvasPatternID = $0 }
@@ -93,6 +93,23 @@ struct AppearanceSettingsTab: View {
                     .frame(maxWidth: 200)
                 }
                 .disabled(settings.canvasPattern.kind == .none)
+
+                LabeledContent("Full Screen") {
+                    HStack(spacing: 8) {
+                        ForEach(FullScreenBackgroundOption.builtIn) { option in
+                            swatch(option.color, title: option.title, isSelected: settings.fullScreenBackgroundID == option.id) {
+                                settings.fullScreenBackgroundID = option.id
+                            }
+                        }
+                        ColorPicker("Custom Color", selection: fullScreenColorBinding, supportsOpacity: false)
+                            .labelsHidden()
+                            .help("Custom Color")
+                    }
+                }
+            } header: {
+                Text("Background")
+            } footer: {
+                Text("In full screen there is no desktop behind the window to blur, so Thoughts fills it with this color.")
             }
         }
         .formStyle(.grouped)
@@ -140,12 +157,15 @@ struct AppearanceSettingsTab: View {
     // MARK: - Text color
 
     private func colorSwatch(_ option: TextColorOption) -> some View {
-        let isSelected = settings.textColorID == option.id
-        return Button {
+        swatch(option.color, title: option.title, isSelected: settings.textColorID == option.id) {
             settings.textColorID = option.id
-        } label: {
+        }
+    }
+
+    private func swatch(_ color: NSColor, title: String, isSelected: Bool, action: @escaping () -> Void) -> some View {
+        Button(action: action) {
             Circle()
-                .fill(Color(nsColor: option.color))
+                .fill(Color(nsColor: color))
                 .overlay(Circle().stroke(Color.primary.opacity(0.25), lineWidth: 0.5))
                 .frame(width: 16, height: 16)
                 .padding(3)
@@ -156,7 +176,14 @@ struct AppearanceSettingsTab: View {
                 )
         }
         .buttonStyle(.plain)
-        .help(option.title)
+        .help(title)
+    }
+
+    private var fullScreenColorBinding: Binding<Color> {
+        Binding(
+            get: { Color(nsColor: settings.fullScreenBackground.color) },
+            set: { settings.fullScreenBackgroundID = FullScreenBackgroundOption.custom(NSColor($0)).id }
+        )
     }
 
     private var customColorBinding: Binding<Color> {
