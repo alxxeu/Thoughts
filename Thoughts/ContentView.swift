@@ -254,6 +254,7 @@ struct ContentView: View {
         }
         .onReceive(NotificationCenter.default.publisher(for: .lockCurrentSpace)) { _ in
             viewModel.lockActiveSpaceManually()
+            TipsState.shared.noteAction(for: .spaceLock)
         }
         .onReceive(NotificationCenter.default.publisher(for: .toggleFocusCard)) { _ in
             guard !viewModel.isActiveSpaceLocked,
@@ -261,6 +262,7 @@ struct ContentView: View {
                   !onboardingViewModel.isActive else { return }
             if focusedCardID != nil {
                 setFocusedCard(nil)
+                TipsState.shared.noteAction(for: .focusMode)
             } else if let textFocusedCardID {
                 setFocusedCard(textFocusedCardID)
                 TipsState.shared.offer(.focusMode)
@@ -599,6 +601,8 @@ struct ContentView: View {
     /// (слой 3) и подсказки про Spaces / Space Lock (слой 2).
     private func didSwitchSpace(to slot: Int) {
         SpaceTipCards.addIfNeeded(slot: slot, viewModel: viewModel)
+        // Сначала — «сделал то, о чём была плашка», потом — новые.
+        TipsState.shared.noteAction(for: .spaceSwitch)
         TipsState.shared.offer(.spaceSwitch)
         if !viewModel.securitySettings.isPasscodeEnabled { TipsState.shared.offer(.spaceLock) }
     }

@@ -19,7 +19,7 @@ struct TipToastView: View {
             if tip == .spaceLock {
                 Button("Open Security") {
                     SettingsNavigation.shared.open(.security)
-                    onDismiss()
+                    TipsState.shared.noteAction(for: .spaceLock)
                 }
             }
             Button("Got it", action: onDismiss)

@@ -13,17 +13,43 @@ struct TipsTests {
         return state
     }
 
-    @Test func toastShowsOncePerTipAndOnePerSession() {
+    @Test func nextToastWaitsForTheActionAndThreeMinutes() {
         let state = makeState()
+        var clock = Date(timeIntervalSince1970: 1_000)
+        state.now = { clock }
+
         state.offer(.spaceSwitch)
         #expect(state.currentToast == .spaceSwitch)
-        state.dismissToast()
-        // В этот запуск плашек больше нет.
+        // Пока действие из плашки не выполнено — новых нет.
+        state.offer(.focusMode)
+        #expect(state.currentToast == .spaceSwitch)
+
+        // Переключили Space — плашка закрылась, пошла пауза.
+        state.noteAction(for: .focusMode) // чужое действие ничего не меняет
+        #expect(state.currentToast == .spaceSwitch)
+        state.noteAction(for: .spaceSwitch)
+        #expect(state.currentToast == nil)
+
+        clock += 120
         state.offer(.focusMode)
         #expect(state.currentToast == nil)
-        #expect(state.seen == [.spaceSwitch])
+        clock += 61
+        state.offer(.focusMode)
+        #expect(state.currentToast == .focusMode)
         #expect(!state.shouldShow(.spaceSwitch))
-        #expect(state.shouldShow(.focusMode))
+    }
+
+    @Test func gotItAlsoStartsThePause() {
+        let state = makeState()
+        var clock = Date(timeIntervalSince1970: 1_000)
+        state.now = { clock }
+        state.offer(.askAI)
+        state.dismissToast()
+        state.offer(.focusMode)
+        #expect(state.currentToast == nil)
+        clock += 180
+        state.offer(.focusMode)
+        #expect(state.currentToast == .focusMode)
     }
 
     @Test func noTipsDuringTourOrWhenDisabled() {
