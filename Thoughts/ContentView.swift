@@ -108,7 +108,6 @@ struct ContentView: View {
     @Environment(\.openSettings) private var openSettings
     @State private var creationStart: CGPoint?
     @State private var draftFrame: CGRect?
-    /// Где сейчас указатель над пустой канвой — сюда встаёт карточка из шаблона.
     @State private var placementPreview: CGRect?
     @State private var edgeHints: [EdgeHint] = []
     @State private var newlyCreatedCardID: UUID? = nil
