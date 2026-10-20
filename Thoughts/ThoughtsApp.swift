@@ -40,7 +40,11 @@ struct ThoughtsApp: App {
                     // прозрачным — реальный рабочий стол виден без единого
                     // визуального следа Thoughts поверх него.
                     if !viewModel.desktopOverlay.isDesktopModeActive {
+                        #if DEBUG
+                        DebugBackdropView()
+                        #else
                         VisualEffectBlur(material: .hudWindow, blendingMode: .behindWindow)
+                        #endif
                     }
                 }
                 .ignoresSafeArea()
@@ -48,6 +52,9 @@ struct ThoughtsApp: App {
         }
         .windowStyle(.hiddenTitleBar)
         .windowResizability(.contentSize)
+        #if DEBUG
+        .commands { DebugBackdropCommands() }
+        #endif
         .commands {
             // Заменяет системный пункт Quit (и его Cmd+Q) — см. подробное
             // объяснение почему в QuitGuard.swift.
