@@ -591,7 +591,7 @@ struct ContentView: View {
     /// от системных элементов.
     private var workspacePillTopPadding: CGFloat {
         guard viewModel.desktopOverlay.isEnabled else { return 10 }
-        return (NSScreen.main?.safeAreaInsets.top ?? 0) + 12
+        return BoardViewModel.screenTopInset + 12
     }
 
     private func addCard(from template: CardTemplate, at point: CGPoint, canvasSize: CGSize) {
