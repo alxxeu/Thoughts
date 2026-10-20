@@ -65,6 +65,9 @@ struct AppearanceSettingsTab: View {
                         ForEach(TextColorOption.builtIn) { option in
                             colorSwatch(option)
                         }
+                        ForEach(settings.recentTextColorIDs, id: \.self) { id in
+                            colorSwatch(TextColorOption.resolve(id))
+                        }
                         ColorPicker("Custom Color", selection: customColorBinding, supportsOpacity: false)
                             .labelsHidden()
                             .help("Custom Color")
@@ -96,7 +99,7 @@ struct AppearanceSettingsTab: View {
 
                 LabeledContent("Full Screen") {
                     HStack(spacing: 8) {
-                        ForEach(FullScreenBackgroundOption.builtIn) { option in
+                        ForEach(FullScreenBackgroundOption.builtIn + settings.recentFullScreenBackgroundIDs.map(FullScreenBackgroundOption.resolve)) { option in
                             swatch(option.color, title: option.title, isSelected: settings.fullScreenBackgroundID == option.id) {
                                 settings.fullScreenBackgroundID = option.id
                             }
@@ -182,14 +185,14 @@ struct AppearanceSettingsTab: View {
     private var fullScreenColorBinding: Binding<Color> {
         Binding(
             get: { Color(nsColor: settings.fullScreenBackground.color) },
-            set: { settings.fullScreenBackgroundID = FullScreenBackgroundOption.custom(NSColor($0)).id }
+            set: { settings.pickCustomFullScreenBackground(NSColor($0)) }
         )
     }
 
     private var customColorBinding: Binding<Color> {
         Binding(
             get: { Color(nsColor: settings.cardTypography.color) },
-            set: { settings.textColorID = TextColorOption.custom(NSColor($0)).id }
+            set: { settings.pickCustomTextColor(NSColor($0)) }
         )
     }
 }
