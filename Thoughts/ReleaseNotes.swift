@@ -25,14 +25,13 @@ enum ReleaseNotes {
                 "**New Card** in the same right-click menu.",
                 "**All Spaces at a glance** \u{2014} hold \u{2325} and press Tab to see every Space with a map of its cards, release to jump there. From other apps: \u{2303}\u{2325}Tab.",
                 "**Next and previous Space** with \u{2325}\u{2190} and \u{2325}\u{2192}.",
-                "**\u{2325}1\u{2013}9 from the desktop** \u{2014} switch Spaces right after clicking the desktop.",
                 "**Customize the Space bar** \u{2014} hover it, click the gear, then hide icons or drag them into your own order.",
                 "**More AI providers** \u{2014} Google Gemini, OpenRouter, Groq, Mistral and Ollama, plus an option to turn AI off.",
                 "**Format menu** with every Markdown style, also in the right-click menu of a card."
             ]),
             .init(title: "Improved", items: [
                 "A new **Settings** window with a sidebar.",
-                "**Appearance** previews cards over your desktop, remembers your last three custom colors and lets you pick a background color for full screen.",
+                "**Appearance** previews cards over your desktop and lets you pick a background color for full screen.",
                 "A lighter window background with fewer blur artifacts.",
                 "**Desktop Overlay** stays in place when you show the desktop with a hot corner or a gesture."
             ]),
@@ -45,17 +44,15 @@ enum ReleaseNotes {
             .init(title: "New", items: [
                 "Kanban cards",
                 "New Card in the right-click menu",
-                "All Spaces \u{2014} hold \u{2325}, press Tab",
+                "All Spaces \u{2014} \u{2325}Tab",
                 "\u{2325}\u{2190} \u{2325}\u{2192} \u{2014} next Space",
-                "\u{2325}1\u{2013}9 from the desktop",
                 "Customizable Space bar",
                 "More AI providers",
-                "Format menu"
+                "Markdown in the Format menu"
             ]),
             .init(title: "Improved", items: [
                 "New Settings window",
                 "Appearance preview on your desktop",
-                "Last three custom colors",
                 "Full-screen background color",
                 "Lighter window background",
                 "Desktop Overlay stays on Show Desktop"
