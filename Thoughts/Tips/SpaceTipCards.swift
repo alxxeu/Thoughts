@@ -70,7 +70,7 @@ enum SpaceTipCards {
     /// выключен (иначе каждый Mac положил бы свою копию).
     static func shouldAdd(slot: Int, isEmpty: Bool, isProtected: Bool, isSyncEnabled: Bool, state: TipsState) -> Bool {
         texts[slot] != nil && isEmpty && !isProtected && !isSyncEnabled
-            && state.isEnabled && state.hasCompletedTour() && !state.spaceCardSlots.contains(slot)
+            && state.isEnabled && !state.isPaused && state.hasCompletedTour() && !state.spaceCardSlots.contains(slot)
     }
 
     static func addIfNeeded(slot: Int, viewModel: BoardViewModel, state: TipsState = .shared) {

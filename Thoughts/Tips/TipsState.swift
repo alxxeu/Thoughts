@@ -34,6 +34,9 @@ final class TipsState {
     /// Слоты, в которых уже появлялась карточка-совет (слой 3).
     private(set) var spaceCardSlots: Set<Int>
 
+    /// Идёт онбординг (в т.ч. Replay) — подсказок и карточек-советов нет.
+    @ObservationIgnored var isPaused = false
+
     /// Подсказка-плашка внизу доски, которая сейчас на экране.
     var currentToast: Tip?
     /// Последняя показанная плашка, действие из которой ещё не выполнили.
@@ -57,7 +60,7 @@ final class TipsState {
     }
 
     func shouldShow(_ tip: Tip) -> Bool {
-        isEnabled && hasCompletedTour() && !seen.contains(tip)
+        isEnabled && !isPaused && hasCompletedTour() && !seen.contains(tip)
     }
 
     func markSeen(_ tip: Tip) {

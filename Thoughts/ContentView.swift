@@ -195,7 +195,7 @@ struct ContentView: View {
         }
         .overlay {
             if onboardingViewModel.isActive {
-                OnboardingView(onboardingViewModel: onboardingViewModel)
+                OnboardingView(onboardingViewModel: onboardingViewModel, board: viewModel)
                     .transition(.opacity)
             }
         }
@@ -665,14 +665,15 @@ struct ContentView: View {
                 // канву — та же проблема, что clampedPosition уже решает для
                 // отображения обычных карточек, но с учётом их реального size.
                 let clampedOrigin = BoardViewModel.clampedPosition(origin, size: size, canvasSize: canvasSize, topInset: effectiveTopInset)
-                draftFrame = CGRect(origin: clampedOrigin, size: size)
+                draftFrame = BoardViewModel.clampedToSandbox(CGRect(origin: clampedOrigin, size: size))
             }
             .onEnded { _ in
                 defer { creationStart = nil; draftFrame = nil }
                 guard let frame = draftFrame else { return }
                 
-                newlyCreatedCardID = viewModel.addCard(at: frame.origin, size: frame.size).id
-                onboardingViewModel.handle(.cardCreated)
+                let card = viewModel.addCard(at: frame.origin, size: frame.size)
+                newlyCreatedCardID = card.id
+                onboardingViewModel.cardCreated(card.id)
             }
     }
 

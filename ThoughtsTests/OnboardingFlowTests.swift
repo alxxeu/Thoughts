@@ -12,6 +12,37 @@ struct OnboardingFlowTests {
         return (model, box)
     }
 
+    /// Курс экрана 3: создать, написать, тег, удалить.
+    private func passSandbox(_ model: OnboardingViewModel) {
+        model.cardCreated(UUID())
+        model.sync(cardExists: true, hasText: true, hasTag: false)
+        model.sync(cardExists: true, hasText: true, hasTag: true)
+        model.sync(cardExists: false, hasText: false, hasTag: false)
+        #expect(model.isSandboxDone)
+    }
+
+    @Test func sandboxNeedsAllFourTasksInOrderOfDeletion() {
+        let (model, _) = makeModel()
+        model.next(); model.next()
+        #expect(model.currentTask == .create)
+        model.cardCreated(UUID())
+        #expect(model.currentTask == .type)
+        model.sync(cardExists: true, hasText: true, hasTag: false)
+        #expect(model.currentTask == .tag)
+        // Удалили раньше тега — нужна новая карточка, текст засчитан.
+        model.sync(cardExists: false, hasText: false, hasTag: false)
+        #expect(model.currentTask == .create)
+        #expect(model.isDone(.type))
+        model.next()
+        #expect(model.step == .firstCard)
+        model.cardCreated(UUID())
+        model.sync(cardExists: true, hasText: false, hasTag: true)
+        model.sync(cardExists: false, hasText: false, hasTag: false)
+        #expect(model.isSandboxDone)
+        model.next()
+        #expect(model.step == .finish)
+    }
+
     final class Box {
         var completed = false
         var finished: (OnboardingHome?, Bool)?
@@ -24,13 +55,10 @@ struct OnboardingFlowTests {
         #expect(model.step == .home)
         model.next()
         #expect(model.step == .firstCard)
-        // Без карточки дальше нельзя.
+        // Без курса в карточку дальше нельзя.
         model.next()
         #expect(model.step == .firstCard)
-        model.handle(.cardMoved)
-        #expect(!model.didCreateCard)
-        model.handle(.cardCreated)
-        #expect(model.didCreateCard)
+        passSandbox(model)
         model.next()
         #expect(model.step == .finish)
         model.next()
@@ -49,7 +77,7 @@ struct OnboardingFlowTests {
         model.back()
         #expect(model.step == .hook)
         model.next(); model.next()
-        model.handle(.cardCreated)
+        passSandbox(model)
         model.next(); model.next()
         #expect(box.finished?.0 == OnboardingHome.window)
     }
@@ -59,7 +87,7 @@ struct OnboardingFlowTests {
         model.start(currentHome: .window)
         #expect(model.home == .window)
         model.next(); model.next()
-        model.handle(.cardCreated)
+        passSandbox(model)
         model.next(); model.next()
         // Подтвердили предвыбранный режим — тот же; шпаргалку второй раз не кладём.
         #expect(box.finished?.0 == OnboardingHome.window)
