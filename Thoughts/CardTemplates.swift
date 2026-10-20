@@ -30,10 +30,10 @@ struct CardTemplate: Identifiable {
     }
 
     static let all: [CardTemplate] = [
-        board(id: "board1", name: "Kanban: 1 Column", note: "good for a daily plan", count: 1, cells: 6),
-        board(id: "board2", name: "Kanban: 2 Columns", note: "simple to-do", count: 2, cells: 9),
-        board(id: "board3", name: "Kanban: 3 Columns", note: "regular kanban", count: 3, cells: 12),
-        board(id: "board4", name: "Kanban: 4 Columns", note: "workflow with a review step", count: 4, cells: 14),
+        board(id: "board1", name: "1 Column", note: "good for a daily plan", count: 1, cells: 6),
+        board(id: "board2", name: "2 Columns", note: "simple to-do", count: 2, cells: 9),
+        board(id: "board3", name: "3 Columns", note: "regular kanban", count: 3, cells: 12),
+        board(id: "board4", name: "4 Columns", note: "workflow with a review step", count: 4, cells: 14),
     ]
 
     /// Обычный канбан из трёх колонок.
@@ -44,7 +44,30 @@ struct CardTemplate: Identifiable {
     static let blank = CardTemplate(id: "blank", name: "New Card", note: "", text: "", columns: 4, rows: 3)
 
     var isBoard: Bool { text.hasPrefix("::: board") }
+}
 
-    /// Пункт меню: у шаблонов с комментарием — «Имя — комментарий».
-    var menuItemTitle: String { note.isEmpty ? name : menuTitle }
+/// Шаблон в правом клике и в Settings → Plugins → Templates. Один шаблон может
+/// иметь несколько вариантов (канбан на 1–4 колонки) — тогда в меню это
+/// подменю, а в настройках — одна строка с одним переключателем.
+struct TemplateGroup: Identifiable {
+    let id: String
+    /// Имя в настройках.
+    let name: String
+    /// Пункт меню (у шаблона с вариантами — заголовок подменю).
+    let menuTitle: String
+    let variants: [CardTemplate]
+
+    static let kanban = TemplateGroup(id: "kanban", name: "Kanban", menuTitle: "New Kanban Card", variants: CardTemplate.all)
+
+    /// Шаблон из одного варианта (файл из папки шаблонов).
+    init(_ template: CardTemplate) {
+        self.init(id: template.id, name: template.name, menuTitle: template.name, variants: [template])
+    }
+
+    init(id: String, name: String, menuTitle: String, variants: [CardTemplate]) {
+        self.id = id
+        self.name = name
+        self.menuTitle = menuTitle
+        self.variants = variants
+    }
 }

@@ -18,12 +18,12 @@ final class TemplateSettings {
         disabledIDs = Set(UserDefaults.standard.stringArray(forKey: Self.disabledKey) ?? [])
     }
 
-    /// Все доступные: встроенные доски и файлы из папки шаблонов.
-    var available: [CardTemplate] {
-        CardTemplate.all + UserTemplateStore.shared.templates.map(CardTemplate.init)
+    /// Все доступные: встроенный канбан и файлы из папки шаблонов.
+    var available: [TemplateGroup] {
+        [.kanban] + UserTemplateStore.shared.templates.map { TemplateGroup(CardTemplate($0)) }
     }
 
-    var enabled: [CardTemplate] {
+    var enabled: [TemplateGroup] {
         available.filter { isEnabled($0.id) }
     }
 

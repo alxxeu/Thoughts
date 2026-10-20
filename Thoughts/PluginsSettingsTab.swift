@@ -53,14 +53,14 @@ struct PluginsSettingsTab: View {
     /// потом добавятся шаблоны из плагинов и каталога.
     private var templatesSection: some View {
         Section {
-            ForEach(templateSettings.available) { template in
+            ForEach(templateSettings.available) { group in
                 Toggle(isOn: Binding(
-                    get: { templateSettings.isEnabled(template.id) },
-                    set: { templateSettings.setEnabled($0, for: template.id) }
+                    get: { templateSettings.isEnabled(group.id) },
+                    set: { templateSettings.setEnabled($0, for: group.id) }
                 )) {
                     VStack(alignment: .leading, spacing: 2) {
-                        Text(template.name)
-                        Text(subtitle(for: template))
+                        Text(group.name)
+                        Text(subtitle(for: group))
                             .font(.caption)
                             .foregroundStyle(.secondary)
                     }
@@ -70,11 +70,17 @@ struct PluginsSettingsTab: View {
         } header: {
             Text("Templates")
         } footer: {
-            Text("Turned-on templates appear when you right-click an empty spot on the board, right after New Card.")
+            Text("Turned-on templates appear when you right-click an empty spot on the board, after New Card.")
         }
     }
 
-    private func subtitle(for template: CardTemplate) -> String {
+    /// Варианты через запятую («1 Column, 2 Columns…»); у одиночного —
+    /// комментарий и размер в клетках.
+    private func subtitle(for group: TemplateGroup) -> String {
+        if group.variants.count > 1 {
+            return group.variants.map(\.name).joined(separator: ", ")
+        }
+        guard let template = group.variants.first else { return "" }
         let size = "\(template.columns)\u{00D7}\(template.rows)"
         return template.note.isEmpty ? size : "\(template.note) \u{00B7} \(size)"
     }
