@@ -19,7 +19,9 @@ struct KanbanCardView: View {
     /// Идёт перенос плитки: свой жест (не системный drag-and-drop — тот давал
     /// текстовым полям «принять» id плитки как строку).
     @State private var dragging: DragState?
-    @State private var tileFrames: [UUID: CGRect] = [:]
+    /// Рамки плиток и последний записанный текст — читаются по событию (перенос, меню,
+    /// внешняя правка), поэтому лежат в объекте: их обновление не перерисовывает карточку.
+    @State private var cache: BoardCache
     @State private var isCardHovered = false
     /// Высота закреплённой шапки с заголовками (мерится) — от неё высота колонок.
     @State private var headerHeight: CGFloat = 44
@@ -44,6 +46,12 @@ struct KanbanCardView: View {
         case item(KanbanBoard.Item.ID)
     }
 
+    private final class BoardCache {
+        var frames: [UUID: CGRect] = [:]
+        var lastText: String
+        init(text: String) { lastText = text }
+    }
+
     /// Получатель отмены: UndoManager держит цель по ссылке.
     private final class UndoHost {
         var apply: (String) -> Void = { _ in }
@@ -58,6 +66,7 @@ struct KanbanCardView: View {
         self.onTextChange = onTextChange
         self.onFocusChange = onFocusChange
         _board = State(initialValue: KanbanBoard.parse(text.wrappedValue) ?? KanbanBoard(columns: [.init(title: "", items: [])]))
+        _cache = State(initialValue: BoardCache(text: text.wrappedValue))
     }
 
     private static let sidePadding: CGFloat = 10
@@ -85,6 +94,8 @@ struct KanbanCardView: View {
 
     var body: some View {
         let columnWidth = max((cardSize.width - Self.sidePadding * 2) / CGFloat(board.columns.count), 80)
+        // Куда ляжет переносимая плитка — считаем один раз на перерисовку, а не в каждой плитке.
+        let dropSlot = dragging.map { dropTarget(at: $0.pointer) }
         ZStack(alignment: .topLeading) {
             VStack(spacing: 0) {
                 // Шапка с заголовками — закреплена: не прокручивается вместе с плитками.
@@ -105,19 +116,19 @@ struct KanbanCardView: View {
                 ScrollView(.vertical) {
                     HStack(alignment: .top, spacing: 0) {
                         ForEach(Array(board.columns.enumerated()), id: \.element.id) { index, column in
-                            columnView(column, index: index)
+                            columnView(column, index: index, dropSlot: dropSlot)
                                 .frame(width: columnWidth, alignment: .top)
                                 // Колонка — до низа карточки, даже если пунктов мало.
                                 .frame(minHeight: minColumnHeight, alignment: .top)
                         }
                     }
                     .coordinateSpace(name: "kanban")
-                    .onPreferenceChange(TileFramesKey.self) { tileFrames = $0 }
+                    .onPreferenceChange(TileFramesKey.self) { cache.frames = $0 }
                     .overlay(alignment: .topLeading) { dragGhost }
                     // Правый клик в пустом месте колонки — «Add / Remove Column» (под курсором — своя колонка).
                     .overlay {
                         KanbanContextMenu(
-                            passesThrough: { point in tileFrames.values.contains { $0.contains(point) } },
+                            passesThrough: { point in cache.frames.values.contains { $0.contains(point) } },
                             entries: { menuEntries(at: $0) }
                         )
                     }
@@ -149,7 +160,8 @@ struct KanbanCardView: View {
         .onHover { isCardHovered = $0 }
         .onChange(of: text) { _, newText in
             // Текст поменяли снаружи (синк, Ask AI, импорт) — перечитать.
-            guard newText != board.serialized(), let parsed = KanbanBoard.parse(newText) else { return }
+            guard newText != cache.lastText, let parsed = KanbanBoard.parse(newText) else { return }
+            cache.lastText = newText
             board = parsed
         }
         .onChange(of: focus) { _, newValue in
@@ -184,10 +196,10 @@ struct KanbanCardView: View {
             .padding(.horizontal, 12)
     }
 
-    private func columnView(_ column: KanbanBoard.Column, index: Int) -> some View {
+    private func columnView(_ column: KanbanBoard.Column, index: Int, dropSlot: (column: Int, index: Int)?) -> some View {
         VStack(alignment: .leading, spacing: 8) {
             ForEach(Array(column.items.enumerated()), id: \.element.id) { position, item in
-                tile(item, column: index, position: position, isLast: position == column.items.count - 1)
+                tile(item, column: index, position: position, isLast: position == column.items.count - 1, dropSlot: dropSlot)
             }
 
             KanbanPlusButton(ink: ink, isVisible: isCardHovered || isFocused || dragging != nil) {
@@ -197,7 +209,7 @@ struct KanbanCardView: View {
             .padding(.top, 2)
             // Пустая колонка: линия вставки — над «+».
             .overlay(alignment: .top) {
-                if column.items.isEmpty { dropIndicator(column: index, position: 0).offset(y: -6) }
+                if column.items.isEmpty { dropIndicator(column: index, position: 0, slot: dropSlot).offset(y: -6) }
             }
         }
         .padding(.horizontal, 12)
@@ -207,7 +219,8 @@ struct KanbanCardView: View {
 
     // MARK: - Плитка
 
-    private func tile(_ item: KanbanBoard.Item, column: Int, position: Int, isLast: Bool) -> some View {
+    private func tile(_ item: KanbanBoard.Item, column: Int, position: Int, isLast: Bool,
+                      dropSlot: (column: Int, index: Int)?) -> some View {
         KanbanTile(
             text: textBinding(item.id), id: item.id, ink: ink, font: itemFont,
             focus: $focus,
@@ -218,19 +231,21 @@ struct KanbanCardView: View {
             onBackspaceWhenEmpty: { deleteEmptyItem(item.id) },
             isBeingDragged: dragging?.itemID == item.id,
             onDragChanged: { pointer in
-                dragging = DragState(itemID: item.id, text: item.text, pointer: pointer, width: tileFrames[item.id]?.width ?? 160)
+                dragging = DragState(itemID: item.id, text: item.text, pointer: pointer, width: cache.frames[item.id]?.width ?? 160)
             },
             onDragEnded: { pointer in finishDrag(item.id, at: pointer) }
         )
+        // Плитка перерисовывается только когда изменилось то, что она показывает.
+        .equatable()
         // Мягкое появление и исчезновение (галочка «готово», «+»).
         .transition(.asymmetric(
             insertion: .opacity.combined(with: .scale(scale: 0.96)),
             removal: .opacity.combined(with: .scale(scale: 0.9))
         ))
         // Линия вставки — на стыке плиток (поверх, макет не двигает).
-        .overlay(alignment: .top) { dropIndicator(column: column, position: position).offset(y: -4.5) }
+        .overlay(alignment: .top) { dropIndicator(column: column, position: position, slot: dropSlot).offset(y: -4.5) }
         .overlay(alignment: .bottom) {
-            if isLast { dropIndicator(column: column, position: position + 1).offset(y: 4.5) }
+            if isLast { dropIndicator(column: column, position: position + 1, slot: dropSlot).offset(y: 4.5) }
         }
     }
 
@@ -313,13 +328,13 @@ struct KanbanCardView: View {
         let count = board.columns.count
         let width = max((cardSize.width - Self.sidePadding * 2) / CGFloat(count), 80)
         let column = min(max(Int((pointer.x / width).rounded(.down)), 0), count - 1)
-        let above = board.columns[column].items.filter { (tileFrames[$0.id]?.midY ?? 0) < pointer.y }.count
+        let above = board.columns[column].items.filter { (cache.frames[$0.id]?.midY ?? 0) < pointer.y }.count
         return (column, above)
     }
 
     @ViewBuilder
-    private func dropIndicator(column: Int, position: Int) -> some View {
-        if let dragging, dropTarget(at: dragging.pointer) == (column, position) {
+    private func dropIndicator(column: Int, position: Int, slot: (column: Int, index: Int)?) -> some View {
+        if let slot, slot.column == column, slot.index == position {
             Capsule().fill(ink.opacity(0.6)).frame(height: 3).padding(.horizontal, 6)
         }
     }
@@ -369,6 +384,7 @@ struct KanbanCardView: View {
         let after = board.serialized()
         guard after != before else { return }
         if undoable { registerUndo(restoring: before) }
+        cache.lastText = after
         text = after
         onTextChange()
     }
@@ -383,6 +399,7 @@ struct KanbanCardView: View {
         registerUndo(restoring: current)
         guard let parsed = KanbanBoard.parse(previous) else { return }
         board = parsed
+        cache.lastText = previous
         text = previous
         onTextChange()
     }
@@ -515,6 +532,22 @@ private struct KanbanCheckmark: Shape {
         path.addLine(to: CGPoint(x: rect.minX + rect.width * 0.36, y: rect.maxY))
         path.addLine(to: CGPoint(x: rect.maxX, y: rect.minY))
         return path
+    }
+}
+
+extension KanbanTile: Equatable {
+    static func == (lhs: KanbanTile, rhs: KanbanTile) -> Bool {
+        lhs.id == rhs.id && lhs.text == rhs.text && lhs.ink == rhs.ink && lhs.font == rhs.font
+            && lhs.isBeingDragged == rhs.isBeingDragged
+    }
+}
+
+extension KanbanCardView: Equatable {
+    /// Карточку двигают по доске — её входные данные при этом те же; без этого вся
+    /// доска (все плитки) перерисовывалась бы на каждый кадр перетаскивания.
+    static func == (lhs: KanbanCardView, rhs: KanbanCardView) -> Bool {
+        lhs.text == rhs.text && lhs.isFocused == rhs.isFocused
+            && lhs.cardSize == rhs.cardSize && lhs.typography == rhs.typography
     }
 }
 

@@ -116,6 +116,8 @@ struct CardView: View {
                         if focused { viewModel.bringToFront(card) }
                     }
                 )
+                // Не пересчитывать доску на каждый кадр, пока карточку двигают.
+                .equatable()
                 .opacity(isFocusTransitioning ? 0 : 1)
                 .animation(isFocusTransitioning ? nil : .easeIn(duration: 0.15), value: isFocusTransitioning)
                 .zIndex(0)
