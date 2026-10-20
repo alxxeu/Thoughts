@@ -41,31 +41,45 @@ struct SettingsView: View {
                 lockedPlaceholder
                     .frame(width: Self.windowSize.width, height: Self.windowSize.height)
             } else {
-                // Нативный NavigationSplitView с боковой панелью — как в настройках Thaw
-                // и системных (List(.sidebar), Label + tag, заголовок раздела в панели окна).
-                NavigationSplitView {
-                    sidebar
-                        .navigationSplitViewColumnWidth(ideal: 210, max: 240)
-                } detail: {
-                    detail
-                        .id(SettingsNavigation.shared.selectedTab)
-                        .navigationTitle(Self.title(for: SettingsNavigation.shared.selectedTab))
-                }
-                .toolbar {
-                    ToolbarItem(placement: .navigation) {
-                        ControlGroup {
-                            Button { step(-1) } label: { Image(systemName: "chevron.left") }
-                                .disabled(currentIndex == 0)
-                                .help("Back")
-                            Button { step(1) } label: { Image(systemName: "chevron.right") }
-                                .disabled(currentIndex == SettingsNavigation.Tab.allCases.count - 1)
-                                .help("Forward")
-                        }
-                        .controlGroupStyle(.navigation)
-                    }
-                }
-                .frame(width: Self.windowSize.width, height: Self.windowSize.height)
+                splitView
+                    .frame(width: Self.windowSize.width, height: Self.windowSize.height)
             }
+        }
+    }
+
+    /// Нативный NavigationSplitView с боковой панелью — как в настройках Thaw и
+    /// системных (List(.sidebar), Label + tag, заголовок раздела в панели окна).
+    private var splitView: some View {
+        NavigationSplitView {
+            sidebar
+                .navigationSplitViewColumnWidth(ideal: 210, max: 240)
+        } detail: {
+            detail
+                .id(SettingsNavigation.shared.selectedTab)
+                .navigationTitle(Self.title(for: SettingsNavigation.shared.selectedTab))
+        }
+        .toolbar { navigationButtons }
+    }
+
+    /// ‹ › в панели окна — по разделам подряд, как у Thaw.
+    @ToolbarContentBuilder
+    private var navigationButtons: some ToolbarContent {
+        ToolbarItemGroup(placement: .navigation) {
+            Button {
+                step(-1)
+            } label: {
+                Image(systemName: "chevron.left")
+            }
+            .disabled(currentIndex == 0)
+            .help("Back")
+
+            Button {
+                step(1)
+            } label: {
+                Image(systemName: "chevron.right")
+            }
+            .disabled(currentIndex == SettingsNavigation.Tab.allCases.count - 1)
+            .help("Forward")
         }
     }
 
