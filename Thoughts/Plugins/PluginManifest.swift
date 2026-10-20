@@ -15,7 +15,18 @@ struct PluginManifest: Codable, Equatable {
     var author: String?
     var description: String?
     var homepage: String?
+    /// Скрипт плагина (`main.js`) — нужен конвертерам. Без него плагин — только данные.
+    var main: String?
+    var permissions: Permissions?
     var contributes: Contributes?
+
+    /// Права скрипта: пользователь видит их при установке и в списке плагинов.
+    struct Permissions: Codable, Equatable {
+        /// Хосты, к которым можно обращаться через `thoughts.fetch` (только https).
+        var network: [String]?
+    }
+
+    var networkHosts: [String] { permissions?.network ?? [] }
 
     struct Contributes: Codable, Equatable {
         var fonts: [Font]?
@@ -23,6 +34,15 @@ struct PluginManifest: Codable, Equatable {
         var patterns: [Pattern]?
         var themes: [Theme]?
         var cardTemplates: [Template]?
+        var converters: [Converter]?
+    }
+
+    /// Конвертер строки (как в Spotlight): регистрируется скриптом через
+    /// `thoughts.converter(id, { convert(line) })`.
+    struct Converter: Codable, Equatable {
+        var id: String
+        var name: String
+        var description: String?
     }
 
     struct Font: Codable, Equatable {
@@ -90,7 +110,7 @@ struct PluginManifest: Codable, Equatable {
     var itemCount: Int {
         guard let c = contributes else { return 0 }
         return (c.fonts?.count ?? 0) + (c.textColors?.count ?? 0) + (c.patterns?.count ?? 0)
-            + (c.themes?.count ?? 0) + (c.cardTemplates?.count ?? 0)
+            + (c.themes?.count ?? 0) + (c.cardTemplates?.count ?? 0) + (c.converters?.count ?? 0)
     }
 }
 
@@ -101,6 +121,7 @@ enum PluginError: LocalizedError, Equatable {
     case needsNewerApp(String)
     case invalid(String)
     case alreadyInstalled(String)
+    case unsigned
 
     var errorDescription: String? {
         switch self {
@@ -116,6 +137,8 @@ enum PluginError: LocalizedError, Equatable {
             return "This plugin can\u{2019}t be used: \(reason)."
         case .alreadyInstalled(let version):
             return "Version \(version) or newer of this plugin is already installed."
+        case .unsigned:
+            return "This plugin runs code and isn\u{2019}t from the Thoughts catalog. The App Store version of Thoughts installs only catalog plugins that run code."
         }
     }
 }
@@ -125,14 +148,18 @@ enum PluginError: LocalizedError, Equatable {
 enum PluginValidator {
     static let maxPackageSize = 20_000_000
     static let maxFontSize = 10_000_000
+    static let maxScriptSize = 1_000_000
     static let maxItemsPerPoint = 200
     static let maxVariants = 12
-    static let allowedExtensions: Set<String> = ["json", "ttf", "otf"]
+    static let allowedExtensions: Set<String> = ["json", "ttf", "otf", "js"]
+    /// Файл подписи каталога (см. PluginSignature) — без расширения.
+    static let signatureFileName = "signature"
     static let patternKinds: [String: CanvasPattern.Kind] = [
         "dots": .dots, "grid": .grid, "lines": .lines, "crosses": .crosses, "diagonal": .diagonal
     ]
 
-    static func validate(packageAt url: URL, appVersion: String = Self.currentAppVersion) throws -> PluginManifest {
+    static func validate(packageAt url: URL, appVersion: String = Self.currentAppVersion,
+                         requireSignatureForCode: Bool = PluginSignature.requiredForCode) throws -> PluginManifest {
         let root = url.standardizedFileURL
         var isDirectory: ObjCBool = false
         guard FileManager.default.fileExists(atPath: root.path, isDirectory: &isDirectory), isDirectory.boolValue,
@@ -155,6 +182,10 @@ enum PluginValidator {
         }
 
         try checkHeader(manifest, appVersion: appVersion)
+        try checkScript(manifest, root: root)
+        if manifest.main != nil, requireSignatureForCode, !PluginSignature.isValid(packageAt: root) {
+            throw PluginError.unsigned
+        }
         try checkContributions(manifest, root: root)
         return manifest
     }
@@ -178,9 +209,9 @@ enum PluginValidator {
             if values.isSymbolicLink == true { throw PluginError.invalid("\u{201C}\(name)\u{201D} is a link") }
             if values.isDirectory == true { continue }
             // Finder кладёт .DS_Store в любую открытую папку — не повод отклонять пакет.
-            if name == ".DS_Store" { continue }
+            if name == ".DS_Store" || name == signatureFileName { continue }
             guard values.isRegularFile == true, allowedExtensions.contains(file.pathExtension.lowercased()) else {
-                throw PluginError.invalid("\u{201C}\(name)\u{201D} isn\u{2019}t an allowed file type (.json, .ttf, .otf)")
+                throw PluginError.invalid("\u{201C}\(name)\u{201D} isn\u{2019}t an allowed file type (.json, .ttf, .otf, .js)")
             }
             if values.isExecutable == true { throw PluginError.invalid("\u{201C}\(name)\u{201D} is executable") }
             total += values.fileSize ?? 0
@@ -209,6 +240,27 @@ enum PluginValidator {
                 throw PluginError.invalid("the homepage must be an https link")
             }
         }
+    }
+
+    // MARK: - Скрипт и права
+
+    private static func checkScript(_ m: PluginManifest, root: URL) throws {
+        let converters = m.contributes?.converters ?? []
+        guard let main = m.main else {
+            if !converters.isEmpty { throw PluginError.invalid("converters need a script: add \u{201C}main\u{201D}") }
+            if !m.networkHosts.isEmpty { throw PluginError.invalid("network permissions need a script: add \u{201C}main\u{201D}") }
+            return
+        }
+        let file = try fileInside(root, main, what: "main")
+        guard file.pathExtension.lowercased() == "js" else { throw PluginError.invalid("\u{201C}main\u{201D} must be a .js file") }
+        let size = (try? file.resourceValues(forKeys: [.fileSizeKey]).fileSize) ?? 0
+        guard size <= maxScriptSize else { throw PluginError.invalid("the script is larger than 1 MB") }
+        for host in m.networkHosts {
+            guard matches(host, #"^[a-z0-9-]+(\.[a-z0-9-]+)+$"#) else {
+                throw PluginError.invalid("network permission \u{201C}\(host)\u{201D} must be a host name like api.example.com")
+            }
+        }
+        try checkItems(converters.map(\.id), names: converters.map(\.name), point: "converters")
     }
 
     // MARK: - Точки расширения

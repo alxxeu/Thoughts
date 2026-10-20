@@ -38,6 +38,10 @@ final class PluginsModel {
 
     private(set) var installed: [InstalledPlugin] = []
     private(set) var contributions = PluginContributions()
+    /// Ошибки скриптов (не загрузился, не зарегистрировал конвертер, завис) — красным
+    /// в списке; конвертеры такого плагина не работают.
+    private(set) var runtimeErrors: [String: String] = [:]
+    @ObservationIgnored private var scripts: [String: PluginScript] = [:]
 
     private var disabledIDs: Set<String> {
         didSet { UserDefaults.standard.set(Array(disabledIDs), forKey: Self.disabledKey) }
@@ -49,6 +53,19 @@ final class PluginsModel {
         self.folder = folder ?? BoardStore.dataFolder.appendingPathComponent("Plugins", isDirectory: true)
         disabledIDs = Set(UserDefaults.standard.stringArray(forKey: Self.disabledKey) ?? [])
     }
+
+    /// Только для общего менеджера: конвертеры приложения и выключение зависших.
+    func attachConverters() {
+        ConverterService.shared.onUnresponsive = { [weak self] id in
+            guard let self, let plugin = installed.first(where: { $0.id == id }) else { return }
+            setEnabled(false, for: plugin)
+            runtimeErrors[id] = "Stopped responding, so it was turned off. Turn it on to try again."
+        }
+        convertersAttached = true
+        rebuildContributions()
+    }
+
+    @ObservationIgnored private var convertersAttached = false
 
     var folderURL: URL { folder }
 
@@ -83,6 +100,9 @@ final class PluginsModel {
     func setEnabled(_ enabled: Bool, for plugin: InstalledPlugin) {
         guard plugin.manifest != nil else { return }
         if enabled { disabledIDs.remove(plugin.id) } else { disabledIDs.insert(plugin.id) }
+        // Включили снова — скрипт с чистого листа.
+        runtimeErrors.removeValue(forKey: plugin.id)
+        scripts.removeValue(forKey: plugin.id)
         if let index = installed.firstIndex(where: { $0.id == plugin.id }) {
             installed[index].isEnabled = enabled
         }
@@ -93,6 +113,13 @@ final class PluginsModel {
 
     /// Проверка и копия в `Plugins/<id>/`. Тот же id — обновление только более
     /// новой версией. Пакет никогда не работает с исходного места.
+    /// Проверка пакета до установки — чтобы показать права скрипта.
+    func inspect(_ source: URL) throws -> PluginManifest {
+        let scoped = source.startAccessingSecurityScopedResource()
+        defer { if scoped { source.stopAccessingSecurityScopedResource() } }
+        return try PluginValidator.validate(packageAt: source)
+    }
+
     @discardableResult
     func install(from source: URL) throws -> InstalledPlugin {
         let scoped = source.startAccessingSecurityScopedResource()
@@ -121,6 +148,9 @@ final class PluginsModel {
             try fm.moveItem(at: staging, to: destination)
         }
 
+        // Новая версия — новый скрипт.
+        scripts.removeValue(forKey: manifest.id)
+        runtimeErrors.removeValue(forKey: manifest.id)
         reload()
         return installed.first { $0.id == manifest.id }
             ?? InstalledPlugin(id: manifest.id, url: destination, manifest: manifest, error: nil, isEnabled: true)
@@ -129,6 +159,7 @@ final class PluginsModel {
     func remove(_ plugin: InstalledPlugin) {
         try? FileManager.default.removeItem(at: plugin.url)
         disabledIDs.remove(plugin.id)
+        runtimeErrors.removeValue(forKey: plugin.id)
         reload()
     }
 
@@ -181,8 +212,54 @@ final class PluginsModel {
 
         registerFonts(neededFonts)
         contributions = result
+        rebuildScripts()
         // Шрифт или цвет из плагина мог стать (не)доступен — пересобрать стиль текста.
         AppearanceSettings.shared.refreshTypography()
+    }
+
+    /// Скрипты включённых плагинов и их конвертеры — в ConverterService.
+    private func rebuildScripts() {
+        var active: [String: PluginScript] = [:]
+        var entries: [ConverterEntry] = []
+        for plugin in installed where plugin.isEnabled && runtimeErrors[plugin.id] == nil {
+            guard let manifest = plugin.manifest, let main = manifest.main,
+                  let file = try? PluginValidator.fileInside(plugin.url, main, what: "main") else { continue }
+            let script: PluginScript
+            if let existing = scripts[plugin.id] {
+                script = existing
+            } else {
+                script = PluginScript(pluginID: plugin.id, scriptURL: file, allowedHosts: manifest.networkHosts)
+                check(script, declared: (manifest.contributes?.converters ?? []).map(\.id))
+            }
+            active[plugin.id] = script
+            for converter in manifest.contributes?.converters ?? [] {
+                entries.append(ConverterEntry(script: script, id: converter.id, name: converter.name))
+            }
+        }
+        scripts = active
+        if convertersAttached { ConverterService.shared.converters = entries }
+        convertersInUse = entries
+    }
+
+    /// Конвертеры, которые сейчас в работе (для тестов и списка в Settings).
+    @ObservationIgnored private(set) var convertersInUse: [ConverterEntry] = []
+
+    /// Скрипт загрузился и зарегистрировал всё, что объявлено в манифесте? Иначе — ошибка.
+    private func check(_ script: PluginScript, declared: [String]) {
+        script.status { registered, loadError in
+            Task { @MainActor [weak self] in
+                guard let self else { return }
+                let missing = declared.filter { !registered.contains($0) }
+                if let loadError {
+                    self.runtimeErrors[script.pluginID] = loadError
+                } else if !missing.isEmpty {
+                    self.runtimeErrors[script.pluginID] = "The script didn\u{2019}t register: \(missing.joined(separator: ", ")). Call thoughts.converter(\"\(missing[0])\", { convert(line) { \u{2026} } })."
+                } else {
+                    return
+                }
+                self.rebuildScripts()
+            }
+        }
     }
 
     private static func group(for template: PluginManifest.Template, prefix: String) -> TemplateGroup {

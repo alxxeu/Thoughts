@@ -166,6 +166,93 @@ private final class CardNSTextView: NSTextView {
     override func draw(_ dirtyRect: NSRect) {
         super.draw(dirtyRect)
         decorator?.drawOverlays()
+        drawConverterGhost()
+    }
+
+    // MARK: - Конвертеры (как в Spotlight)
+
+    /// Результат конвертера для строки с кареткой: серый хвост после строки, Tab
+    /// дописывает его. `line` — диапазон строки без перевода строки.
+    private var converterGhost: (suffix: String, line: NSRange, text: String)? {
+        didSet { needsDisplay = true }
+    }
+
+    /// Каретка в конце строки и выделения нет — спросить конвертеры; иначе убрать.
+    private func updateConverterGhost() {
+        let ns = string as NSString
+        let selection = selectedRange()
+        guard selection.length == 0, hasMarkedText() == false, isEditable, window?.firstResponder === self else {
+            clearConverterGhost()
+            return
+        }
+        let paragraph = ns.paragraphRange(for: NSRange(location: selection.location, length: 0))
+        var line = paragraph
+        if line.length > 0, ns.character(at: NSMaxRange(line) - 1) == 0x0A { line.length -= 1 }
+        let text = ns.substring(with: line)
+        guard selection.location == NSMaxRange(line), Self.allowsConverter(on: text, at: line, in: textStorage) else {
+            clearConverterGhost()
+            return
+        }
+        if let ghost = converterGhost, ghost.line == line, ghost.text == text { return }
+        if converterGhost != nil { converterGhost = nil }
+        ConverterService.shared.request(text) { [weak self] result in
+            guard let self, let result else { return }
+            let now = self.string as NSString
+            // Пока считали, текст или каретка могли уйти.
+            guard NSMaxRange(line) <= now.length, now.substring(with: line) == text,
+                  self.selectedRange() == NSRange(location: NSMaxRange(line), length: 0) else { return }
+            self.converterGhost = (ConverterService.suffix(for: text, result: result), line, text)
+        }
+    }
+
+    private func clearConverterGhost() {
+        ConverterService.shared.cancel()
+        if converterGhost != nil { converterGhost = nil }
+    }
+
+    /// Не на служебных строках Markdown: заборы кода, разделители колонок `||`,
+    /// ячейки колонок (NSTextTable) и строки с доской.
+    private static func allowsConverter(on text: String, at line: NSRange, in storage: NSTextStorage?) -> Bool {
+        let trimmed = text.trimmingCharacters(in: .whitespaces)
+        guard !trimmed.isEmpty, !trimmed.hasPrefix("```"), trimmed != "||", !trimmed.hasPrefix(":::") else { return false }
+        if let storage, line.length > 0,
+           let style = storage.attribute(.paragraphStyle, at: line.location, effectiveRange: nil) as? NSParagraphStyle,
+           !style.textBlocks.isEmpty { return false }
+        return true
+    }
+
+    /// Tab при видимом результате: дописать его к строке одной правкой (одно ⌘Z).
+    func acceptConverterGhost() -> Bool {
+        guard let ghost = converterGhost, selectedRange() == NSRange(location: NSMaxRange(ghost.line), length: 0) else { return false }
+        let insertAt = NSRange(location: NSMaxRange(ghost.line), length: 0)
+        converterGhost = nil
+        apply(.init(range: insertAt, replacement: ghost.suffix,
+                    selection: NSRange(location: insertAt.location + (ghost.suffix as NSString).length, length: 0)))
+        return true
+    }
+
+    /// Серый хвост справа от последнего видимого символа строки (скрытые символы
+    /// Markdown — `**`, `](url)` — не в счёт). Не влезает в ширину — не рисуем.
+    private func drawConverterGhost() {
+        guard let ghost = converterGhost, let layoutManager, let textContainer, let textStorage,
+              NSMaxRange(ghost.line) <= textStorage.length, ghost.line.length > 0 else { return }
+        var last = NSMaxRange(ghost.line) - 1
+        while last > ghost.line.location, textStorage.attribute(MarkdownRenderer.hiddenKey, at: last, effectiveRange: nil) != nil {
+            last -= 1
+        }
+        let glyph = layoutManager.glyphIndexForCharacter(at: last)
+        guard glyph < layoutManager.numberOfGlyphs else { return }
+        let lineRect = layoutManager.lineFragmentRect(forGlyphAt: glyph, effectiveRange: nil)
+        let glyphRect = layoutManager.boundingRect(forGlyphRange: NSRange(location: glyph, length: 1), in: textContainer)
+        let baseline = lineRect.minY + layoutManager.location(forGlyphAt: glyph).y
+        let font = (textStorage.attribute(.font, at: last, effectiveRange: nil) as? NSFont)
+            ?? (typingAttributes[.font] as? NSFont) ?? NSFont.systemFont(ofSize: NSFont.systemFontSize)
+        let attributes: [NSAttributedString.Key: Any] = [.font: font, .foregroundColor: NSColor.tertiaryLabelColor]
+        let size = (ghost.suffix as NSString).size(withAttributes: attributes)
+        let origin = textContainerOrigin
+        let x = glyphRect.maxX + origin.x
+        guard x + size.width <= origin.x + textContainer.size.width - textContainer.lineFragmentPadding else { return }
+        (ghost.suffix as NSString).draw(at: NSPoint(x: x, y: baseline + origin.y - font.ascender), withAttributes: attributes)
     }
 
     /// Клик по квадратику отмечает пункт (с ⌘Z); клик по значку в углу блока
@@ -208,6 +295,7 @@ private final class CardNSTextView: NSTextView {
 
     override func setSelectedRange(_ charRange: NSRange, affinity: NSSelectionAffinity, stillSelecting stillSelectingFlag: Bool) {
         super.setSelectedRange(Self.clampSelectionRange(charRange, in: self, from: selectedRange().location), affinity: affinity, stillSelecting: stillSelectingFlag)
+        if !stillSelectingFlag { updateConverterGhost() }
         // super сам инвалидирует только разницу между старым и новым
         // диапазоном выделения — но раз мы подменяем диапазон клэмпом,
         // реально нарисованная на экране область не всегда совпадает с тем,
@@ -253,6 +341,7 @@ private final class CardNSTextView: NSTextView {
     }
 
     override func resignFirstResponder() -> Bool {
+        if converterGhost != nil { converterGhost = nil }
         let result = super.resignFirstResponder()
         window?.invalidateCursorRects(for: self)
         if result {
@@ -652,6 +741,10 @@ struct CardTextView: NSViewRepresentable {
             }
             if commandSelector == #selector(NSResponder.moveLeft(_:)) {
                 return jumpOverMarkerOnMoveLeftIfNeeded(in: textView)
+            }
+            // Tab при сером результате конвертера — вставить его; иначе обычный Tab.
+            if commandSelector == #selector(NSResponder.insertTab(_:)) {
+                return (textView as? CardNSTextView)?.acceptConverterGhost() ?? false
             }
             return false
         }

@@ -254,6 +254,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         _ = DirectUpdater.controller // запускает Sparkle и его автопроверку
         #endif
         NSApp.windows.first?.acceptsMouseMovedEvents = true
+        PluginsModel.shared.attachConverters()
         PluginsModel.shared.reload()
         if let viewModel {
             QuickCaptureController.shared.start(viewModel: viewModel)
