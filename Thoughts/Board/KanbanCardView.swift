@@ -74,7 +74,7 @@ struct KanbanCardView: View {
     }
 
     private static let topInset: CGFloat = 20     // как у текстовой карточки
-    private static let bottomInset: CGFloat = 24
+    private static let bottomInset: CGFloat = 20  // равен верхнему: линии колонок симметричны
     /// Колонки тянутся от шапки до низа карточки, даже если пунктов мало.
     private var minColumnHeight: CGFloat {
         max(cardSize.height - Self.topInset - headerHeight - Self.fadeInset - Self.bottomInset, 40)
