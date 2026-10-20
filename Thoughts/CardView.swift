@@ -114,8 +114,7 @@ struct CardView: View {
                     onTextChange: { viewModel.scheduleDebouncedSave() },
                     onFocusChange: { focused in
                         if focused { viewModel.bringToFront(card) }
-                    },
-                    onSaveAsTemplate: { SaveTemplatePrompt.run(for: card) }
+                    }
                 )
                 // Не пересчитывать доску на каждый кадр, пока карточку двигают.
                 .equatable()
@@ -150,8 +149,7 @@ struct CardView: View {
                         }
                     },
                     onEscape: isInFocusMode ? onRequestExitFocus : nil,
-                    typography: viewModel.appearanceSettings.cardTypography,
-                    onSaveAsTemplate: { SaveTemplatePrompt.run(for: card) }
+                    typography: viewModel.appearanceSettings.cardTypography
                 )
                 .opacity(isFocusTransitioning ? 0 : 1)
                 // Асимметрично и намеренно: прячем мгновенно (иначе текст

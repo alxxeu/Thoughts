@@ -600,6 +600,7 @@ struct ContentView: View {
         let card = viewModel.addCard(at: origin, size: size, text: template.text)
         card.tagColor = template.tag
         newlyCreatedCardID = card.id
+        guard template.isBoard else { return }
         // Карточка ещё монтируется — подсказка (CardView) чуть позже.
         let id = card.id
         Task { @MainActor in

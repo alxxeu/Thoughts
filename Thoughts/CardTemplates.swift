@@ -30,12 +30,21 @@ struct CardTemplate: Identifiable {
     }
 
     static let all: [CardTemplate] = [
-        board(id: "board1", name: "1 Column", note: "good for a daily plan", count: 1, cells: 6),
-        board(id: "board2", name: "2 Columns", note: "simple to-do", count: 2, cells: 9),
-        board(id: "board3", name: "3 Columns", note: "regular kanban", count: 3, cells: 12),
-        board(id: "board4", name: "4 Columns", note: "workflow with a review step", count: 4, cells: 14),
+        board(id: "board1", name: "Kanban: 1 Column", note: "good for a daily plan", count: 1, cells: 6),
+        board(id: "board2", name: "Kanban: 2 Columns", note: "simple to-do", count: 2, cells: 9),
+        board(id: "board3", name: "Kanban: 3 Columns", note: "regular kanban", count: 3, cells: 12),
+        board(id: "board4", name: "Kanban: 4 Columns", note: "workflow with a review step", count: 4, cells: 14),
     ]
 
     /// Обычный канбан из трёх колонок.
     static var kanban: CardTemplate { all[2] }
+
+    /// «New Card» — первый пункт правого клика: пустая карточка 4×3 клетки,
+    /// как у Quick Capture.
+    static let blank = CardTemplate(id: "blank", name: "New Card", note: "", text: "", columns: 4, rows: 3)
+
+    var isBoard: Bool { text.hasPrefix("::: board") }
+
+    /// Пункт меню: у шаблонов с комментарием — «Имя — комментарий».
+    var menuItemTitle: String { note.isEmpty ? name : menuTitle }
 }

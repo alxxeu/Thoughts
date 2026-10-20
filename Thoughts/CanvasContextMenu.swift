@@ -1,7 +1,8 @@
 import SwiftUI
 import AppKit
 
-/// Правый клик по пустому месту доски: «New Kanban Card ▸» с шаблонами. Свой
+/// Правый клик по пустому месту доски: «New Card» и прямым списком шаблоны,
+/// включённые в Settings → Plugins → Templates. Свой
 /// NSMenu, а не SwiftUI `.contextMenu` (его пересобирала каждая перерисовка
 /// канвы — подменю мигало) и без отслеживания указателя: точку клика даёт
 /// само событие. Слой прозрачен для всего, кроме правого клика, — жесты канвы
@@ -47,34 +48,23 @@ struct CanvasContextMenu: NSViewRepresentable {
 
         private func showMenu(for event: NSEvent) {
             let point = convert(event.locationInWindow, from: nil)
-            let submenu = NSMenu()
-            for template in CardTemplate.all {
-                let item = NSMenuItem(title: template.menuTitle, action: #selector(pick(_:)), keyEquivalent: "")
-                item.target = self
-                item.representedObject = Pick(template, point)
-                submenu.addItem(item)
-            }
-            let parent = NSMenuItem(title: "New Kanban Card", action: nil, keyEquivalent: "")
-            parent.submenu = submenu
             let menu = NSMenu()
-            menu.addItem(parent)
-
-            // Свои шаблоны (Save as Template…, импорт) — отдельным подменю.
-            let own = UserTemplateStore.shared.templates.map { CardTemplate($0) }
-            if !own.isEmpty {
-                let ownMenu = NSMenu()
-                for template in own {
-                    let item = NSMenuItem(title: template.name, action: #selector(pick(_:)), keyEquivalent: "")
-                    item.target = self
-                    item.toolTip = template.note.isEmpty ? nil : template.note
-                    item.representedObject = Pick(template, point)
-                    ownMenu.addItem(item)
+            menu.addItem(item(for: .blank, at: point))
+            let templates = TemplateSettings.shared.enabled
+            if !templates.isEmpty {
+                menu.addItem(.separator())
+                for template in templates {
+                    menu.addItem(item(for: template, at: point))
                 }
-                let ownParent = NSMenuItem(title: "My Templates", action: nil, keyEquivalent: "")
-                ownParent.submenu = ownMenu
-                menu.addItem(ownParent)
             }
             NSMenu.popUpContextMenu(menu, with: event, for: self)
+        }
+
+        private func item(for template: CardTemplate, at point: CGPoint) -> NSMenuItem {
+            let item = NSMenuItem(title: template.menuItemTitle, action: #selector(pick(_:)), keyEquivalent: "")
+            item.target = self
+            item.representedObject = Pick(template, point)
+            return item
         }
 
         @objc private func pick(_ sender: NSMenuItem) {
