@@ -76,60 +76,75 @@ struct KanbanCardView: View {
     private static let topInset: CGFloat = 20     // как у текстовой карточки
     private static let bottomInset: CGFloat = 24
     /// Колонки тянутся от шапки до низа карточки, даже если пунктов мало.
-    private var minColumnHeight: CGFloat { max(cardSize.height - Self.topInset - headerHeight - Self.bottomInset, 40) }
+    private var minColumnHeight: CGFloat {
+        max(cardSize.height - Self.topInset - headerHeight - Self.fadeInset - Self.bottomInset, 40)
+    }
+    /// Зона затухания плиток под шапкой; внутри прокрутки сверху оставлен такой же отступ,
+    /// чтобы первая плитка в покое не оказалась в затухании.
+    private static let fadeInset: CGFloat = 10
 
     var body: some View {
         let columnWidth = max((cardSize.width - Self.sidePadding * 2) / CGFloat(board.columns.count), 80)
-        VStack(spacing: 0) {
-            // Шапка с заголовками — закреплена: не прокручивается вместе с плитками.
-            HStack(alignment: .top, spacing: 0) {
-                ForEach(Array(board.columns.enumerated()), id: \.element.id) { index, column in
-                    if index > 0 {
-                        Rectangle().fill(ink.opacity(0.22)).frame(width: 1)
-                            .frame(maxHeight: .infinity)
-                    }
-                    headerView(column, index: index)
-                        .frame(width: columnWidth - (index > 0 ? 0.5 : 0), alignment: .topLeading)
-                }
-            }
-            .fixedSize(horizontal: false, vertical: true)
-            .padding(.horizontal, Self.sidePadding)
-            .padding(.top, Self.topInset)
-            .background(GeometryReader { proxy in
-                Color.clear
-                    .onAppear { headerHeight = proxy.size.height - Self.topInset }
-                    .onChange(of: proxy.size.height) { _, new in headerHeight = new - Self.topInset }
-            })
-
-            ScrollView(.vertical) {
+        ZStack(alignment: .topLeading) {
+            VStack(spacing: 0) {
+                // Шапка с заголовками — закреплена: не прокручивается вместе с плитками.
                 HStack(alignment: .top, spacing: 0) {
                     ForEach(Array(board.columns.enumerated()), id: \.element.id) { index, column in
-                        if index > 0 {
-                            Rectangle().fill(ink.opacity(0.22)).frame(width: 1)
-                                .frame(maxHeight: .infinity)
-                        }
-                        columnView(column, index: index)
-                            .frame(width: columnWidth - (index > 0 ? 0.5 : 0), alignment: .top)
-                            // Колонка — до низа карточки, даже если пунктов мало.
-                            .frame(minHeight: minColumnHeight, maxHeight: .infinity, alignment: .top)
+                        headerView(column, index: index)
+                            .frame(width: columnWidth, alignment: .topLeading)
                     }
                 }
-                // Равная высота колонок: разделители тянутся на всю высоту самой высокой.
-                .fixedSize(horizontal: false, vertical: true)
-                .coordinateSpace(name: "kanban")
-                .onPreferenceChange(TileFramesKey.self) { tileFrames = $0 }
-                .overlay(alignment: .topLeading) { dragGhost }
-                // Правый клик в пустом месте колонки — «Add / Remove Column» (под курсором — своя колонка).
-                .overlay {
-                    KanbanContextMenu(
-                        passesThrough: { point in tileFrames.values.contains { $0.contains(point) } },
-                        entries: { menuEntries(at: $0) }
-                    )
-                }
                 .padding(.horizontal, Self.sidePadding)
-                .padding(.bottom, Self.bottomInset)
+                .padding(.top, Self.topInset)
+                .background(GeometryReader { proxy in
+                    Color.clear
+                        .onAppear { headerHeight = proxy.size.height - Self.topInset }
+                        .onChange(of: proxy.size.height) { _, new in headerHeight = new - Self.topInset }
+                })
+
+                ScrollView(.vertical) {
+                    HStack(alignment: .top, spacing: 0) {
+                        ForEach(Array(board.columns.enumerated()), id: \.element.id) { index, column in
+                            columnView(column, index: index)
+                                .frame(width: columnWidth, alignment: .top)
+                                // Колонка — до низа карточки, даже если пунктов мало.
+                                .frame(minHeight: minColumnHeight, alignment: .top)
+                        }
+                    }
+                    .coordinateSpace(name: "kanban")
+                    .onPreferenceChange(TileFramesKey.self) { tileFrames = $0 }
+                    .overlay(alignment: .topLeading) { dragGhost }
+                    // Правый клик в пустом месте колонки — «Add / Remove Column» (под курсором — своя колонка).
+                    .overlay {
+                        KanbanContextMenu(
+                            passesThrough: { point in tileFrames.values.contains { $0.contains(point) } },
+                            entries: { menuEntries(at: $0) }
+                        )
+                    }
+                    .padding(.horizontal, Self.sidePadding)
+                    .padding(.top, Self.fadeInset)
+                    .padding(.bottom, Self.bottomInset)
+                }
+                .scrollIndicators(.hidden)
+                // Мягкая граница под шапкой — плитки тают, уходя под заголовки (как кромка карточки).
+                .mask(alignment: .top) {
+                    VStack(spacing: 0) {
+                        LinearGradient(colors: [.clear, .black], startPoint: .top, endPoint: .bottom)
+                            .frame(height: Self.fadeInset)
+                        Color.black
+                    }
+                }
             }
-            .scrollIndicators(.hidden)
+
+            // Линии между колонками — одним слоем на всю высоту, без стыков шапка/тело.
+            ForEach(Array(1..<max(board.columns.count, 1)), id: \.self) { index in
+                Rectangle().fill(ink.opacity(0.22))
+                    .frame(width: 1)
+                    .padding(.top, Self.topInset)
+                    .padding(.bottom, Self.bottomInset)
+                    .offset(x: Self.sidePadding + CGFloat(index) * columnWidth - 0.5)
+                    .allowsHitTesting(false)
+            }
         }
         .onHover { isCardHovered = $0 }
         .onChange(of: text) { _, newText in
@@ -167,7 +182,6 @@ struct KanbanCardView: View {
             .onSubmit { addItem(toColumn: index, at: 0) }
             .padding(.horizontal, 4)
             .padding(.horizontal, 12)
-            .padding(.bottom, 8)
     }
 
     private func columnView(_ column: KanbanBoard.Column, index: Int) -> some View {
