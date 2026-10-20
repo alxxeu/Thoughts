@@ -36,7 +36,7 @@ struct OnboardingFlowTests {
         model.next()
         #expect(!model.isActive)
         #expect(box.completed)
-        #expect(box.finished?.0 == .desktop)
+        #expect(box.finished?.0 == OnboardingHome.desktop)
         #expect(box.finished?.1 == true)
     }
 
@@ -51,7 +51,7 @@ struct OnboardingFlowTests {
         model.next(); model.next()
         model.handle(.cardCreated)
         model.next(); model.next()
-        #expect(box.finished?.0 == .window)
+        #expect(box.finished?.0 == OnboardingHome.window)
     }
 
     @Test func replayKeepsModeUnlessChosenAndAddsNoCheatSheet() {
@@ -62,7 +62,7 @@ struct OnboardingFlowTests {
         model.handle(.cardCreated)
         model.next(); model.next()
         // Подтвердили предвыбранный режим — тот же; шпаргалку второй раз не кладём.
-        #expect(box.finished?.0 == .window)
+        #expect(box.finished?.0 == OnboardingHome.window)
         #expect(box.finished?.1 == false)
     }
 }
