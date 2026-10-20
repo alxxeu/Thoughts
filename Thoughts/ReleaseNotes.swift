@@ -19,7 +19,7 @@ struct ReleaseNote: Identifiable {
 
 enum ReleaseNotes {
     static let all: [ReleaseNote] = [
-        ReleaseNote(version: "1.5", sections: [
+        ReleaseNote(version: "1.4.1", sections: [
             .init(title: "New", items: [
                 "**Kanban cards** \u{2014} right-click an empty spot on the board and choose New Kanban Card with 1 to 4 columns. Add tiles, drag them between columns, hold the check to finish one.",
                 "**New Card** in the same right-click menu.",
@@ -38,7 +38,8 @@ enum ReleaseNotes {
             .init(title: "Fixed", items: [
                 "The cursor no longer jumps around Markdown headings and checklists.",
                 "Hidden Markdown characters no longer show through a selection.",
-                "Links typed without https:// open correctly."
+                "Links typed without https:// open correctly.",
+                "The Space bar no longer hides under the menu bar on Macs without a notch and on external displays."
             ])
         ], board: [
             .init(title: "New", items: [
@@ -60,7 +61,8 @@ enum ReleaseNotes {
             .init(title: "Fixed", items: [
                 "Cursor jumps in Markdown",
                 "Hidden characters in a selection",
-                "Links without https://"
+                "Links without https://",
+                "Space bar under the menu bar"
             ])
         ]),
         ReleaseNote(version: "1.4", sections: [
