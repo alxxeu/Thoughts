@@ -91,9 +91,19 @@ final class BoardViewModel {
     /// отдельной, большей границы карточки могли бы создаваться/лежать
     /// вплотную к верхнему краю экрана (и под вырезом камеры). Ориентир —
     /// уровень, на котором обычно сидят системные виджеты рабочего стола:
-    /// высота выреза (0 на моделях без него) плюс отступ.
+    /// высота строки меню (или выреза) плюс отступ.
     static var desktopOverlayTopInset: CGFloat {
-        (NSScreen.main?.safeAreaInsets.top ?? 0) + 50
+        screenTopInset + 50
+    }
+
+    /// Что занято сверху экрана: вырез камеры или строка меню — что больше.
+    /// Раньше брали только вырез: на Маках без него это 0, и плашка Space с
+    /// карточками в Desktop Overlay уезжали под строку меню. Строку меню даёт
+    /// разница между полным экраном и его видимой частью (0, если меню
+    /// скрывается автоматически).
+    static var screenTopInset: CGFloat {
+        guard let screen = NSScreen.main else { return 0 }
+        return max(screen.safeAreaInsets.top, screen.frame.maxY - screen.visibleFrame.maxY)
     }
 
     init() {
