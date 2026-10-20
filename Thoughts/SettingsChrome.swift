@@ -62,10 +62,10 @@ extension View {
 private struct FullHeightToolbarItem: ToolbarContent {
     var body: some ToolbarContent {
         if #available(macOS 26.0, *) {
-            ToolbarItem(placement: .primaryAction) { spacer }
+            SwiftUI.ToolbarItem(placement: .primaryAction) { spacer }
                 .sharedBackgroundVisibility(.hidden)
         } else {
-            ToolbarItem(placement: .primaryAction) { spacer }
+            SwiftUI.ToolbarItem(placement: .primaryAction) { spacer }
         }
     }
 
