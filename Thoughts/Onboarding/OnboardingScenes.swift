@@ -284,13 +284,16 @@ struct HookScene: View {
 
 // MARK: - Экран 2: где жить
 
-/// Вариант «окно»: обычное окно с кнопками и карточками внутри.
+/// Вариант «окно»: обычное окно с кнопками и карточками внутри. Пропорции
+/// карточек — от ширины сцены, а не от высоты: высокая плитка не растягивает их.
 struct WindowHomeScene: View {
     var body: some View {
         SceneClock(period: 4, still: 0) { t in
             GeometryReader { proxy in
                 let size = proxy.size
                 let bob = sin(t / 4 * 2 * .pi) * 2
+                let windowWidth = size.width * 0.72
+                let cardWidth = (windowWidth - 8 * 3) / 2
                 ZStack {
                     FakeDesktop()
                     VStack(spacing: 0) {
@@ -301,15 +304,18 @@ struct WindowHomeScene: View {
                             Spacer()
                         }
                         .padding(6)
-                        HStack(spacing: 6) {
-                            FakeCard(lines: ["# idea"], fontSize: 7)
-                            FakeCard(lines: ["- [ ] todo"], tag: .orange, fontSize: 7)
+                        HStack(alignment: .top, spacing: 8) {
+                            FakeCard(lines: ["# idea", "ship it"], fontSize: 7)
+                                .frame(width: cardWidth, height: cardWidth * 0.78)
+                            FakeCard(lines: ["- [ ] todo", "- [x] done"], tag: .orange, fontSize: 7)
+                                .frame(width: cardWidth, height: cardWidth * 0.62)
                         }
                         .padding(8)
                         .offset(y: bob)
+                        Spacer(minLength: 0)
                     }
+                    .frame(width: windowWidth, height: windowWidth * 0.66)
                     .background(RoundedRectangle(cornerRadius: 8, style: .continuous).fill(Color(white: 0.12)))
-                    .frame(width: size.width * 0.68, height: size.height * 0.62)
                     .shadow(color: .black.opacity(0.4), radius: 8, y: 4)
                 }
             }
@@ -319,18 +325,25 @@ struct WindowHomeScene: View {
 
 /// Вариант «рабочий стол»: карточки лежат прямо на обоях, рядом с папками.
 struct DesktopHomeScene: View {
+    private let cards: [(lines: [String], tag: Color?, x: CGFloat, y: CGFloat, aspect: CGFloat)] = [
+        (["# idea", "ship it"], nil, 0.07, 0.22, 0.78),
+        (["- [ ] todo", "- [x] done"], .orange, 0.42, 0.42, 0.62),
+        (["**plan**", "May"], nil, 0.12, 0.62, 0.55)
+    ]
+
     var body: some View {
         SceneClock(period: 4, still: 0) { t in
             GeometryReader { proxy in
                 let size = proxy.size
+                let cardWidth = size.width * 0.34
                 ZStack(alignment: .topLeading) {
                     FakeDesktop()
-                    ForEach(0..<3, id: \.self) { index in
+                    ForEach(cards.indices, id: \.self) { index in
+                        let card = cards[index]
                         let bob = sin((t / 4 + Double(index) * 0.3) * 2 * .pi) * 2
-                        FakeCard(lines: [["# idea", "- [ ] todo", "**plan**"][index]], tag: index == 1 ? .orange : nil, fontSize: 7)
-                            .frame(width: size.width * 0.25, height: size.height * 0.3)
-                            .offset(x: size.width * (0.07 + 0.26 * CGFloat(index)),
-                                    y: size.height * (index == 1 ? 0.5 : 0.16) + bob)
+                        FakeCard(lines: card.lines, tag: card.tag, fontSize: 7)
+                            .frame(width: cardWidth, height: cardWidth * card.aspect)
+                            .offset(x: size.width * card.x, y: size.height * card.y + bob)
                     }
                 }
             }
