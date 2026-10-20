@@ -21,13 +21,16 @@ Backlog / Идеи → В работе (план согласован) → Го�
   анимацией, выбор «In a window / On your desktop» (по умолчанию — desktop, применяется в
   конце), первая карточка с наградой, финал + карточка-шпаргалка. `Onboarding/`:
   OnboardingFlow, OnboardingView, OnboardingScenes (анимации кодом), CheatSheetCard.
-- [ ] Слой 2 — подсказки при первом использовании (обводка + капсула, Next/Done):
+- [x] Слой 2 — подсказки при первом использовании (обводка + капсула, Next/Done):
   теги → Spoiler/Lock карточки; Space Lock (⌘L) отдельно; смена Space, ресайз/перенос,
   канбан, Focus Mode, Ask AI; одна за раз; Reset tips / Show tips в Settings → General.
-- [ ] Слой 3 — карточка-совет при первом заходе в пустой Space 2–9 (Kanban, Markdown,
+- [x] Слой 3 — карточка-совет при первом заходе в пустой Space 2–9 (Kanban, Markdown,
   ⌥Tab, Quick Capture, Space bar, Focus+Ask AI, Space Lock, Backup/iCloud); не при синке,
   не в защищённых, один раз.
-- [ ] Тесты; проверка автором в Xcode.
+- [x] Тесты (`OnboardingFlowTests`, `TipsTests`).
+- [x] Quick Capture по умолчанию ⌃⌥N (было ⌃⌥⌘N; решение автора).
+- [ ] Проверка автором в Xcode. Подсказки — плашка внизу, не больше одной за запуск;
+  цепочка теги → Spoiler/Lock — в самом меню тега с обводкой.
 
 ### Desktop Overlay на Маках без выреза: плашка Space под строкой меню (2026-10-20)
 

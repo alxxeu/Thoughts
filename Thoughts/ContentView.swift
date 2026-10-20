@@ -190,6 +190,9 @@ struct ContentView: View {
                 }
             }
         }
+        .overlay(alignment: .bottom) {
+            TipToastLayer(isHidden: onboardingViewModel.isActive)
+        }
         .overlay {
             if onboardingViewModel.isActive {
                 OnboardingView(onboardingViewModel: onboardingViewModel)
@@ -246,6 +249,7 @@ struct ContentView: View {
                     viewModel.switchWorkspace(to: slot)
                 }
                 onboardingViewModel.handle(.spaceSwitched)
+                didSwitchSpace(to: slot)
             }
         }
         .onReceive(NotificationCenter.default.publisher(for: .lockCurrentSpace)) { _ in
@@ -259,6 +263,7 @@ struct ContentView: View {
                 setFocusedCard(nil)
             } else if let textFocusedCardID {
                 setFocusedCard(textFocusedCardID)
+                TipsState.shared.offer(.focusMode)
             }
         }
         .onReceive(NotificationCenter.default.publisher(for: .replayOnboarding)) { _ in
@@ -266,9 +271,11 @@ struct ContentView: View {
         }
         .onReceive(NotificationCenter.default.publisher(for: .cardWasMoved)) { _ in
             onboardingViewModel.handle(.cardMoved)
+            TipsState.shared.offer(.moveResize)
         }
         .onReceive(NotificationCenter.default.publisher(for: .cardWasResized)) { _ in
             onboardingViewModel.handle(.cardResized)
+            TipsState.shared.offer(.moveResize)
         }
         .onReceive(NotificationCenter.default.publisher(for: .setCardTag)) { notification in
             guard let id = textFocusedCardID ?? focusedCardID,
@@ -590,6 +597,14 @@ struct ContentView: View {
     /// chrome окна), так что отступ под неё можно менять независимо от
     /// самого окна/frame — без компромисса с покрытием экрана, в отличие
     /// от системных элементов.
+    /// Обучение по ходу работы при смене Space: карточка-совет в пустом Space
+    /// (слой 3) и подсказки про Spaces / Space Lock (слой 2).
+    private func didSwitchSpace(to slot: Int) {
+        SpaceTipCards.addIfNeeded(slot: slot, viewModel: viewModel)
+        TipsState.shared.offer(.spaceSwitch)
+        if !viewModel.securitySettings.isPasscodeEnabled { TipsState.shared.offer(.spaceLock) }
+    }
+
     /// Конец онбординга: выбранный режим (окно / рабочий стол) и шпаргалка на доске.
     private func configureOnboarding() {
         let board = viewModel

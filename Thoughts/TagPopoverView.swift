@@ -6,8 +6,66 @@ struct TagPopoverView: View {
     var onSelect: () -> Void
     
     private let columns = Array(repeating: GridItem(.fixed(14), spacing: 8), count: 4)
+    /// Подсказка при первом открытии (слой 2): 1 — цвета, 2 — Spoiler/Lock, 0 — нет.
+    @State private var coachStep = 0
     
     var body: some View {
+        VStack(spacing: 6) {
+            colorsAndPrivacy
+            if coachStep > 0 { coachCaption }
+        }
+        .padding(10)
+        .onAppear {
+            guard TipsState.shared.shouldShow(.tagColors) else { return }
+            TipsState.shared.markSeen(.tagColors)
+            coachStep = 1
+        }
+    }
+
+    /// Обводка вокруг той части, о которой сейчас подсказка.
+    private func coachOutline(_ step: Int) -> some View {
+        RoundedRectangle(cornerRadius: 9, style: .continuous)
+            .strokeBorder(Color.accentColor, lineWidth: 2)
+            .shadow(color: Color.accentColor.opacity(0.6), radius: 6)
+            .padding(-5)
+            .opacity(coachStep == step ? 1 : 0)
+            .animation(.easeInOut(duration: 0.25), value: coachStep)
+            .allowsHitTesting(false)
+    }
+
+    private var coachCaption: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Text(coachStep == 1
+                 ? "Pick a color to tag this card \u{2014} or press \u{2303}1\u{2013}7 while typing."
+                 : "Spoiler blurs this card until you click it. Lock hides it until Touch ID. Both are for this card only.")
+                .font(.system(size: 11))
+                .fixedSize(horizontal: false, vertical: true)
+            HStack {
+                Spacer()
+                Button(coachStep == 1 ? "Next" : "Done") {
+                    withAnimation(.easeInOut(duration: 0.25)) { coachStep = coachStep == 1 ? 2 : 0 }
+                }
+                .keyboardShortcut(.defaultAction)
+                .controlSize(.small)
+            }
+        }
+        .frame(width: 190)
+        .padding(.top, 6)
+        .transition(.opacity)
+    }
+
+    /// Выбор в меню. Во время подсказки цвет не закрывает меню, а ведёт ко второму
+    /// шагу — показать Spoiler/Lock, пока меню открыто.
+    private func didPick(color: Bool) {
+        if color, coachStep == 1 {
+            withAnimation(.easeInOut(duration: 0.25)) { coachStep = 2 }
+            return
+        }
+        coachStep = 0
+        onSelect()
+    }
+
+    private var colorsAndPrivacy: some View {
         VStack(spacing: 6) {
             // 1. Сетка цветов
             LazyVGrid(columns: columns, spacing: 8) {
@@ -15,23 +73,24 @@ struct TagPopoverView: View {
                     TagCircleButton(tagColor: tagColor, isSelected: selectedColor == tagColor) {
                         selectedColor = tagColor
                         NotificationCenter.default.post(name: .cardTagColorWasSet, object: nil)
-                        onSelect()
+                        didPick(color: true)
                     }
                 }
 
                 TagCircleButton(tagColor: nil, isSelected: selectedColor == nil) {
                     selectedColor = nil
-                    onSelect()
+                    didPick(color: true)
                 }
 
                 ForEach(CardTagColor.allCases.suffix(4)) { tagColor in
                     TagCircleButton(tagColor: tagColor, isSelected: selectedColor == tagColor) {
                         selectedColor = tagColor
                         NotificationCenter.default.post(name: .cardTagColorWasSet, object: nil)
-                        onSelect()
+                        didPick(color: true)
                     }
                 }
             }
+            .overlay(coachOutline(1))
             
             Divider()
                 .opacity(0.3)
@@ -51,7 +110,7 @@ struct TagPopoverView: View {
                     if privacyMode == .spoiler {
                         NotificationCenter.default.post(name: .cardDidBecomeSpoiler, object: nil)
                     }
-                    onSelect()
+                    didPick(color: false)
                 }
 
                 // LOCK
@@ -64,11 +123,11 @@ struct TagPopoverView: View {
                     withAnimation(.easeInOut(duration: 0.25)) {
                         privacyMode = (privacyMode == .lock) ? .none : .lock
                     }
-                    onSelect()
+                    didPick(color: false)
                 }
             }
+            .overlay(coachOutline(2))
         }
-        .padding(10)
     }
 }
 
