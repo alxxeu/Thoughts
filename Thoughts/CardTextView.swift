@@ -258,16 +258,14 @@ private final class CardNSTextView: NSTextView {
         }
 
         // Не влезает после строки (узкая карточка, длинный результат) — строкой ниже,
-        // от левого края строки, на подложке: там может быть текст следующей строки.
-        // Не влезает и там — обрезаем с «…»; Tab всё равно вставит результат целиком.
+        // от левого края строки. Не влезает и там — обрезаем с «…»; Tab всё равно
+        // вставит результат целиком.
         let text = ghost.suffix.trimmingCharacters(in: .whitespaces) as NSString
         let left = origin.x + lineRect.minX + textContainer.lineFragmentPadding
         let lineHeight = layoutManager.defaultLineHeight(for: font)
         let width = min(text.size(withAttributes: attributes).width, right - left)
         guard width > 0 else { return }
         let box = NSRect(x: left, y: origin.y + lineRect.maxY, width: width, height: lineHeight)
-        NSColor.black.withAlphaComponent(0.55).setFill()
-        NSBezierPath(roundedRect: box.insetBy(dx: -4, dy: -1), xRadius: 5, yRadius: 5).fill()
         text.draw(with: box, options: [.usesLineFragmentOrigin, .truncatesLastVisibleLine], attributes: attributes)
     }
 

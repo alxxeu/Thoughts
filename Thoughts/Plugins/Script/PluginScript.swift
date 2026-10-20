@@ -67,12 +67,26 @@ nonisolated final class PluginScript: @unchecked Sendable {
         }
         installBridge(in: context)
         context.evaluateScript(Self.bootstrap)
+        context.objectForKeyedSubscript("thoughts")?.setObject(Self.localeInfo, forKeyedSubscript: "locale" as NSString)
         context.evaluateScript(source, withSourceURL: url)
         if let exception = context.exception {
             loadError = "The script failed: \(exception.toString() ?? "error")"
             context.exception = nil
         }
         self.context = context
+    }
+
+    /// `thoughts.locale` — чтобы конвертер выбирал цель по умолчанию, как Spotlight:
+    /// «5ft» → см в метрической системе, «100usd» → валюта региона пользователя.
+    private static var localeInfo: [String: Any] {
+        let locale = Locale.current
+        return [
+            "identifier": locale.identifier,
+            "language": locale.language.languageCode?.identifier ?? "en",
+            "region": locale.region?.identifier ?? "",
+            "currency": locale.currency?.identifier ?? "USD",
+            "usesMetricSystem": locale.measurementSystem != .us
+        ]
     }
 
     /// Обёртки на JS над нативными функциями: Promise для fetch, единый вызов convert.
