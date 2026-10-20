@@ -68,8 +68,11 @@ struct CardFontOption: Identifiable, Hashable {
             .sorted { $0.localizedCaseInsensitiveCompare($1) == .orderedAscending }
     }
 
+    /// Шрифты из включённых плагинов (`pluginID/itemID`).
+    static var plugins: [CardFontOption] { PluginsModel.shared.contributions.fonts }
+
     static func resolve(_ id: String) -> CardFontOption {
-        if let option = builtIn.first(where: { $0.id == id }) {
+        if let option = builtIn.first(where: { $0.id == id }) ?? plugins.first(where: { $0.id == id }) {
             return option
         }
         if id.hasPrefix(familyPrefix) {
@@ -152,8 +155,11 @@ struct TextColorOption: Identifiable, Hashable {
         return TextColorOption(id: customPrefix + hex, title: "Custom", color: NSColor(hex: hex) ?? color)
     }
 
+    /// Цвета из включённых плагинов.
+    static var plugins: [TextColorOption] { PluginsModel.shared.contributions.textColors }
+
     static func resolve(_ id: String) -> TextColorOption {
-        if let option = builtIn.first(where: { $0.id == id }) {
+        if let option = builtIn.first(where: { $0.id == id }) ?? plugins.first(where: { $0.id == id }) {
             return option
         }
         if id.hasPrefix(customPrefix), let color = NSColor(hex: String(id.dropFirst(customPrefix.count))) {
@@ -229,9 +235,27 @@ struct CanvasPattern: Identifiable, Hashable {
         CanvasPattern(id: "builtin.diagonal", title: "Diagonal", kind: .diagonal, spacing: 18)
     ]
 
+    /// Паттерны из включённых плагинов.
+    static var plugins: [CanvasPattern] { PluginsModel.shared.contributions.patterns }
+
     static func resolve(_ id: String) -> CanvasPattern {
-        builtIn.first { $0.id == id } ?? builtIn[0]
+        builtIn.first { $0.id == id } ?? plugins.first { $0.id == id } ?? builtIn[0]
     }
+}
+
+// MARK: - Темы
+
+/// Тема из плагина: набор шрифт + цвет текста + паттерн (+ интенсивность).
+/// Выбор применяет значения в AppearanceSettings — отдельно тема не хранится.
+struct ThemeOption: Identifiable, Hashable {
+    let id: String
+    let title: String
+    var fontID: String?
+    var textColorID: String?
+    var patternID: String?
+    var patternIntensity: Double?
+
+    static var plugins: [ThemeOption] { PluginsModel.shared.contributions.themes }
 }
 
 // MARK: - Hex-цвета

@@ -32,12 +32,30 @@ struct AppearanceSettingsTab: View {
             }
 
             Section("Cards") {
+                // Темы из плагинов: выбор применяет шрифт, цвет и паттерн разом.
+                if !ThemeOption.plugins.isEmpty {
+                    LabeledContent("Theme Preset") {
+                        Menu("Apply\u{2026}") {
+                            ForEach(ThemeOption.plugins) { theme in
+                                Button(theme.title) { settings.apply(theme) }
+                            }
+                        }
+                        .fixedSize()
+                    }
+                }
+
                 Picker("Font", selection: Binding(
                     get: { settings.cardFontID },
                     set: { settings.cardFontID = $0 }
                 )) {
                     ForEach(CardFontOption.builtIn) { option in
                         Text(option.title).tag(option.id)
+                    }
+                    if !CardFontOption.plugins.isEmpty {
+                        Divider()
+                        ForEach(CardFontOption.plugins) { option in
+                            Text(option.title).tag(option.id)
+                        }
                     }
                     if !installedFamilies.isEmpty {
                         Divider()
@@ -62,7 +80,7 @@ struct AppearanceSettingsTab: View {
 
                 LabeledContent("Text Color") {
                     HStack(spacing: 8) {
-                        ForEach(TextColorOption.builtIn) { option in
+                        ForEach(TextColorOption.builtIn + TextColorOption.plugins) { option in
                             colorSwatch(option)
                         }
                         ForEach(settings.recentTextColorIDs, id: \.self) { id in
@@ -82,6 +100,12 @@ struct AppearanceSettingsTab: View {
                 )) {
                     ForEach(CanvasPattern.builtIn) { pattern in
                         Text(pattern.title).tag(pattern.id)
+                    }
+                    if !CanvasPattern.plugins.isEmpty {
+                        Divider()
+                        ForEach(CanvasPattern.plugins) { pattern in
+                            Text(pattern.title).tag(pattern.id)
+                        }
                     }
                 }
 

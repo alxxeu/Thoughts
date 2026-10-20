@@ -306,19 +306,20 @@ struct SpaceToolbar: View {
             Text("Plugins")
                 .font(.system(size: 13, weight: .semibold))
             if plugins.installed.isEmpty {
-                Text("No plugins yet. Plugins add fonts, themes and card templates.")
+                Text("No plugins yet. Plugins add fonts, colors, patterns, themes and card templates.")
                     .font(.system(size: 12))
                     .foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
             } else {
-                ForEach(plugins.installed) { plugin in
-                    HStack {
+                ForEach(plugins.installed.filter { $0.error == nil }) { plugin in
+                    Toggle(isOn: Binding(
+                        get: { plugin.isEnabled },
+                        set: { plugins.setEnabled($0, for: plugin) }
+                    )) {
                         Text(plugin.name).font(.system(size: 12))
-                        Spacer()
-                        Text(plugin.isEnabled ? "On" : "Off")
-                            .font(.system(size: 11))
-                            .foregroundStyle(.secondary)
                     }
+                    .toggleStyle(.switch)
+                    .controlSize(.mini)
                 }
             }
             Button {

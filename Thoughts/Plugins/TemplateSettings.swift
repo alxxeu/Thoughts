@@ -20,7 +20,8 @@ final class TemplateSettings {
 
     /// Все доступные: встроенный канбан и файлы из папки шаблонов.
     var available: [TemplateGroup] {
-        [.kanban] + UserTemplateStore.shared.templates.map { TemplateGroup(CardTemplate($0)) }
+        [.kanban] + PluginsModel.shared.contributions.templates
+            + UserTemplateStore.shared.templates.map { TemplateGroup(CardTemplate($0)) }
     }
 
     var enabled: [TemplateGroup] {

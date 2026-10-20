@@ -157,6 +157,17 @@ final class AppearanceSettings {
         cardTypography = Self.makeTypography(fontID: fontID, colorID: colorID, size: size)
     }
 
+    /// Плагин со шрифтом или цветом включили/выключили — id те же, а итог другой.
+    func refreshTypography() { updateTypography() }
+
+    /// Тема из плагина: применяет то, что в ней задано, остальное не трогает.
+    func apply(_ theme: ThemeOption) {
+        if let id = theme.fontID { cardFontID = id }
+        if let id = theme.textColorID { textColorID = id }
+        if let id = theme.patternID { canvasPatternID = id }
+        if let value = theme.patternIntensity { patternOpacity = value }
+    }
+
     private func updateTypography() {
         let typography = Self.makeTypography(fontID: cardFontID, colorID: textColorID, size: textSize)
         if typography != cardTypography {
