@@ -72,7 +72,7 @@ struct UserTemplateTests {
     }
 
     @Test func fileNamesAreSafe() {
-        #expect(UserTemplateStore.fileName(for: "../../etc/passwd") == ".. .. etc passwd".trimmingCharacters(in: .whitespaces) || !UserTemplateStore.fileName(for: "../../etc/passwd").contains("/"))
+        #expect(!UserTemplateStore.fileName(for: "../../etc/passwd").contains("/"))
         #expect(UserTemplateStore.fileName(for: "///") == "Template")
     }
 

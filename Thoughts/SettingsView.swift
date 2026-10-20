@@ -93,6 +93,12 @@ struct SettingsView: View {
                         }
                         .tag(SettingsNavigation.Tab.appearance)
 
+                    PluginsSettingsTab()
+                        .tabItem {
+                            Label("Plugins", systemImage: "puzzlepiece.extension.fill")
+                        }
+                        .tag(SettingsNavigation.Tab.plugins)
+
                     SecuritySettingsTab(viewModel: viewModel)
                         .tabItem {
                             Label("Security", systemImage: "shield.lefthalf.filled")
