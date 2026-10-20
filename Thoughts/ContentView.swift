@@ -206,10 +206,7 @@ struct ContentView: View {
         .animation(.easeOut(duration: 0.25), value: onboardingViewModel.isActive)
         .onAppear {
             SettingsNavigation.shared.openWindowAction = openWindow
-            onboardingViewModel.onFinish = { [viewModel] home, isFirstRun in
-                if let home { viewModel.desktopOverlay.isEnabled = home == .desktop }
-                if isFirstRun { CheatSheetCard.add(to: viewModel) }
-            }
+            configureOnboarding()
         }
         .background(
             WindowAccessor { overlayWindow.attach($0) }
@@ -593,6 +590,15 @@ struct ContentView: View {
     /// chrome окна), так что отступ под неё можно менять независимо от
     /// самого окна/frame — без компромисса с покрытием экрана, в отличие
     /// от системных элементов.
+    /// Конец онбординга: выбранный режим (окно / рабочий стол) и шпаргалка на доске.
+    private func configureOnboarding() {
+        let board = viewModel
+        onboardingViewModel.onFinish = { home, isFirstRun in
+            if let home { board.desktopOverlay.isEnabled = home == .desktop }
+            if isFirstRun { CheatSheetCard.add(to: board) }
+        }
+    }
+
     private var workspacePillTopPadding: CGFloat {
         guard viewModel.desktopOverlay.isEnabled else { return 10 }
         return BoardViewModel.screenTopInset + 12
