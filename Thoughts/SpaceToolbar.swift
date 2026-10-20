@@ -44,6 +44,9 @@ struct SpaceToolbar: View {
     @State private var pillHideTask: Task<Void, Never>?
     @State private var gearHideTask: Task<Void, Never>?
     @State private var isShowingPluginsPanel = false
+    /// Иконка, которую тащат в режиме правки, и её сдвиг от своего места.
+    @State private var draggingItem: ToolbarItem?
+    @State private var dragTranslation: CGFloat = 0
 
     /// Заметка для плашки What’s new; nil — плашки нет.
     @State private var whatsNewNote = WhatsNew.pendingNote()
@@ -98,7 +101,7 @@ struct SpaceToolbar: View {
                 // функция была ещё одной иконкой в этом же ряду, а не
                 // ещё одной строкой вниз.
                 if !isEditingWorkspaceName {
-                    let items = ToolbarItem.available.filter {
+                    let items = toolbarSettings.order.filter { ToolbarItem.available.contains($0) }.filter {
                         ($0 != .askAI || viewModel.aiSettings.isEnabled)
                             && (isEditingToolbar || !toolbarSettings.isHidden($0))
                     }
@@ -215,29 +218,96 @@ struct SpaceToolbar: View {
         }
     }
 
-    /// Иконка в режиме правки: дрожит; «−» — скрыть, у скрытой (приглушена) «+» — вернуть.
+    /// Шаг иконок в режиме правки: ширина рамки + spacing ряда.
+    private static let editIconWidth: CGFloat = 20
+    private static let editStep: CGFloat = editIconWidth + 10
+
+    /// Иконки в режиме правки, в текущем порядке.
+    private var editRow: [ToolbarItem] {
+        toolbarSettings.order.filter {
+            ToolbarItem.available.contains($0) && ($0 != .askAI || viewModel.aiSettings.isEnabled)
+        }
+    }
+
+    /// Куда встанет перетаскиваемая иконка, если отпустить сейчас.
+    private var dropIndex: Int? {
+        guard let draggingItem, let start = editRow.firstIndex(of: draggingItem) else { return nil }
+        let steps = Int((dragTranslation / Self.editStep).rounded())
+        return min(max(start + steps, 0), editRow.count - 1)
+    }
+
+    /// Как в iOS: пока тащат, порядок не меняется — соседи только раздвигаются,
+    /// освобождая место; порядок меняется, когда отпустили.
+    private func shift(for item: ToolbarItem) -> CGFloat {
+        guard let draggingItem, item != draggingItem, let drop = dropIndex,
+              let start = editRow.firstIndex(of: draggingItem),
+              let index = editRow.firstIndex(of: item) else { return 0 }
+        if start < drop, index > start, index <= drop { return -Self.editStep }
+        if drop < start, index >= drop, index < start { return Self.editStep }
+        return 0
+    }
+
+    /// Иконка в режиме правки: дрожит; «−» — скрыть, у скрытой (приглушена) «+» —
+    /// вернуть (кликом по бейджу или по самой иконке); перетаскивание меняет порядок.
     private func editableIcon(_ item: ToolbarItem, phase: Int) -> some View {
         let isHidden = toolbarSettings.isHidden(item)
+        let isDragging = draggingItem == item
         return Image(systemName: item.symbol)
             .font(.system(size: 15))
             .foregroundStyle(Color.white.opacity(isHidden ? 0.35 : 0.9))
-            .modifier(WobbleEffect(phase: phase))
+            .frame(width: Self.editIconWidth)
+            .contentShape(Rectangle())
+            .onTapGesture { toggleHidden(item, isHidden: isHidden) }
             .overlay(alignment: .topLeading) {
                 Image(systemName: isHidden ? "plus" : "minus")
                     .font(.system(size: 7, weight: .heavy))
                     .foregroundStyle(.white)
                     .frame(width: 12, height: 12)
                     .background(Circle().fill(isHidden ? Color.green : Color.red))
-                    .offset(x: -8, y: -7)
+                    // Область нажатия бейджа больше самого кружка.
+                    .frame(width: 18, height: 18)
+                    .contentShape(Circle())
+                    .onTapGesture { toggleHidden(item, isHidden: isHidden) }
+                    .offset(x: -9, y: -9)
             }
-            .contentShape(Rectangle())
-            .onTapGesture {
-                withAnimation(.spring(response: 0.3, dampingFraction: 0.8)) {
-                    toolbarSettings.setHidden(item, !isHidden)
-                    if item == .plugins, !isHidden { isShowingPluginsPanel = false }
-                    if item == .askAI, !isHidden { isAskingSpaceAI = false }
-                }
-            }
+            .modifier(WobbleEffect(phase: phase, isEnabled: !isDragging))
+            .scaleEffect(isDragging ? 1.15 : 1)
+            // Перетаскиваемая — ровно за курсором; соседи — с пружиной.
+            .offset(x: isDragging ? dragTranslation : shift(for: item))
+            .animation(isDragging ? nil : .spring(response: 0.3, dampingFraction: 0.8), value: dropIndex)
+            .zIndex(isDragging ? 1 : 0)
+            .gesture(
+                DragGesture(minimumDistance: 3)
+                    .onChanged { value in
+                        if draggingItem != item { draggingItem = item }
+                        dragTranslation = value.translation.width
+                    }
+                    .onEnded { _ in dropDraggedIcon() }
+            )
+    }
+
+    private func toggleHidden(_ item: ToolbarItem, isHidden: Bool) {
+        withAnimation(.spring(response: 0.3, dampingFraction: 0.8)) {
+            toolbarSettings.setHidden(item, !isHidden)
+            if item == .plugins, !isHidden { isShowingPluginsPanel = false }
+            if item == .askAI, !isHidden { isAskingSpaceAI = false }
+        }
+    }
+
+    /// Отпустили: порядок меняется без анимации — иконки уже стоят на новых
+    /// местах (соседи сдвинуты, перетаскиваемая под курсором), прыжка нет.
+    private func dropDraggedIcon() {
+        guard let item = draggingItem, let drop = dropIndex else { return }
+        let rest = dragTranslation - CGFloat(drop - (editRow.firstIndex(of: item) ?? drop)) * Self.editStep
+        var transaction = Transaction()
+        transaction.disablesAnimations = true
+        withTransaction(transaction) {
+            toolbarSettings.move(item, to: drop, within: editRow)
+            draggingItem = nil
+            dragTranslation = rest
+        }
+        // Остаток (курсор не точно на месте) — доезжает пружиной.
+        withAnimation(.spring(response: 0.3, dampingFraction: 0.8)) { dragTranslation = 0 }
     }
 
     // MARK: - Шестерёнка
@@ -420,14 +490,14 @@ struct SpaceToolbar: View {
 
     private func openWhatsNew(_ note: ReleaseNote) {
         WhatsNew.markSeen()
-        let size = CGSize(width: 360, height: 440)
+        let size = WhatsNew.cardSize(for: note)
         let origin = CGPoint(
             x: max(0, (canvasSize.width - size.width) / 2),
             y: max(0, (canvasSize.height - size.height) / 2)
         )
         withAnimation(spaceAISpring) {
             // Свечение по краям, как у карточки ответа AI, — до первого касания.
-            let card = viewModel.addCard(at: origin, size: size, text: WhatsNew.markdown(for: note))
+            let card = viewModel.addCard(at: origin, size: size, text: WhatsNew.cardText(for: note))
             viewModel.aiHighlightedCardIDs.insert(card.id)
             whatsNewNote = nil
         }
@@ -650,15 +720,17 @@ struct SpaceToolbar: View {
 /// приложений; фаза у каждой иконки своя, чтобы они не качались в унисон.
 private struct WobbleEffect: ViewModifier {
     let phase: Int
-    @State private var isOn = false
+    /// Перетаскиваемая иконка не дрожит.
+    var isEnabled = true
 
+    /// От часов, а не repeatForever-анимацией: ту обрывала любая другая анимация
+    /// (перестановка, скрытие иконки), и дрожание останавливалось насовсем.
     func body(content: Content) -> some View {
-        content
-            .rotationEffect(.degrees(isOn ? 2.2 : -2.2))
-            .animation(
-                .easeInOut(duration: 0.12 + Double(phase % 3) * 0.015).repeatForever(autoreverses: true),
-                value: isOn
-            )
-            .onAppear { isOn = true }
+        TimelineView(.animation(paused: !isEnabled)) { context in
+            let t = context.date.timeIntervalSinceReferenceDate
+            let period = 0.24 + Double(phase % 3) * 0.03
+            let angle = isEnabled ? sin(t * 2 * .pi / period + Double(phase)) * 2.2 : 0
+            content.rotationEffect(.degrees(angle))
+        }
     }
 }

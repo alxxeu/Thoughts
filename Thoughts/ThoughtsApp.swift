@@ -356,8 +356,28 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     /// переключения между кадрами сливаются в одну перерисовку. Пункты меню
     /// остаются — для вида и для клика мышью.
     private func handleSpaceKey(_ event: NSEvent) -> Bool {
-        guard let viewModel,
-              event.modifierFlags.intersection([.command, .control, .option, .shift]) == .option,
+        // Открыт обзор Spaces (⌥Tab) — все клавиши ему.
+        if SpaceSwitcher.shared.isActive { return SpaceSwitcher.shared.handle(event) }
+        guard let viewModel else { return false }
+        let modifiers = event.modifierFlags.intersection([.command, .control, .option, .shift])
+
+        // ⌥Tab / ⇧⌥Tab — обзор всех Spaces, как ⌘Tab; работает и в тексте.
+        if event.keyCode == 48, modifiers == .option || modifiers == [.option, .shift] {
+            if !event.isARepeat { showSpaceSwitcher(step: modifiers.contains(.shift) ? -1 : 1) }
+            return true
+        }
+
+        // ⌥← / ⌥→ — соседний Space по кругу; в тексте — как обычно, по словам.
+        if modifiers == .option, event.keyCode == 123 || event.keyCode == 124 {
+            guard !(event.window?.firstResponder is NSTextView) else { return false }
+            guard !event.isARepeat else { return true }
+            let slot = BoardViewModel.neighbourSlot(of: viewModel.activeSlot, step: event.keyCode == 123 ? -1 : 1)
+            viewModel.desktopOverlay.isDesktopModeActive = false
+            NotificationCenter.default.post(name: .switchWorkspace, object: slot)
+            return true
+        }
+
+        guard modifiers == .option,
               let slot = Self.digitKeyCodes.firstIndex(of: UInt32(event.keyCode)).map({ $0 + 1 }) else { return false }
         // В тексте ⌥1–9 печатают символы (¡, ™, £…) — как и до перехвата.
         guard !(event.window?.firstResponder is NSTextView) else { return false }
@@ -371,6 +391,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     private static let digitKeyCodes: [UInt32] = [18, 19, 20, 21, 23, 22, 26, 28, 25] // kVK_ANSI_1...9
+    private static let tabKeyCode: UInt32 = 48
+
+    /// Обзор Spaces; повторный вызов при открытом — сдвиг выбора.
+    private func showSpaceSwitcher(step: Int = 1) {
+        guard let viewModel else { return }
+        SpaceSwitcher.shared.trigger(viewModel: viewModel, step: step) { [weak self] slot in
+            self?.switchSpaceFromHotKey(slot, viewModel: viewModel)
+        }
+    }
 
     private func registerSpaceHotKeys(_ viewModel: BoardViewModel) {
         for (index, keyCode) in Self.digitKeyCodes.enumerated() {
@@ -378,6 +407,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             GlobalHotKeyManager.shared.register(keyCode: keyCode, modifiers: UInt32(controlKey | optionKey)) { [weak self] in
                 self?.switchSpaceFromHotKey(slot, viewModel: viewModel)
             }
+        }
+        // ⌃⌥Tab — обзор Spaces из любого приложения (держать ⌥, Tab — дальше).
+        GlobalHotKeyManager.shared.register(keyCode: Self.tabKeyCode, modifiers: UInt32(controlKey | optionKey)) { [weak self] in
+            self?.showSpaceSwitcher()
         }
 
         // Голый ⌥1–9 — только пока впереди Finder (рабочий стол, Desktop
@@ -411,6 +444,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 }) {
                     finderSpaceHotKeys.append(token)
                 }
+            }
+            // И ⌥Tab — обзор Spaces с рабочего стола.
+            if case .success(let token) = GlobalHotKeyManager.shared.register(keyCode: Self.tabKeyCode, modifiers: UInt32(optionKey), action: { [weak self] in
+                self?.showSpaceSwitcher()
+            }) {
+                finderSpaceHotKeys.append(token)
             }
         } else if !finderSpaceHotKeys.isEmpty {
             GlobalHotKeyManager.shared.unregister(finderSpaceHotKeys)

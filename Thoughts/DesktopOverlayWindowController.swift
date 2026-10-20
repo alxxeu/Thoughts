@@ -92,7 +92,9 @@ final class DesktopOverlayWindowController {
             window.level = NSWindow.Level(
                 rawValue: isDesktopModeActive ? desktopIconLevel - 1 : desktopIconLevel + 1
             )
-            window.collectionBehavior = [.ignoresCycle]
+            // .stationary — «Показать рабочий стол» (hot corner, жест, F11) и
+            // Mission Control не уводят окно с экрана: оно часть стола, как у Plash.
+            window.collectionBehavior = [.ignoresCycle, .stationary]
             // В обычном режиме "прозрачность" фона держится целиком на
             // VisualEffectBlur (живой блюр того, что позади окна) — само
             // NSWindow остаётся непрозрачным по умолчанию. В Desktop mode
