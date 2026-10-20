@@ -11,6 +11,25 @@ struct SettingsRowButton: View {
     let action: () -> Void
 
     var body: some View {
+        Button(action: action) {
+            HStack {
+                Text(title)
+                Spacer()
+            }
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+    }
+}
+
+struct SettingsView: View {
+    var viewModel: BoardViewModel
+
+    // Проверяем текущий статус автозапуска в системе при загрузке
+    @State private var launchAtLogin: Bool = (SMAppService.mainApp.status == .enabled)
+    @State private var isShowingReleaseNotes = false
+
+    var body: some View {
         Group {
             if viewModel.isActiveSpaceLocked {
                 // Основной барьер против побега из заблокированного Space
