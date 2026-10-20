@@ -17,6 +17,24 @@ struct KanbanCardView: View {
     @State private var board: KanbanBoard
     @FocusState private var focus: FocusTarget?
     @State private var undoHost = UndoHost()
+    /// Идёт перенос плитки: свой жест (не системный drag-and-drop — тот давал
+    /// текстовым полям «принять» id плитки как строку).
+    @State private var dragging: DragState?
+    @State private var tileFrames: [UUID: CGRect] = [:]
+
+    private struct DragState: Equatable {
+        var itemID: KanbanBoard.Item.ID
+        var text: String
+        var pointer: CGPoint
+        var width: CGFloat
+    }
+
+    fileprivate struct TileFramesKey: PreferenceKey {
+        static var defaultValue: [UUID: CGRect] = [:]
+        static func reduce(value: inout [UUID: CGRect], nextValue: () -> [UUID: CGRect]) {
+            value.merge(nextValue()) { $1 }
+        }
+    }
     @Environment(\.undoManager) private var undoManager
 
     fileprivate enum FocusTarget: Hashable {
@@ -70,6 +88,9 @@ struct KanbanCardView: View {
             }
             // Равная высота колонок: разделители тянутся на всю высоту самой высокой.
             .fixedSize(horizontal: false, vertical: true)
+            .coordinateSpace(name: "kanban")
+            .onPreferenceChange(TileFramesKey.self) { tileFrames = $0 }
+            .overlay(alignment: .topLeading) { dragGhost }
             .frame(minHeight: max(cardSize.height - 70, 60), alignment: .top)
             .padding(.horizontal, Self.sidePadding)
             .padding(.top, 38)
@@ -116,8 +137,8 @@ struct KanbanCardView: View {
                 .onSubmit { addItem(toColumn: index, at: 0) }
                 .padding(.horizontal, 10)
 
-            ForEach(column.items) { item in
-                tile(item, column: index)
+            ForEach(Array(column.items.enumerated()), id: \.element.id) { position, item in
+                tile(item, column: index, position: position, isLast: position == column.items.count - 1)
             }
 
             Button { addItem(toColumn: index) } label: {
@@ -130,14 +151,14 @@ struct KanbanCardView: View {
             .buttonStyle(.plain)
             .frame(maxWidth: .infinity)
             .padding(.top, 2)
+            // Пустая колонка: линия вставки — над «+».
+            .overlay(alignment: .top) {
+                if column.items.isEmpty { dropIndicator(column: index, position: 0).offset(y: -6) }
+            }
         }
         .padding(.horizontal, 4)
         .frame(maxHeight: .infinity, alignment: .top)
         .contentShape(Rectangle())
-        // Бросили не на плитку, а на колонку — в конец.
-        .dropDestination(for: String.self) { ids, _ in
-            drop(ids, toColumn: index, at: column.items.count)
-        }
         .contextMenu {
             Button("Add Column") { addColumn() }
             if board.columns.count > 1 {
@@ -148,7 +169,7 @@ struct KanbanCardView: View {
 
     // MARK: - Плитка
 
-    private func tile(_ item: KanbanBoard.Item, column: Int) -> some View {
+    private func tile(_ item: KanbanBoard.Item, column: Int, position: Int, isLast: Bool) -> some View {
         KanbanTile(
             text: textBinding(item.id), id: item.id, ink: ink, font: itemFont,
             focus: $focus,
@@ -157,11 +178,17 @@ struct KanbanCardView: View {
                 if let (c, i) = board.location(of: item.id) { addItem(toColumn: c, at: i + 1) }
             },
             onBackspaceWhenEmpty: { deleteEmptyItem(item.id) },
-            onDrop: { ids, below in
-                guard let (c, i) = board.location(of: item.id) else { return false }
-                return drop(ids, toColumn: c, at: below ? i + 1 : i)
-            }
+            isBeingDragged: dragging?.itemID == item.id,
+            onDragChanged: { pointer in
+                dragging = DragState(itemID: item.id, text: item.text, pointer: pointer, width: tileFrames[item.id]?.width ?? 160)
+            },
+            onDragEnded: { pointer in finishDrag(item.id, at: pointer) }
         )
+        // Линия вставки — на стыке плиток (поверх, макет не двигает).
+        .overlay(alignment: .top) { dropIndicator(column: column, position: position).offset(y: -6.5) }
+        .overlay(alignment: .bottom) {
+            if isLast { dropIndicator(column: column, position: position + 1).offset(y: 6.5) }
+        }
     }
 
     // MARK: - Правки
@@ -209,13 +236,46 @@ struct KanbanCardView: View {
         DispatchQueue.main.async { focus = previous }
     }
 
-    private func drop(_ ids: [String], toColumn column: Int, at index: Int) -> Bool {
-        guard let raw = ids.first, let id = UUID(uuidString: raw), board.location(of: id) != nil else { return false }
-        change {
-            Self.adoptHint(&$0, column: column)
-            $0.moveItem(id, toColumn: column, at: index)
+    // MARK: - Перенос плитки
+
+    /// Колонка и позиция в ней (в координатах до переноса), куда попадёт плитка.
+    private func dropTarget(at pointer: CGPoint) -> (column: Int, index: Int) {
+        let count = board.columns.count
+        let width = max((cardSize.width - Self.sidePadding * 2) / CGFloat(count), 80)
+        let column = min(max(Int((pointer.x / width).rounded(.down)), 0), count - 1)
+        let above = board.columns[column].items.filter { (tileFrames[$0.id]?.midY ?? 0) < pointer.y }.count
+        return (column, above)
+    }
+
+    @ViewBuilder
+    private func dropIndicator(column: Int, position: Int) -> some View {
+        if let dragging, dropTarget(at: dragging.pointer) == (column, position) {
+            Capsule().fill(ink.opacity(0.6)).frame(height: 3).padding(.horizontal, 6)
         }
-        return true
+    }
+
+    @ViewBuilder
+    private var dragGhost: some View {
+        if let dragging {
+            Text(dragging.text.isEmpty ? " " : dragging.text)
+                .font(itemFont).foregroundStyle(ink)
+                .lineLimit(3)
+                .padding(.horizontal, 16).padding(.vertical, 14)
+                .frame(width: dragging.width, alignment: .leading)
+                .background(RoundedRectangle(cornerRadius: 16, style: .continuous).fill(ink.opacity(0.3)))
+                .shadow(color: .black.opacity(0.3), radius: 8, y: 3)
+                .position(x: dragging.pointer.x, y: dragging.pointer.y)
+                .allowsHitTesting(false)
+        }
+    }
+
+    private func finishDrag(_ id: KanbanBoard.Item.ID, at pointer: CGPoint) {
+        dragging = nil
+        let target = dropTarget(at: pointer)
+        change {
+            Self.adoptHint(&$0, column: target.column)
+            $0.moveItem(id, toColumn: target.column, at: target.index)
+        }
     }
 
     /// В колонке без имени появляется первый пункт — подсказка становится именем.
@@ -256,7 +316,8 @@ struct KanbanCardView: View {
 // MARK: - Плитка пункта
 
 /// Плитка: скруглённая подложка с текстом слева. По наведению справа
-/// появляются ручка переноса (сверху) и галочка «готово — удалить» (снизу).
+/// появляются ручка переноса (сверху) и галочка «готово — удалить» (снизу);
+/// они лежат поверх плитки и не меняют её размер.
 private struct KanbanTile: View {
     @Binding var text: String
     let id: KanbanBoard.Item.ID
@@ -266,74 +327,83 @@ private struct KanbanTile: View {
     var onDelete: () -> Void
     var onSubmit: () -> Void
     var onBackspaceWhenEmpty: () -> Void
-    var onDrop: ([String], _ below: Bool) -> Bool
+    var isBeingDragged: Bool
+    var onDragChanged: (CGPoint) -> Void
+    var onDragEnded: (CGPoint) -> Void
 
-    @State private var height: CGFloat = 60
-    @State private var isDropTargeted = false
     @State private var isHovering = false
 
     var body: some View {
-        ZStack(alignment: .topLeading) {
-            RoundedRectangle(cornerRadius: 16, style: .continuous)
-                .fill(ink.opacity(isDropTargeted ? 0.28 : 0.18))
-                .contextMenu { Button("Delete", role: .destructive, action: onDelete) }
+        TextField("", text: $text, axis: .vertical)
+            .textFieldStyle(.plain)
+            .font(font)
+            .foregroundStyle(ink)
+            .focused(focus, equals: .item(id))
+            .onSubmit(onSubmit)
+            .onKeyPress(.delete) {
+                guard text.isEmpty else { return .ignored }
+                onBackspaceWhenEmpty()
+                return .handled
+            }
+            // Справа — место под ручку и галочку, чтобы текст не прыгал по наведению.
+            .padding(.leading, 16)
+            .padding(.trailing, 36)
+            .padding(.vertical, 14)
+            .frame(maxWidth: .infinity, minHeight: 58, alignment: .topLeading)
+            .background(
+                RoundedRectangle(cornerRadius: 16, style: .continuous)
+                    .fill(ink.opacity(0.18))
+                    .contextMenu { Button("Delete", role: .destructive, action: onDelete) }
+            )
+            .overlay(alignment: .topTrailing) { grip.padding(6) }
+            .overlay(alignment: .bottomTrailing) { doneButton.padding(6) }
+            .opacity(isBeingDragged ? 0.35 : 1)
+            .onHover { isHovering = $0 }
+            .animation(.easeOut(duration: 0.12), value: isHovering)
+            .background(GeometryReader { proxy in
+                Color.clear.preference(
+                    key: KanbanCardView.TileFramesKey.self,
+                    value: [id: proxy.frame(in: .named("kanban"))]
+                )
+            })
+    }
 
-            TextField("", text: $text, axis: .vertical)
-                .textFieldStyle(.plain)
-                .font(font)
-                .foregroundStyle(ink)
-                .focused(focus, equals: .item(id))
-                .onSubmit(onSubmit)
-                .onKeyPress(.delete) {
-                    guard text.isEmpty else { return .ignored }
-                    onBackspaceWhenEmpty()
-                    return .handled
-                }
-                // Справа — место под ручку и галочку, чтобы текст не прыгал по наведению.
-                .padding(.leading, 16)
-                .padding(.trailing, 36)
-                .padding(.vertical, 14)
-                .frame(maxWidth: .infinity, alignment: .leading)
+    private var controlsVisible: Bool { isHovering || isBeingDragged }
 
-            if isHovering {
-                VStack {
-                    Image(systemName: "circle.grid.2x3.fill")
-                        .font(.system(size: 9))
-                        .frame(width: 24, height: 24)
-                        .contentShape(Rectangle())
-                        .draggable(id.uuidString) {
-                            Text(text.isEmpty ? " " : text)
-                                .font(font).foregroundStyle(ink)
-                                .padding(.horizontal, 14).padding(.vertical, 10)
-                                .background(RoundedRectangle(cornerRadius: 14, style: .continuous).fill(ink.opacity(0.22)))
-                        }
-                        .help("Drag to another column")
-                    Spacer(minLength: 0)
-                    Button(action: onDelete) {
-                        Image(systemName: "checkmark")
-                            .font(.system(size: 11, weight: .semibold))
-                            .frame(width: 24, height: 24)
-                            .contentShape(Rectangle())
-                    }
-                    .buttonStyle(.plain)
-                    .help("Done \u{2014} remove")
+    /// Ручка переноса — шесть точек; жест свой, в координатах карточки.
+    private var grip: some View {
+        VStack(spacing: 2.5) {
+            ForEach(0..<3, id: \.self) { _ in
+                HStack(spacing: 2.5) {
+                    Circle().frame(width: 2.6, height: 2.6)
+                    Circle().frame(width: 2.6, height: 2.6)
                 }
-                .foregroundStyle(ink.opacity(0.85))
-                .padding(.trailing, 6)
-                .padding(.vertical, 6)
-                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topTrailing)
-                .transition(.opacity)
             }
         }
-        .onHover { isHovering = $0 }
-        .animation(.easeOut(duration: 0.12), value: isHovering)
-        .background(GeometryReader { proxy in
-            Color.clear
-                .onAppear { height = proxy.size.height }
-                .onChange(of: proxy.size.height) { _, new in height = new }
-        })
-        .dropDestination(for: String.self) { ids, location in
-            onDrop(ids, location.y > height / 2)
-        } isTargeted: { isDropTargeted = $0 }
+        .foregroundStyle(ink.opacity(0.85))
+        .frame(width: 22, height: 22)
+        .contentShape(Rectangle())
+        .gesture(
+            DragGesture(minimumDistance: 2, coordinateSpace: .named("kanban"))
+                .onChanged { onDragChanged($0.location) }
+                .onEnded { onDragEnded($0.location) }
+        )
+        .help("Drag to another column")
+        .opacity(controlsVisible ? 1 : 0)
+        .allowsHitTesting(controlsVisible)
+    }
+
+    private var doneButton: some View {
+        Button(action: onDelete) {
+            Image(systemName: "checkmark")
+                .font(.system(size: 11, weight: .semibold))
+                .foregroundStyle(ink.opacity(0.85))
+                .frame(width: 22, height: 22)
+                .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .help("Done \u{2014} remove")
+        .opacity(controlsVisible ? 1 : 0)
+        .allowsHitTesting(controlsVisible)
     }
 }
