@@ -315,9 +315,9 @@ struct KanbanCardView: View {
 
 // MARK: - Плитка пункта
 
-/// Плитка: скруглённая подложка с текстом слева. По наведению справа
-/// появляются ручка переноса (сверху) и галочка «готово — удалить» (снизу);
-/// они лежат поверх плитки и не меняют её размер.
+/// Плитка: скруглённая подложка с текстом слева. Переносится за невидимую
+/// верхнюю полосу; по наведению справа внизу появляется галочка «готово —
+/// удалить» (лежит поверх плитки и не меняет её размер).
 private struct KanbanTile: View {
     @Binding var text: String
     let id: KanbanBoard.Item.ID
@@ -345,7 +345,7 @@ private struct KanbanTile: View {
                 onBackspaceWhenEmpty()
                 return .handled
             }
-            // Справа — место под ручку и галочку, чтобы текст не прыгал по наведению.
+            // Справа — место под галочку, чтобы текст не прыгал по наведению.
             .padding(.leading, 16)
             .padding(.trailing, 36)
             .padding(.vertical, 14)
@@ -355,7 +355,7 @@ private struct KanbanTile: View {
                     .fill(ink.opacity(0.18))
                     .contextMenu { Button("Delete", role: .destructive, action: onDelete) }
             )
-            .overlay(alignment: .topTrailing) { grip.padding(6) }
+            .overlay(alignment: .top) { dragStrip }
             .overlay(alignment: .bottomTrailing) { doneButton.padding(6) }
             .opacity(isBeingDragged ? 0.35 : 1)
             .onHover { isHovering = $0 }
@@ -370,21 +370,21 @@ private struct KanbanTile: View {
 
     private var controlsVisible: Bool { isHovering || isBeingDragged }
 
-    /// Ручка переноса — SF Symbol `circle.grid.2x2.fill`; жест свой, в координатах карточки.
-    private var grip: some View {
-        Image(systemName: "circle.grid.2x2.fill")
-            .font(.system(size: 10))
-        .foregroundStyle(ink.opacity(0.85))
-        .frame(width: 22, height: 22)
-        .contentShape(Rectangle())
-        .gesture(
-            DragGesture(minimumDistance: 2, coordinateSpace: .named("kanban"))
-                .onChanged { onDragChanged($0.location) }
-                .onEnded { onDragEnded($0.location) }
-        )
-        .help("Drag to another column")
-        .opacity(controlsVisible ? 1 : 0)
-        .allowsHitTesting(controlsVisible)
+    /// Невидимая полоса по верху плитки — за неё плитку и переносят, как карточку
+    /// за верхнюю кромку. Высота равна верхнему отступу текста: поле ввода под
+    /// ней остаётся целиком кликабельным.
+    private var dragStrip: some View {
+        Color.clear
+            .frame(height: 14)
+            .contentShape(Rectangle())
+            .onHover { inside in
+                if inside { NSCursor.arrow.set() }
+            }
+            .gesture(
+                DragGesture(minimumDistance: 2, coordinateSpace: .named("kanban"))
+                    .onChanged { onDragChanged($0.location) }
+                    .onEnded { onDragEnded($0.location) }
+            )
     }
 
     private var doneButton: some View {
