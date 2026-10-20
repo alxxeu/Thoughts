@@ -14,6 +14,9 @@ enum EdgeHint: Equatable {
 final class BoardViewModel {
     var workspaces: [Workspace] = []
     var activeSlot: Int = 1
+    /// Space, с которого пришли на текущий, — ⌥Tab по быстрому нажатию возвращает
+    /// туда (как ⌘Tab между двумя приложениями). nil — ещё не переключались.
+    private(set) var previousSlot: Int?
     private var cardsByWorkspace: [Int: [Card]] = [:]
 
     let securitySettings = SecuritySettings.shared
@@ -139,7 +142,25 @@ final class BoardViewModel {
         // Иначе зажатый хоткей (авто-повтор клавиши) на уже активном Space
         // непрерывно перезапускает переход/анимацию на то же самое место.
         guard clamped != activeSlot else { return }
+        previousSlot = activeSlot
         activeSlot = clamped
+    }
+
+    /// Соседний Space по кругу: после 9 — 1, перед 1 — 9.
+    static func neighbourSlot(of slot: Int, step: Int) -> Int {
+        ((slot - 1 + step) % 9 + 9) % 9 + 1
+    }
+
+    /// Карточки любого Space (для обзора Spaces по ⌥Tab).
+    func cards(inSlot slot: Int) -> [Card] {
+        cardsByWorkspace[slot] ?? []
+    }
+
+    /// Заперт ли Space сейчас — как isActiveSpaceLocked, но для любого слота.
+    func isLocked(slot: Int) -> Bool {
+        isSpaceLockEnforced
+            && (workspaces.first { $0.slot == slot }?.isProtected ?? false)
+            && !unlockedProtectedSlots.contains(slot)
     }
 
     // MARK: - Space Lock
