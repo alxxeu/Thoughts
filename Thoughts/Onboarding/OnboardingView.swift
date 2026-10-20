@@ -200,7 +200,7 @@ struct OnboardingView: View {
                 VStack(alignment: .leading, spacing: 3) {
                     Text("Nice, that's your first card!")
                         .font(.system(size: 14, weight: .semibold))
-                    Text("Type anything in it. Drag to move, drag the corner to resize.")
+                    Text("Type anything in it. Drag it by the top to move, drag the corner to resize.")
                         .font(.system(size: 12))
                         .foregroundStyle(.secondary)
                 }

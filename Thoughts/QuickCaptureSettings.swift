@@ -10,14 +10,14 @@ struct HotKeyShortcut: Codable, Equatable {
     var carbonModifiers: UInt32
     var keyName: String
 
-    /// ⌃⌥⌘N, а не ⌃⌥N: ⌃⌥N — популярный дефолт у других приложений
-    /// быстрых заметок (QuickNote и т.п.), а конфликт между процессами
-    /// Carbon не сообщает — RegisterEventHotKey успешен, но нажатие забирает
-    /// чужой хоткей. ⌃⌥Space тоже не годится — это системное переключение
-    /// источника ввода.
+    /// ⌃⌥N — проще прежнего ⌃⌥⌘N (решение автора) и в одном ряду с ⌃⌥1–9.
+    /// Не голый ⌃N: в любом текстовом поле macOS это «строка вниз». Оговорка:
+    /// ⌃⌥N бывает дефолтом у других приложений быстрых заметок, а конфликт
+    /// Carbon не сообщает — тогда пользователь меняет сочетание в Settings →
+    /// Shortcuts. ⌃⌥Space не годится — системное переключение раскладки.
     static let quickCaptureDefault = HotKeyShortcut(
         keyCode: UInt32(kVK_ANSI_N),
-        carbonModifiers: UInt32(controlKey | optionKey | cmdKey),
+        carbonModifiers: UInt32(controlKey | optionKey),
         keyName: "N"
     )
 
