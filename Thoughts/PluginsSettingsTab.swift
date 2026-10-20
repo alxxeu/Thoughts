@@ -6,7 +6,7 @@ struct PluginsSettingsTab: View {
     var plugins = PluginsModel.shared
     var templateSettings = TemplateSettings.shared
 
-    private static let docsURL = URL(string: "https://github.com/alxxeu/Thoughts/blob/develop/docs/plugins.md")!
+    private static let docsURL = URL(string: "https://github.com/alxxeu/thoughts-plugins/blob/main/docs/plugins.md")!
 
     var body: some View {
         Form {

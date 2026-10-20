@@ -46,7 +46,7 @@ check for updates in Settings → About. See the
 
 Community plugins — fonts, colors, canvas patterns, themes, AI actions and
 card templates — are being designed. See the draft spec in
-[docs/plugins.md](docs/plugins.md); feedback is welcome.
+[thoughts-plugins](https://github.com/alxxeu/thoughts-plugins); feedback is welcome.
 
 ## Privacy
 

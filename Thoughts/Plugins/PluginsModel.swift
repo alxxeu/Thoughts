@@ -12,7 +12,7 @@ struct PluginInfo: Identifiable, Equatable {
     var isEnabled: Bool
 }
 
-/// Заготовка под менеджер плагинов (см. docs/plugins.md, BACKLOG «Шаблоны, плагины
+/// Заготовка под менеджер плагинов (см. thoughts-plugins/docs/plugins.md, BACKLOG «Шаблоны, плагины
 /// и каталог»): список пока всегда пуст, будущий PluginManager его заполнит. Уже
 /// отдаёт папку `Plugins/` (в Debug — своя, как у доски).
 @Observable

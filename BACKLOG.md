@@ -63,7 +63,7 @@ Backlog / Идеи → В работе (план согласован) → Го�
   шаг: поле ввода (`TextField`) только у плитки в фокусе, остальные — `Text`.
 - [x] Заголовки колонок закреплены (шапка вне прокрутки; плитки прокручиваются).
 - [ ] 5. Проверка автором (⌘U, Spaces 2–9): шаблоны, правки, перенос, ⌘Z,
-  синк/бэкап, Spoiler/Lock, Focus Mode; затем `docs/plugins.md` (пример
+  синк/бэкап, Spoiler/Lock, Focus Mode; затем `thoughts-plugins/docs/plugins.md` (пример
   `cardTemplates` под этот формат) и README; перенести в «Готово».
 
 ## Backlog / Идеи
@@ -91,7 +91,7 @@ Keychain с подстановкой).
    версионировать (`apiVersion`) до выхода шаблонов наружу.
 2. **Менеджер плагинов:** Settings → Plugins, пакет `.thoughtsplugin` (`manifest.json`),
    папка `Plugins/` с автосканом; шрифты, цвета, фоны, темы, шаблоны, AI-действия
-   (Phase 1–2 из `docs/plugins.md`).
+   (Phase 1–2 из `thoughts-plugins/docs/plugins.md`).
 3. **Каталог:** репозиторий `thoughts-plugins` по образцу Antinote (`*-official/`,
    `*-community/`, отдельно шаблоны и темы), pull request, CI (`validate` по правилам
    приложения, sha256 в `index.json`), ручная проверка, продвижение community → official.
@@ -103,8 +103,8 @@ Keychain с подстановкой).
 Безопасность: лимиты пакета (20 МБ, список разрешённых типов, без ссылок и исполняемых
 файлов), проверка пути внутри пакета, хэш/подпись каталога.
 
-Открытые вопросы (из `docs/plugins.md`, §9): per-Space темы, приватность в шаблонах,
-цветные паттерны, подпись каталога. Связанное: `docs/plugins.md` — дизайн-док (шаблоны там
+Открытые вопросы (из `thoughts-plugins/docs/plugins.md`, §9): per-Space темы, приватность в шаблонах,
+цветные паттерны, подпись каталога. Связанное: `thoughts-plugins/docs/plugins.md` — дизайн-док (шаблоны там
 описаны до виджетов, с `•`); обновить под этот план при старте работы.
 
 ### Проверить дефолтные модели AI (из аудита 2026-10-14)
@@ -596,7 +596,7 @@ CloudKit (`CKSyncEngine`, приватная база, зона `Board`, все 
   процессом; ⌃⌥Space — системное переключение раскладки.
   GlobalHotKeyManager теперь выдаёт токены — Desktop Overlay снимает
   только свои хоткеи. Пункт File → Quick Capture…
-- Дизайн-док плагинов `docs/plugins.md`: Tier 1 — декларативные паки
+- Дизайн-док плагинов `thoughts-plugins/docs/plugins.md`: Tier 1 — декларативные паки
   (fonts, textColors, patterns, themes, aiActions, cardTemplates), формат
   `.thoughtsplugin` + manifest.json, установка/валидация, реестр,
   безопасность, каталог `thoughts-plugins`, версионирование, роадмап.

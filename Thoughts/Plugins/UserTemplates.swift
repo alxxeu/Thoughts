@@ -2,7 +2,7 @@ import Foundation
 import Observation
 
 /// Свой шаблон карточки: один файл `.thoughtstemplate` (JSON). Данные, не код —
-/// так же, как будущие плагины (см. docs/plugins.md). Приватность (Spoiler/Lock)
+/// так же, как будущие плагины (см. thoughts-plugins/docs/plugins.md). Приватность (Spoiler/Lock)
 /// в шаблон не попадает.
 struct UserTemplate: Codable, Equatable {
     static let formatIdentifier = "com.alxeu.thoughts.template"
