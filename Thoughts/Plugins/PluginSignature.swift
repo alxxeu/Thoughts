@@ -14,8 +14,10 @@ enum PluginSignature {
     /// App Store-версия тогда не ставит плагины с кодом вовсе.
     static let catalogPublicKey = ""
 
+    /// Только App Store-сборка (Release). Debug — для разработки и проверки плагинов
+    /// из Xcode, DMG (Direct) — ставит любые после подтверждения прав.
     static var requiredForCode: Bool {
-        #if DIRECT
+        #if DIRECT || DEBUG
         return false
         #else
         return true

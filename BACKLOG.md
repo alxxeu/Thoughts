@@ -31,6 +31,8 @@ Tab вставляет. JS-плагины в JavaScriptCore, только объ
   `CREATE.md`/`AGENTS.md` — конвертеры и API скрипта.
 - [ ] Проверка автором в Xcode (код не собирался): ⌘U; Calculator и Currency из
   thoughts-plugins в DMG-схеме; подсказка, Tab, ⌘Z; выключатель Converters.
+- [x] Debug-сборка (запуск из Xcode) ставит неподписанные плагины со скриптом, как DMG;
+  подпись требуется только в Release (App Store).
 - [ ] Публичный ключ каталога: `swift scripts/sign-plugin.swift --generate-key …` у
   автора → `PluginSignature.catalogPublicKey`; подписать примеры. Пока ключа нет,
   App Store-версия плагины со скриптом не ставит.
