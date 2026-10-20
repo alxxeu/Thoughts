@@ -19,11 +19,11 @@ struct TipsTests {
         #expect(state.currentToast == .spaceSwitch)
         state.dismissToast()
         // В этот запуск плашек больше нет.
-        state.offer(.moveResize)
+        state.offer(.focusMode)
         #expect(state.currentToast == nil)
         #expect(state.seen == [.spaceSwitch])
         #expect(!state.shouldShow(.spaceSwitch))
-        #expect(state.shouldShow(.moveResize))
+        #expect(state.shouldShow(.focusMode))
     }
 
     @Test func noTipsDuringTourOrWhenDisabled() {

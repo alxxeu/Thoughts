@@ -37,8 +37,6 @@ struct TipToastView: View {
             return "Switch Spaces with \u{2325}1\u{2013}9 or \u{2325}\u{2190} \u{2325}\u{2192}. Hold \u{2325} and press Tab to see all of them."
         case .spaceLock:
             return "Keep a Space private: turn on a passcode in Settings \u{2192} Security, then press \u{2318}L to lock the whole Space."
-        case .moveResize:
-            return "Drag a card by its top to move it, drag its corner to resize. Right-click empty space for a kanban board."
         case .focusMode:
             return "Focus Mode hides everything else \u{2014} Esc brings it back. Ask AI below the card asks about this card."
         case .askAI:
@@ -52,7 +50,6 @@ struct TipToastView: View {
         switch tip {
         case .spaceSwitch: return "square.stack.3d.up"
         case .spaceLock: return "lock.shield"
-        case .moveResize: return "arrow.up.and.down.and.arrow.left.and.right"
         case .focusMode: return "scope"
         case .askAI: return "sparkle"
         case .tagColors: return "circle.fill"

@@ -6,7 +6,8 @@ import Observation
 enum Tip: String, CaseIterable {
     /// Цепочка в меню тега: цвета → Spoiler/Lock карточки.
     case tagColors
-    case spaceSwitch, spaceLock, moveResize, focusMode, askAI
+    /// Перенос/ресайз и создание карточки учит онбординг — отдельной подсказки нет.
+    case spaceSwitch, spaceLock, focusMode, askAI
 }
 
 /// Что из обучения уже показано — UserDefaults (у каждого Mac своё).

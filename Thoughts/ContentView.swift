@@ -271,11 +271,9 @@ struct ContentView: View {
         }
         .onReceive(NotificationCenter.default.publisher(for: .cardWasMoved)) { _ in
             onboardingViewModel.handle(.cardMoved)
-            TipsState.shared.offer(.moveResize)
         }
         .onReceive(NotificationCenter.default.publisher(for: .cardWasResized)) { _ in
             onboardingViewModel.handle(.cardResized)
-            TipsState.shared.offer(.moveResize)
         }
         .onReceive(NotificationCenter.default.publisher(for: .setCardTag)) { notification in
             guard let id = textFocusedCardID ?? focusedCardID,
@@ -611,6 +609,11 @@ struct ContentView: View {
         onboardingViewModel.onFinish = { home, isFirstRun in
             if let home { board.desktopOverlay.isEnabled = home == .desktop }
             if isFirstRun { CheatSheetCard.add(to: board) }
+            // Первая подсказка после тура — про Spaces: карточки уже умеем, дальше —
+            // где их ещё держать.
+            DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) {
+                TipsState.shared.offer(.spaceSwitch)
+            }
         }
     }
 
