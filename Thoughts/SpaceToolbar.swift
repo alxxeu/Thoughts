@@ -44,6 +44,11 @@ struct SpaceToolbar: View {
     @State private var pillHideTask: Task<Void, Never>?
     @State private var gearHideTask: Task<Void, Never>?
     @State private var isShowingPluginsPanel = false
+    /// Иконка, которую тащат в режиме правки, и её сдвиг от своего места.
+    @State private var draggingItem: ToolbarItem?
+    @State private var dragOffset: CGFloat = 0
+    /// Сколько уже «съели» переставлениями: перевод жеста минус это = сдвиг от места.
+    @State private var dragStart: CGFloat = 0
 
     /// Заметка для плашки What’s new; nil — плашки нет.
     @State private var whatsNewNote = WhatsNew.pendingNote()
@@ -98,7 +103,7 @@ struct SpaceToolbar: View {
                 // функция была ещё одной иконкой в этом же ряду, а не
                 // ещё одной строкой вниз.
                 if !isEditingWorkspaceName {
-                    let items = ToolbarItem.available.filter {
+                    let items = toolbarSettings.order.filter { ToolbarItem.available.contains($0) }.filter {
                         ($0 != .askAI || viewModel.aiSettings.isEnabled)
                             && (isEditingToolbar || !toolbarSettings.isHidden($0))
                     }
@@ -215,29 +220,88 @@ struct SpaceToolbar: View {
         }
     }
 
-    /// Иконка в режиме правки: дрожит; «−» — скрыть, у скрытой (приглушена) «+» — вернуть.
+    /// Шаг иконок в режиме правки: ширина рамки + spacing ряда.
+    private static let editIconWidth: CGFloat = 20
+    private static let editStep: CGFloat = editIconWidth + 10
+
+    /// Иконка в режиме правки: дрожит; «−» — скрыть, у скрытой (приглушена) «+» —
+    /// вернуть (кликом по бейджу или по самой иконке); перетаскивание меняет порядок.
     private func editableIcon(_ item: ToolbarItem, phase: Int) -> some View {
         let isHidden = toolbarSettings.isHidden(item)
+        let isDragging = draggingItem == item
         return Image(systemName: item.symbol)
             .font(.system(size: 15))
             .foregroundStyle(Color.white.opacity(isHidden ? 0.35 : 0.9))
-            .modifier(WobbleEffect(phase: phase))
+            .frame(width: Self.editIconWidth)
+            .contentShape(Rectangle())
+            .onTapGesture { toggleHidden(item, isHidden: isHidden) }
+            .modifier(WobbleEffect(phase: phase, isEnabled: !isDragging))
             .overlay(alignment: .topLeading) {
                 Image(systemName: isHidden ? "plus" : "minus")
                     .font(.system(size: 7, weight: .heavy))
                     .foregroundStyle(.white)
                     .frame(width: 12, height: 12)
                     .background(Circle().fill(isHidden ? Color.green : Color.red))
-                    .offset(x: -8, y: -7)
+                    // Область нажатия бейджа больше самого кружка.
+                    .frame(width: 18, height: 18)
+                    .contentShape(Circle())
+                    .onTapGesture { toggleHidden(item, isHidden: isHidden) }
+                    .offset(x: -9, y: -9)
             }
-            .contentShape(Rectangle())
-            .onTapGesture {
-                withAnimation(.spring(response: 0.3, dampingFraction: 0.8)) {
-                    toolbarSettings.setHidden(item, !isHidden)
-                    if item == .plugins, !isHidden { isShowingPluginsPanel = false }
-                    if item == .askAI, !isHidden { isAskingSpaceAI = false }
-                }
-            }
+            .scaleEffect(isDragging ? 1.15 : 1)
+            .offset(x: isDragging ? dragOffset : 0)
+            .zIndex(isDragging ? 1 : 0)
+            .gesture(
+                DragGesture(minimumDistance: 3)
+                    .onChanged { value in dragIcon(item, by: value.translation.width) }
+                    .onEnded { _ in
+                        withAnimation(.spring(response: 0.3, dampingFraction: 0.8)) {
+                            draggingItem = nil
+                            dragOffset = 0
+                        }
+                    }
+            )
+    }
+
+    private func toggleHidden(_ item: ToolbarItem, isHidden: Bool) {
+        withAnimation(.spring(response: 0.3, dampingFraction: 0.8)) {
+            toolbarSettings.setHidden(item, !isHidden)
+            if item == .plugins, !isHidden { isShowingPluginsPanel = false }
+            if item == .askAI, !isHidden { isAskingSpaceAI = false }
+        }
+    }
+
+    /// Иконка едет за курсором; ушла дальше чем на полшага — меняется местами с
+    /// соседом, а сдвиг отсчитывается уже от нового места.
+    private func dragIcon(_ item: ToolbarItem, by translation: CGFloat) {
+        // Ряд берём из настроек, а не из замыкания жеста: он меняется на ходу.
+        let row = toolbarSettings.order.filter {
+            ToolbarItem.available.contains($0) && ($0 != .askAI || viewModel.aiSettings.isEnabled)
+        }
+        if draggingItem != item {
+            draggingItem = item
+            dragStart = 0
+        }
+        var offset = translation - dragStart
+        guard var index = row.firstIndex(of: item) else { return }
+        var current = row
+        while offset > Self.editStep / 2, index < current.count - 1 {
+            let neighbour = current[index + 1]
+            withAnimation(.spring(response: 0.3, dampingFraction: 0.8)) { toolbarSettings.swap(item, with: neighbour) }
+            current.swapAt(index, index + 1)
+            index += 1
+            dragStart += Self.editStep
+            offset -= Self.editStep
+        }
+        while offset < -Self.editStep / 2, index > 0 {
+            let neighbour = current[index - 1]
+            withAnimation(.spring(response: 0.3, dampingFraction: 0.8)) { toolbarSettings.swap(item, with: neighbour) }
+            current.swapAt(index, index - 1)
+            index -= 1
+            dragStart -= Self.editStep
+            offset += Self.editStep
+        }
+        dragOffset = offset
     }
 
     // MARK: - Шестерёнка
@@ -650,11 +714,13 @@ struct SpaceToolbar: View {
 /// приложений; фаза у каждой иконки своя, чтобы они не качались в унисон.
 private struct WobbleEffect: ViewModifier {
     let phase: Int
+    /// Перетаскиваемая иконка не дрожит.
+    var isEnabled = true
     @State private var isOn = false
 
     func body(content: Content) -> some View {
         content
-            .rotationEffect(.degrees(isOn ? 2.2 : -2.2))
+            .rotationEffect(.degrees(isEnabled ? (isOn ? 2.2 : -2.2) : 0))
             .animation(
                 .easeInOut(duration: 0.12 + Double(phase % 3) * 0.015).repeatForever(autoreverses: true),
                 value: isOn

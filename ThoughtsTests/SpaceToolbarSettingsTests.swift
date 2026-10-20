@@ -35,4 +35,20 @@ struct SpaceToolbarSettingsTests {
         defaults.set(["askAI", "somethingNew"], forKey: "spaceToolbar.hiddenItems")
         #expect(SpaceToolbarSettings(defaults: defaults).hidden == [.askAI])
     }
+
+    @Test func orderDefaultsSwapsAndPersists() {
+        let defaults = makeDefaults()
+        let settings = SpaceToolbarSettings(defaults: defaults)
+        #expect(settings.order == ToolbarItem.allCases)
+        settings.swap(.clearSpace, with: .askAI)
+        #expect(SpaceToolbarSettings(defaults: defaults).order == [.clearSpace, .tidyCards, .askAI, .plugins])
+        settings.reset()
+        #expect(SpaceToolbarSettings(defaults: defaults).order == ToolbarItem.allCases)
+    }
+
+    @Test func storedOrderIgnoresUnknownAndAppendsNew() {
+        let defaults = makeDefaults()
+        defaults.set(["trashOld", "clearSpace", "askAI", "clearSpace"], forKey: "spaceToolbar.order")
+        #expect(SpaceToolbarSettings(defaults: defaults).order == [.clearSpace, .askAI, .tidyCards, .plugins])
+    }
 }
