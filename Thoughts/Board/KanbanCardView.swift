@@ -21,6 +21,8 @@ struct KanbanCardView: View {
     @State private var dragging: DragState?
     @State private var tileFrames: [UUID: CGRect] = [:]
     @State private var isCardHovered = false
+    /// Высота закреплённой шапки с заголовками (мерится) — от неё высота колонок.
+    @State private var headerHeight: CGFloat = 44
 
     private struct DragState: Equatable {
         var itemID: KanbanBoard.Item.ID
@@ -71,42 +73,64 @@ struct KanbanCardView: View {
         return Font((NSFont(descriptor: typography.font.fontDescriptor, size: size) ?? typography.font) as CTFont).bold()
     }
 
-    /// Высота колонок = высота содержимого карточки (без верхнего и нижнего отступов).
-    private var minColumnHeight: CGFloat { max(cardSize.height - 44, 60) }
+    private static let topInset: CGFloat = 20     // как у текстовой карточки
+    private static let bottomInset: CGFloat = 24
+    /// Колонки тянутся от шапки до низа карточки, даже если пунктов мало.
+    private var minColumnHeight: CGFloat { max(cardSize.height - Self.topInset - headerHeight - Self.bottomInset, 40) }
 
     var body: some View {
         let columnWidth = max((cardSize.width - Self.sidePadding * 2) / CGFloat(board.columns.count), 80)
-        ScrollView(.vertical) {
+        VStack(spacing: 0) {
+            // Шапка с заголовками — закреплена: не прокручивается вместе с плитками.
             HStack(alignment: .top, spacing: 0) {
                 ForEach(Array(board.columns.enumerated()), id: \.element.id) { index, column in
                     if index > 0 {
                         Rectangle().fill(ink.opacity(0.22)).frame(width: 1)
                             .frame(maxHeight: .infinity)
                     }
-                    columnView(column, index: index)
-                        .frame(width: columnWidth - (index > 0 ? 0.5 : 0), alignment: .top)
-                        // Колонка — на всю высоту карточки, даже если пунктов мало.
-                        .frame(minHeight: minColumnHeight, maxHeight: .infinity, alignment: .top)
+                    headerView(column, index: index)
+                        .frame(width: columnWidth - (index > 0 ? 0.5 : 0), alignment: .topLeading)
                 }
             }
-            // Равная высота колонок: разделители тянутся на всю высоту самой высокой.
             .fixedSize(horizontal: false, vertical: true)
-            .coordinateSpace(name: "kanban")
-            .onPreferenceChange(TileFramesKey.self) { tileFrames = $0 }
-            .overlay(alignment: .topLeading) { dragGhost }
-            // Правый клик в пустом месте колонки/под ней — «Add / Remove Column» (под курсором — своя колонка).
-            .overlay {
-                KanbanContextMenu(
-                    passesThrough: { point in tileFrames.values.contains { $0.contains(point) } },
-                    entries: { menuEntries(at: $0) }
-                )
-            }
             .padding(.horizontal, Self.sidePadding)
-            // Как у текстовой карточки (отступ 20 pt) — заголовок на той же высоте.
-            .padding(.top, 20)
-            .padding(.bottom, 24)
+            .padding(.top, Self.topInset)
+            .background(GeometryReader { proxy in
+                Color.clear
+                    .onAppear { headerHeight = proxy.size.height - Self.topInset }
+                    .onChange(of: proxy.size.height) { _, new in headerHeight = new - Self.topInset }
+            })
+
+            ScrollView(.vertical) {
+                HStack(alignment: .top, spacing: 0) {
+                    ForEach(Array(board.columns.enumerated()), id: \.element.id) { index, column in
+                        if index > 0 {
+                            Rectangle().fill(ink.opacity(0.22)).frame(width: 1)
+                                .frame(maxHeight: .infinity)
+                        }
+                        columnView(column, index: index)
+                            .frame(width: columnWidth - (index > 0 ? 0.5 : 0), alignment: .top)
+                            // Колонка — до низа карточки, даже если пунктов мало.
+                            .frame(minHeight: minColumnHeight, maxHeight: .infinity, alignment: .top)
+                    }
+                }
+                // Равная высота колонок: разделители тянутся на всю высоту самой высокой.
+                .fixedSize(horizontal: false, vertical: true)
+                .coordinateSpace(name: "kanban")
+                .onPreferenceChange(TileFramesKey.self) { tileFrames = $0 }
+                .overlay(alignment: .topLeading) { dragGhost }
+                // Правый клик в пустом месте колонки — «Add / Remove Column» (под курсором — своя колонка).
+                .overlay {
+                    KanbanContextMenu(
+                        passesThrough: { point in tileFrames.values.contains { $0.contains(point) } },
+                        entries: { menuEntries(at: $0) }
+                    )
+                }
+                .padding(.horizontal, Self.sidePadding)
+                .padding(.bottom, Self.bottomInset)
+            }
+            .scrollIndicators(.hidden)
         }
-        .scrollIndicators(.hidden)
         .onHover { isCardHovered = $0 }
         .onChange(of: text) { _, newText in
             // Текст поменяли снаружи (синк, Ask AI, импорт) — перечитать.
@@ -130,25 +154,24 @@ struct KanbanCardView: View {
 
     // MARK: - Колонка
 
+    /// Заголовок колонки — в закреплённой шапке.
+    private func headerView(_ column: KanbanBoard.Column, index: Int) -> some View {
+        TextField("", text: titleBinding(column.id),
+                  prompt: Text(Self.titleHint(index) ?? "Title").foregroundStyle(ink.opacity(0.32)),
+                  axis: .vertical)
+            .textFieldStyle(.plain)
+            .font(titleFont)
+            .foregroundStyle(ink)
+            .lineLimit(1...2)
+            .focused($focus, equals: .title(column.id))
+            .onSubmit { addItem(toColumn: index, at: 0) }
+            .padding(.horizontal, 4)
+            .padding(.horizontal, 12)
+            .padding(.bottom, 8)
+    }
+
     private func columnView(_ column: KanbanBoard.Column, index: Int) -> some View {
         VStack(alignment: .leading, spacing: 8) {
-            // Пока имени нет — полупрозрачная подсказка (Plan / To go / Ready);
-            // она становится настоящим именем, когда в колонке появляется пункт.
-            TextField("", text: titleBinding(column.id),
-                      prompt: Text(Self.titleHint(index) ?? "Title").foregroundStyle(ink.opacity(0.32)),
-                      axis: .vertical)
-                .textFieldStyle(.plain)
-                .font(titleFont)
-                .foregroundStyle(ink)
-                .lineLimit(1...2)
-                .focused($focus, equals: .title(column.id))
-                .onSubmit { addItem(toColumn: index, at: 0) }
-                .padding(.horizontal, 4)
-                // Рамка заголовка — как плитки: правый клик по ней оставляем полю ввода.
-                .background(GeometryReader { proxy in
-                    Color.clear.preference(key: TileFramesKey.self, value: [column.id: proxy.frame(in: .named("kanban"))])
-                })
-
             ForEach(Array(column.items.enumerated()), id: \.element.id) { position, item in
                 tile(item, column: index, position: position, isLast: position == column.items.count - 1)
             }
