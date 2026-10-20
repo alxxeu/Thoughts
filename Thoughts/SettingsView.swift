@@ -93,12 +93,6 @@ struct SettingsView: View {
                         }
                         .tag(SettingsNavigation.Tab.appearance)
 
-                    PluginsSettingsTab()
-                        .tabItem {
-                            Label("Plugins", systemImage: "puzzlepiece.extension.fill")
-                        }
-                        .tag(SettingsNavigation.Tab.plugins)
-
                     SecuritySettingsTab(viewModel: viewModel)
                         .tabItem {
                             Label("Security", systemImage: "shield.lefthalf.filled")
@@ -116,6 +110,12 @@ struct SettingsView: View {
                             Label("AI", systemImage: Self.symbol("sparkles.2", fallback: "sparkles"))
                         }
                         .tag(SettingsNavigation.Tab.ai)
+
+                    PluginsSettingsTab()
+                        .tabItem {
+                            Label("Plugins", systemImage: "puzzlepiece.extension.fill")
+                        }
+                        .tag(SettingsNavigation.Tab.plugins)
 
                     Form {
                         Section {

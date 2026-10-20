@@ -17,7 +17,8 @@ Backlog / Идеи → В работе (план согласован) → Го�
 
 - [x] Settings → Plugins: плагины (заготовка: Install неактивна, Open Plugins Folder
   работает), My Templates (импорт, экспорт, удаление, drag-and-drop), Catalog
-  (заглушка), Space Toolbar (Customize / Reset).
+  (заглушка). Вкладка стоит после AI; настройки капсулы в Settings нет — править
+  капсулу можно только шестерёнкой на самой капсуле.
 - [x] Свои шаблоны: файл `.thoughtstemplate` (JSON, проверка при импорте), папка
   `Templates/`, «Save as Template…» в правом клике карточки и пустого места колонки,
   «My Templates ▸» в правом клике по доске. Двойной клик по файлу в Finder — позже

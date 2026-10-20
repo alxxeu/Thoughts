@@ -41,6 +41,7 @@ struct SpaceToolbar: View {
     @State private var isEditingToolbar = false
     @State private var isHoveringPill = false
     @State private var isHoveringGear = false
+    @State private var pillHideTask: Task<Void, Never>?
     @State private var gearHideTask: Task<Void, Never>?
     @State private var isShowingPluginsPanel = false
 
@@ -146,9 +147,6 @@ struct SpaceToolbar: View {
                 isAskingSpaceAI = false
                 isShowingPluginsPanel = false
             }
-        }
-        .onReceive(NotificationCenter.default.publisher(for: .customizeToolbar)) { _ in
-            withAnimation(.spring(response: 0.35, dampingFraction: 0.75)) { isEditingToolbar = true }
         }
         .onReceive(NotificationCenter.default.publisher(for: .clearTextSelection)) { _ in
             // Клик по свободному холсту — конец правки капсулы и закрытие панели Plugins.
@@ -271,12 +269,14 @@ struct SpaceToolbar: View {
         .animation(.spring(response: 0.35, dampingFraction: 0.72), value: isGearShown)
     }
 
+    /// У капсулы и у кружка — каждому свой таймер скрытия: общий отменял бы чужой,
+    /// и флаг наведения на капсулу «застревал» бы включённым.
     private func setPillHover(_ inside: Bool) {
-        gearHideTask?.cancel()
+        pillHideTask?.cancel()
         if inside {
             isHoveringPill = true
         } else {
-            gearHideTask = Task {
+            pillHideTask = Task {
                 try? await Task.sleep(for: .milliseconds(220))
                 guard !Task.isCancelled else { return }
                 isHoveringPill = false

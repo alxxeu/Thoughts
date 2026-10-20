@@ -13,7 +13,7 @@ final class SettingsNavigation {
     static let shared = SettingsNavigation()
 
     enum Tab: Hashable {
-        case general, appearance, plugins, security, shortcuts, ai, about
+        case general, appearance, security, shortcuts, ai, plugins, about
     }
 
     var selectedTab: Tab = .general

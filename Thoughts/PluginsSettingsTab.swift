@@ -2,11 +2,10 @@ import SwiftUI
 import UniformTypeIdentifiers
 
 /// Settings → Plugins: плагины (пока заготовка — менеджера ещё нет), свои шаблоны
-/// карточек (рабочие: импорт, экспорт, удаление), каталог и настройка капсулы Space.
+/// карточек (рабочие: импорт, экспорт, удаление) и каталог.
 struct PluginsSettingsTab: View {
     var plugins = PluginsModel.shared
     var templates = UserTemplateStore.shared
-    var toolbar = SpaceToolbarSettings.shared
 
     @State private var errorMessage: String?
     @State private var isDropTargeted = false
@@ -18,7 +17,6 @@ struct PluginsSettingsTab: View {
             installedSection
             templatesSection
             catalogSection
-            toolbarSection
         }
         .formStyle(.grouped)
         .onAppear { templates.reload() }
@@ -154,23 +152,6 @@ struct PluginsSettingsTab: View {
             Text("Catalog")
         } footer: {
             Text("A community catalog of plugins and templates is planned.")
-        }
-    }
-
-    // MARK: - Капсула Space
-
-    private var toolbarSection: some View {
-        Section {
-            SettingsRowButton(title: "Customize Toolbar\u{2026}") {
-                NSApp.mainWindow?.makeKeyAndOrderFront(nil)
-                NotificationCenter.default.post(name: .customizeToolbar, object: nil)
-            }
-            SettingsRowButton(title: "Reset to Default") { toolbar.reset() }
-                .disabled(toolbar.hidden.isEmpty)
-        } header: {
-            Text("Space Toolbar")
-        } footer: {
-            Text("Hover the pill with the Space name and click the gear to hide or show its icons.")
         }
     }
 }
