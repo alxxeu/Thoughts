@@ -216,7 +216,6 @@ struct ThoughtsApp: App {
         .windowStyle(.titleBar)
         .windowToolbarStyle(.unified)
         .windowResizability(.contentSize)
-        .defaultSize(width: 950, height: 650)
     }
 
     /// Пункт Format: действие уходит в карточку с курсором (CardNSTextView);

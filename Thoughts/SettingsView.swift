@@ -39,10 +39,10 @@ struct SettingsView: View {
                 // не существует, пока активный Space заблокирован — так же,
                 // как карточки не существуют под SpaceLockOverlayView.
                 lockedPlaceholder
-                    .frame(minWidth: 850, maxWidth: .infinity, minHeight: 600, maxHeight: .infinity)
+                    .frame(width: Self.windowSize.width, height: Self.windowSize.height)
             } else {
                 splitView
-                    .frame(minWidth: 850, minHeight: 600)
+                    .frame(width: Self.windowSize.width, height: Self.windowSize.height)
             }
         }
     }
@@ -50,6 +50,10 @@ struct SettingsView: View {
     /// Как в Thaw: обычный NavigationSplitView в сцене Window (не Settings —
     /// та центрирует заголовок и рисует пустую полосу тулбара), заголовок
     /// раздела — слева в панели окна через navigationTitle.
+    /// Окно фиксированного размера: с .windowResizability(.contentSize) в
+    /// ThoughtsApp его нельзя ни растянуть, ни сжать.
+    private static let windowSize = CGSize(width: 850, height: 600)
+
     private var splitView: some View {
         NavigationSplitView {
             sidebar
