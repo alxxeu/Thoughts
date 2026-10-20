@@ -71,6 +71,9 @@ struct KanbanCardView: View {
         return Font((NSFont(descriptor: typography.font.fontDescriptor, size: size) ?? typography.font) as CTFont).bold()
     }
 
+    /// Высота колонок = высота содержимого карточки (без верхнего и нижнего отступов).
+    private var minColumnHeight: CGFloat { max(cardSize.height - 44, 60) }
+
     var body: some View {
         let columnWidth = max((cardSize.width - Self.sidePadding * 2) / CGFloat(board.columns.count), 80)
         ScrollView(.vertical) {
@@ -82,6 +85,8 @@ struct KanbanCardView: View {
                     }
                     columnView(column, index: index)
                         .frame(width: columnWidth - (index > 0 ? 0.5 : 0), alignment: .top)
+                        // Колонка — на всю высоту карточки, даже если пунктов мало.
+                        .frame(minHeight: minColumnHeight, maxHeight: .infinity, alignment: .top)
                 }
             }
             // Равная высота колонок: разделители тянутся на всю высоту самой высокой.
@@ -96,7 +101,6 @@ struct KanbanCardView: View {
                     entries: { menuEntries(at: $0) }
                 )
             }
-            .frame(minHeight: max(cardSize.height - 44, 60), alignment: .top)
             .padding(.horizontal, Self.sidePadding)
             // Как у текстовой карточки (отступ 20 pt) — заголовок на той же высоте.
             .padding(.top, 20)
