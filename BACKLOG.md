@@ -16,20 +16,24 @@ Backlog / Идеи → В работе (план согласован) → Го�
 Как в Spotlight: `12*3`, `5 ft in cm`, `100 usd in eur` — серый результат после строки,
 Tab вставляет. JS-плагины в JavaScriptCore, только объявленные права. Обе версии.
 
-- [ ] Формат: `main` (`main.js`), `permissions.network`, `contributes.converters`;
+- [x] Формат: `main` (`main.js`), `permissions.network`, `contributes.converters`;
   валидатор: `.js` ≤ 1 МБ, `main` внутри пакета.
-- [ ] Подпись Ed25519 (`PluginSignature.swift`): в App Store-сборке плагин с кодом —
+- [x] Подпись Ed25519 (`PluginSignature.swift`): в App Store-сборке плагин с кодом —
   только подписанный ключом каталога; DMG — любой после подтверждения прав.
-- [ ] Движок (`Plugins/Script/`): JSContext на плагин в своей очереди, мост `thoughts.*`
+- [x] Движок (`Plugins/Script/`): JSContext на плагин в своей очереди, мост `thoughts.*`
   (`converter`, `fetch` только https и домены из манифеста, `storage`, `console`),
   таймауты, выключение зависающего плагина.
-- [ ] `ConverterService`: debounce, порядок, кэш, отмена устаревших.
-- [ ] Редактор: серая подсказка в `CardNSTextView`, Tab вставляет (одно Undo).
-- [ ] Settings: переключатель Converters, права в списке, подтверждение сети при установке.
-- [ ] Тесты: сервис конвертеров, валидатор, Undo вставки.
-- [ ] thoughts-plugins: `Calculator` и `Currency`, `scripts/sign-plugin.swift`,
+- [x] `ConverterService`: debounce, порядок, кэш, отмена устаревших.
+- [x] Редактор: серая подсказка в `CardNSTextView`, Tab вставляет (одно Undo).
+- [x] Settings: переключатель Converters, права в списке, подтверждение сети при установке.
+- [x] Тесты: сервис конвертеров, валидатор, Undo вставки.
+- [x] thoughts-plugins: `Calculator` и `Currency`, `scripts/sign-plugin.swift`,
   `CREATE.md`/`AGENTS.md` — конвертеры и API скрипта.
-- [ ] Проверка автором в Xcode.
+- [ ] Проверка автором в Xcode (код не собирался): ⌘U; Calculator и Currency из
+  thoughts-plugins в DMG-схеме; подсказка, Tab, ⌘Z; выключатель Converters.
+- [ ] Публичный ключ каталога: `swift scripts/sign-plugin.swift --generate-key …` у
+  автора → `PluginSignature.catalogPublicKey`; подписать примеры. Пока ключа нет,
+  App Store-версия плагины со скриптом не ставит.
 
 ### Плагины, Phase 1: менеджер и пакеты `.thoughtsplugin` (план согласован 2026-10-20)
 
