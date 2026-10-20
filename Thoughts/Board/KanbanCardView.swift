@@ -370,16 +370,10 @@ private struct KanbanTile: View {
 
     private var controlsVisible: Bool { isHovering || isBeingDragged }
 
-    /// Ручка переноса — шесть точек; жест свой, в координатах карточки.
+    /// Ручка переноса — SF Symbol `circle.grid.2x2.fill`; жест свой, в координатах карточки.
     private var grip: some View {
-        VStack(spacing: 2.5) {
-            ForEach(0..<3, id: \.self) { _ in
-                HStack(spacing: 2.5) {
-                    Circle().frame(width: 2.6, height: 2.6)
-                    Circle().frame(width: 2.6, height: 2.6)
-                }
-            }
-        }
+        Image(systemName: "circle.grid.2x2.fill")
+            .font(.system(size: 10))
         .foregroundStyle(ink.opacity(0.85))
         .frame(width: 22, height: 22)
         .contentShape(Rectangle())
