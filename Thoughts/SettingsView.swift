@@ -70,7 +70,7 @@ struct SettingsView: View {
             get: { SettingsNavigation.shared.selectedTab },
             set: { if let tab = $0 { SettingsNavigation.shared.selectedTab = tab } }
         )) {
-            ForEach(SettingsNavigation.Tab.allCases, id: \.self) { tab in
+            ForEach(SettingsNavigation.Tab.visible, id: \.self) { tab in
                 Label(Self.title(for: tab), systemImage: Self.symbol(for: tab))
                     .tag(tab)
             }

@@ -6,6 +6,15 @@ import Observation
 enum ToolbarItem: String, CaseIterable, Identifiable {
     case askAI, tidyCards, clearSpace, plugins
 
+    /// Пазл Plugins — только в сборке с флагом PLUGINS (плагины отложены).
+    static var available: [ToolbarItem] {
+        #if PLUGINS
+        return allCases
+        #else
+        return allCases.filter { $0 != .plugins }
+        #endif
+    }
+
     var id: String { rawValue }
 
     var title: String {

@@ -179,6 +179,9 @@ private final class CardNSTextView: NSTextView {
 
     /// Каретка в конце строки и выделения нет — спросить конвертеры; иначе убрать.
     private func updateConverterGhost() {
+        #if !PLUGINS
+        return
+        #else
         let ns = string as NSString
         let selection = selectedRange()
         guard selection.length == 0, hasMarkedText() == false, isEditable, window?.firstResponder === self else {
@@ -203,6 +206,7 @@ private final class CardNSTextView: NSTextView {
                   self.selectedRange() == NSRange(location: NSMaxRange(line), length: 0) else { return }
             self.converterGhost = (ConverterService.suffix(for: text, result: result), line, text)
         }
+        #endif
     }
 
     private func clearConverterGhost() {

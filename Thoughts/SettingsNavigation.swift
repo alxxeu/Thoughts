@@ -14,6 +14,16 @@ final class SettingsNavigation {
 
     enum Tab: Hashable, CaseIterable {
         case general, appearance, security, shortcuts, ai, plugins, about
+
+        /// Вкладки в сайдбаре: Plugins — только в сборке с флагом PLUGINS
+        /// (плагины отложены, код остаётся; включить — Active Compilation Conditions).
+        static var visible: [Tab] {
+            #if PLUGINS
+            return allCases
+            #else
+            return allCases.filter { $0 != .plugins }
+            #endif
+        }
     }
 
     var selectedTab: Tab = .general
