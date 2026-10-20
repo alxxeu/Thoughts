@@ -333,8 +333,8 @@ struct KanbanCardView: View {
 // MARK: - Плитка пункта
 
 /// Плитка: скруглённая подложка с текстом слева. Переносится за невидимую
-/// верхнюю полосу; по наведению справа внизу появляется галочка «готово —
-/// удалить» (лежит поверх плитки и не меняет её размер).
+/// подложку; по наведению справа внизу появляется галочка «готово — удалить»
+/// (срабатывает при удержании) (лежит поверх плитки и не меняет её размер).
 private struct KanbanTile: View {
     @Binding var text: String
     let id: KanbanBoard.Item.ID
@@ -349,6 +349,8 @@ private struct KanbanTile: View {
     var onDragEnded: (CGPoint) -> Void
 
     @State private var isHovering = false
+    @State private var isPressingDone = false
+    @State private var doneProgress: CGFloat = 0
 
     var body: some View {
         TextField("", text: $text, axis: .vertical)
@@ -396,18 +398,58 @@ private struct KanbanTile: View {
 
     private var controlsVisible: Bool { isHovering || isBeingDragged }
 
+    /// Галочка «готово»: удаляет только при удержании — пока держат, она
+    /// плавно заливается зелёным (как кружок у крестика карточки), отпустили
+    /// раньше — откатывается. Мягкая защита от случайного удаления.
     private var doneButton: some View {
-        Button(action: onDelete) {
-            Image(systemName: "checkmark")
-                .font(.system(size: 11, weight: .semibold))
-                .foregroundStyle(ink.opacity(0.85))
-                .frame(width: 22, height: 22)
-                .contentShape(Rectangle())
+        ZStack {
+            KanbanCheckmark()
+                .stroke(ink.opacity(isPressingDone ? 0.45 : 0.7), style: StrokeStyle(lineWidth: 1.8, lineCap: .round, lineJoin: .round))
+            KanbanCheckmark()
+                .trim(from: 0, to: doneProgress)
+                .stroke(Self.doneGreen, style: StrokeStyle(lineWidth: 2.2, lineCap: .round, lineJoin: .round))
         }
-        .buttonStyle(.plain)
-        .help("Done \u{2014} remove")
+        .frame(width: 12, height: 10)
+        .frame(width: 22, height: 22)
+        .contentShape(Rectangle())
+        .onHover { inside in
+            if inside { NSCursor.arrow.set() }
+        }
+        .onLongPressGesture(minimumDuration: Self.doneHoldDuration, maximumDistance: 10, perform: {
+            Task { @MainActor in
+                onDelete()
+                resetDone()
+            }
+        }, onPressingChanged: { pressing in
+            if pressing {
+                isPressingDone = true
+                withAnimation(.linear(duration: Self.doneHoldDuration)) { doneProgress = 1 }
+            } else {
+                resetDone()
+            }
+        })
+        .help("Hold to mark as done")
         .opacity(controlsVisible ? 1 : 0)
         .allowsHitTesting(controlsVisible)
+    }
+
+    private static let doneGreen = Color(red: 0.32, green: 0.84, blue: 0.47)
+    private static let doneHoldDuration: Double = 0.6
+
+    private func resetDone() {
+        isPressingDone = false
+        withAnimation(.easeOut(duration: 0.12)) { doneProgress = 0 }
+    }
+}
+
+/// Галочка из двух штрихов — её можно «дорисовывать» через trim.
+private struct KanbanCheckmark: Shape {
+    func path(in rect: CGRect) -> Path {
+        var path = Path()
+        path.move(to: CGPoint(x: rect.minX, y: rect.midY + rect.height * 0.1))
+        path.addLine(to: CGPoint(x: rect.minX + rect.width * 0.36, y: rect.maxY))
+        path.addLine(to: CGPoint(x: rect.maxX, y: rect.minY))
+        return path
     }
 }
 
