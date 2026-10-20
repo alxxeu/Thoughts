@@ -10,11 +10,9 @@ struct SpaceSwitcherTests {
         #expect(BoardViewModel.neighbourSlot(of: 4, step: 1) == 5)
     }
 
-    @Test func initialSelectionIsThePreviousSpace() {
-        #expect(SpaceSwitcherSelection.initial(active: 3, previous: 7).slot == 7)
-        // Ещё не переключались — следующий по кругу.
-        #expect(SpaceSwitcherSelection.initial(active: 9, previous: nil).slot == 1)
-        #expect(SpaceSwitcherSelection.initial(active: 3, previous: 3).slot == 4)
+    @Test func initialSelectionIsTheCurrentSpace() {
+        #expect(SpaceSwitcherSelection.initial(active: 3).slot == 3)
+        #expect(SpaceSwitcherSelection.initial(active: 9).slot == 9)
     }
 
     @Test func selectionMovesInCircle() {

@@ -5,11 +5,9 @@ import SwiftUI
 struct SpaceSwitcherSelection: Equatable {
     var slot: Int
 
-    /// Начальный выбор: Space, с которого пришли (быстрое ⌥Tab — туда-обратно),
-    /// иначе следующий по кругу.
-    static func initial(active: Int, previous: Int?) -> SpaceSwitcherSelection {
-        if let previous, previous != active { return .init(slot: previous) }
-        return .init(slot: BoardViewModel.neighbourSlot(of: active, step: 1))
+    /// Начальный выбор — текущий Space: панель сразу показывает, где ты сейчас.
+    static func initial(active: Int) -> SpaceSwitcherSelection {
+        .init(slot: active)
     }
 
     mutating func move(_ step: Int) {
@@ -65,8 +63,8 @@ final class SpaceSwitcherModel {
 }
 
 /// Обзор всех Spaces по ⌥Tab, как ⌘Tab для приложений: держишь ⌥ — Tab/⇧Tab,
-/// стрелки и цифры двигают выбор; отпустил ⌥ — переход; Esc — отмена. Быстрое
-/// нажатие — переход на предыдущий Space без показа панели.
+/// стрелки и цифры двигают выбор от текущего Space; отпустил ⌥ — переход; Esc —
+/// отмена. Быстрое нажатие ничего не переключает (выбран текущий).
 ///
 /// Отпускание ⌥ ловим опросом `NSEvent.modifierFlags` (а не flagsChanged): панель
 /// может открыться из Finder и стать key не сразу, а опрос видит клавиатуру всегда.
@@ -84,7 +82,7 @@ final class SpaceSwitcher {
     private var presentedMouse: CGPoint?
     private(set) var isActive = false
 
-    /// Панель появляется не сразу: быстрое ⌥Tab переключает без вспышки панели.
+    /// Панель появляется не сразу: случайное быстрое ⌥Tab не мигает панелью.
     private static let showDelay: TimeInterval = 0.15
 
     /// Открыть (или, если уже открыт, сдвинуть выбор на `step`).
@@ -96,9 +94,7 @@ final class SpaceSwitcher {
         isActive = true
         self.onCommit = onCommit
         model.tiles = SpaceSwitcherTile.make(from: viewModel)
-        model.selection = .initial(active: viewModel.activeSlot, previous: viewModel.previousSlot)
-        // ⇧⌥Tab сразу — на соседний Space назад.
-        if step < 0 { model.selection = .init(slot: BoardViewModel.neighbourSlot(of: viewModel.activeSlot, step: -1)) }
+        model.selection = .initial(active: viewModel.activeSlot)
 
         pollTimer = Timer.scheduledTimer(withTimeInterval: 0.02, repeats: true) { [weak self] _ in
             MainActor.assumeIsolated { self?.checkModifiers() }
