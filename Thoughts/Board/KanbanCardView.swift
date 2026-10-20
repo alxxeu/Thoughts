@@ -43,6 +43,11 @@ struct KanbanCardView: View {
     }
 
     private static let sidePadding: CGFloat = 20
+    /// Подсказки имён первых колонок — «намёк», что их можно переименовать.
+    private static let titleHints = ["Plan", "To go", "Ready"]
+    private static func titleHint(_ column: Int) -> String? {
+        titleHints.indices.contains(column) ? titleHints[column] : nil
+    }
     private var ink: Color { Color(nsColor: typography.color) }
     private var itemFont: Font { Font(typography.font as CTFont) }
     private var titleFont: Font {
@@ -98,7 +103,11 @@ struct KanbanCardView: View {
 
     private func columnView(_ column: KanbanBoard.Column, index: Int) -> some View {
         VStack(alignment: .leading, spacing: 10) {
-            TextField("Title", text: titleBinding(column.id), axis: .vertical)
+            // Пока имени нет — полупрозрачная подсказка (Plan / To go / Ready);
+            // она становится настоящим именем, когда в колонке появляется пункт.
+            TextField("", text: titleBinding(column.id),
+                      prompt: Text(Self.titleHint(index) ?? "Title").foregroundStyle(ink.opacity(0.32)),
+                      axis: .vertical)
                 .textFieldStyle(.plain)
                 .font(titleFont)
                 .foregroundStyle(ink)
@@ -176,7 +185,10 @@ struct KanbanCardView: View {
 
     private func addItem(toColumn column: Int, at index: Int? = nil) {
         var newID: KanbanBoard.Item.ID?
-        change { newID = $0.addItem(toColumn: column, at: index) }
+        change {
+            Self.adoptHint(&$0, column: column)
+            newID = $0.addItem(toColumn: column, at: index)
+        }
         if let newID {
             // Фокус — после того, как плитка появилась в иерархии.
             DispatchQueue.main.async { focus = .item(newID) }
@@ -199,8 +211,18 @@ struct KanbanCardView: View {
 
     private func drop(_ ids: [String], toColumn column: Int, at index: Int) -> Bool {
         guard let raw = ids.first, let id = UUID(uuidString: raw), board.location(of: id) != nil else { return false }
-        change { $0.moveItem(id, toColumn: column, at: index) }
+        change {
+            Self.adoptHint(&$0, column: column)
+            $0.moveItem(id, toColumn: column, at: index)
+        }
         return true
+    }
+
+    /// В колонке без имени появляется первый пункт — подсказка становится именем.
+    private static func adoptHint(_ board: inout KanbanBoard, column: Int) {
+        guard board.columns.indices.contains(column), board.columns[column].title.isEmpty,
+              board.columns[column].items.isEmpty, let hint = titleHint(column) else { return }
+        board.setTitle(hint, ofColumn: column)
     }
 
     /// Структурная правка (добавить, удалить, перенести) — с отменой.
@@ -233,6 +255,8 @@ struct KanbanCardView: View {
 
 // MARK: - Плитка пункта
 
+/// Плитка: скруглённая подложка с текстом слева. По наведению справа
+/// появляются ручка переноса (сверху) и галочка «готово — удалить» (снизу).
 private struct KanbanTile: View {
     @Binding var text: String
     let id: KanbanBoard.Item.ID
@@ -246,30 +270,18 @@ private struct KanbanTile: View {
 
     @State private var height: CGFloat = 60
     @State private var isDropTargeted = false
+    @State private var isHovering = false
 
     var body: some View {
-        VStack(spacing: 0) {
-            HStack {
-                Button(action: onDelete) {
-                    Image(systemName: "xmark").font(.system(size: 9, weight: .bold))
-                        .frame(width: 22, height: 22).contentShape(Rectangle())
-                }
-                .buttonStyle(.plain)
-                Spacer()
-                Image(systemName: "line.3.horizontal").font(.system(size: 10, weight: .bold))
-                    .frame(width: 22, height: 22).contentShape(Rectangle())
-                    .draggable(id.uuidString)
-                    .help("Drag to another column")
-            }
-            .foregroundStyle(ink.opacity(0.7))
-            .padding(.horizontal, 8)
-            .padding(.top, 4)
+        ZStack(alignment: .topLeading) {
+            RoundedRectangle(cornerRadius: 16, style: .continuous)
+                .fill(ink.opacity(isDropTargeted ? 0.28 : 0.18))
+                .contextMenu { Button("Delete", role: .destructive, action: onDelete) }
 
             TextField("", text: $text, axis: .vertical)
                 .textFieldStyle(.plain)
                 .font(font)
                 .foregroundStyle(ink)
-                .multilineTextAlignment(.center)
                 .focused(focus, equals: .item(id))
                 .onSubmit(onSubmit)
                 .onKeyPress(.delete) {
@@ -277,13 +289,44 @@ private struct KanbanTile: View {
                     onBackspaceWhenEmpty()
                     return .handled
                 }
-                .padding(.horizontal, 12)
-                .padding(.bottom, 14)
+                // Справа — место под ручку и галочку, чтобы текст не прыгал по наведению.
+                .padding(.leading, 16)
+                .padding(.trailing, 36)
+                .padding(.vertical, 14)
+                .frame(maxWidth: .infinity, alignment: .leading)
+
+            if isHovering {
+                VStack {
+                    Image(systemName: "circle.grid.2x3.fill")
+                        .font(.system(size: 9))
+                        .frame(width: 24, height: 24)
+                        .contentShape(Rectangle())
+                        .draggable(id.uuidString) {
+                            Text(text.isEmpty ? " " : text)
+                                .font(font).foregroundStyle(ink)
+                                .padding(.horizontal, 14).padding(.vertical, 10)
+                                .background(RoundedRectangle(cornerRadius: 14, style: .continuous).fill(ink.opacity(0.22)))
+                        }
+                        .help("Drag to another column")
+                    Spacer(minLength: 0)
+                    Button(action: onDelete) {
+                        Image(systemName: "checkmark")
+                            .font(.system(size: 11, weight: .semibold))
+                            .frame(width: 24, height: 24)
+                            .contentShape(Rectangle())
+                    }
+                    .buttonStyle(.plain)
+                    .help("Done \u{2014} remove")
+                }
+                .foregroundStyle(ink.opacity(0.85))
+                .padding(.trailing, 6)
+                .padding(.vertical, 6)
+                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topTrailing)
+                .transition(.opacity)
+            }
         }
-        .background(
-            RoundedRectangle(cornerRadius: 16, style: .continuous)
-                .fill(ink.opacity(isDropTargeted ? 0.26 : 0.14))
-        )
+        .onHover { isHovering = $0 }
+        .animation(.easeOut(duration: 0.12), value: isHovering)
         .background(GeometryReader { proxy in
             Color.clear
                 .onAppear { height = proxy.size.height }

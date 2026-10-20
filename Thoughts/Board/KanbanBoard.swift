@@ -63,8 +63,9 @@ struct KanbanBoard: Equatable {
 
     /// Канонический текст карточки.
     func serialized() -> String {
-        let body = columns.map { column -> String in
-            var lines: [String] = []
+        var lines = [Self.marker]
+        for (index, column) in columns.enumerated() {
+            if index > 0 { lines.append(Self.columnBreak) }
             let title = column.title.replacingOccurrences(of: "\n", with: " ")
             if !title.isEmpty { lines.append("# " + title) }
             for item in column.items {
@@ -72,9 +73,8 @@ struct KanbanBoard: Equatable {
                 lines.append("- " + parts[0])
                 lines += parts.dropFirst().map { "  " + $0 }
             }
-            return lines.joined(separator: "\n")
         }
-        return Self.marker + "\n" + body.joined(separator: "\n" + Self.columnBreak + "\n")
+        return lines.joined(separator: "\n")
     }
 
     // MARK: - Правки

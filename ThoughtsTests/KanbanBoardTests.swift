@@ -17,6 +17,12 @@ struct KanbanBoardTests {
         #expect(KanbanBoard.parse(board.serialized())?.serialized() == sample)
     }
 
+    @Test func templateTextIsCanonical() throws {
+        let board = try #require(KanbanBoard.parse("::: board\n||\n||"))
+        #expect(board.columns.count == 3)
+        #expect(board.serialized() == "::: board\n||\n||")
+    }
+
     @Test func needsTheMarker() {
         #expect(KanbanBoard.parse("# Plan\n- a") == nil)
         #expect(!KanbanBoard.isBoard("text\n::: board"))

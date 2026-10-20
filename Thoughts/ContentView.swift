@@ -325,10 +325,8 @@ struct ContentView: View {
                         if case .active(let point) = phase { canvasPointer = point }
                     }
                     .contextMenu {
-                        Menu("New from Template") {
-                            ForEach(CardTemplate.all) { template in
-                                Button(template.name) { addCard(from: template, canvasSize: proxy.size) }
-                            }
+                        ForEach(CardTemplate.all) { template in
+                            Button(template.name) { addCard(from: template, canvasSize: proxy.size) }
                         }
                     }
 
