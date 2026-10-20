@@ -207,7 +207,7 @@ struct HookScene: View {
 
     private let drafts = [
         Draft(rect: CGRect(x: 0.05, y: 0.08, width: 0.40, height: 0.40), drawFrom: 0.3, typeFrom: 1.4,
-              lines: ["# Big idea", "ship **1.4.1**", "on Friday"]),
+              lines: ["# Big idea", "ship **1.4.2**", "on Friday"]),
         Draft(rect: CGRect(x: 0.52, y: 0.06, width: 0.43, height: 0.50), drawFrom: 3.0, typeFrom: 4.1,
               lines: ["# Groceries", "- [ ] milk", "- [ ] eggs", "- [ ] coffee"]),
         Draft(rect: CGRect(x: 0.14, y: 0.58, width: 0.40, height: 0.34), drawFrom: 7.4, typeFrom: 8.5,

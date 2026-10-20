@@ -19,7 +19,7 @@ struct ReleaseNote: Identifiable {
 
 enum ReleaseNotes {
     static let all: [ReleaseNote] = [
-        ReleaseNote(version: "1.4.1", sections: [
+        ReleaseNote(version: "1.4.2", sections: [
             .init(title: "New", items: [
                 "**Kanban cards** \u{2014} right-click an empty spot on the board and choose New Kanban Card with 1 to 4 columns. Add tiles, drag them between columns, hold the check to finish one.",
                 "**New Card** in the same right-click menu.",
