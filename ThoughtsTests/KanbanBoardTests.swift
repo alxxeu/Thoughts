@@ -18,9 +18,12 @@ struct KanbanBoardTests {
     }
 
     @Test func templateTextIsCanonical() throws {
-        let board = try #require(KanbanBoard.parse("::: board\n||\n||"))
+        let board = try #require(KanbanBoard.parse(CardTemplate.kanban.text))
         #expect(board.columns.count == 3)
-        #expect(board.serialized() == "::: board\n||\n||")
+        #expect(board.columns[0].title == "Plan")
+        #expect(board.columns[0].items.map(\.text) == [""])
+        #expect(board.columns[1].title.isEmpty && board.columns[2].title.isEmpty)
+        #expect(board.serialized() == CardTemplate.kanban.text)
     }
 
     @Test func needsTheMarker() {

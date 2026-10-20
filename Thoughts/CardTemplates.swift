@@ -18,12 +18,12 @@ struct CardTemplate: Identifiable {
 
     static let all: [CardTemplate] = [kanban]
 
-    /// Три пустые колонки: их имена (Plan / To go / Ready) показываются
-    /// полупрозрачной подсказкой и становятся настоящими, когда в колонку
-    /// добавляют пункт или вписывают своё имя.
+    /// Три колонки. В первой уже есть пустой пункт (курсор встаёт в него) и
+    /// имя Plan; имена To go / Ready — полупрозрачная подсказка, она становится
+    /// настоящей, когда в колонку добавляют пункт или вписывают своё имя.
     static let kanban = CardTemplate(
         id: "kanban", name: "New Kanban Card",
-        text: "::: board\n||\n||",
+        text: "::: board\n# Plan\n- \n||\n||",
         columns: 10, rows: 6
     )
 }

@@ -21,6 +21,7 @@ struct KanbanCardView: View {
     /// текстовым полям «принять» id плитки как строку).
     @State private var dragging: DragState?
     @State private var tileFrames: [UUID: CGRect] = [:]
+    @State private var isCardHovered = false
 
     private struct DragState: Equatable {
         var itemID: KanbanBoard.Item.ID
@@ -60,7 +61,7 @@ struct KanbanCardView: View {
         _board = State(initialValue: KanbanBoard.parse(text.wrappedValue) ?? KanbanBoard(columns: [.init(title: "", items: [])]))
     }
 
-    private static let sidePadding: CGFloat = 20
+    private static let sidePadding: CGFloat = 14
     /// Подсказки имён первых колонок — «намёк», что их можно переименовать.
     private static let titleHints = ["Plan", "To go", "Ready"]
     private static func titleHint(_ column: Int) -> String? {
@@ -97,6 +98,7 @@ struct KanbanCardView: View {
             .padding(.bottom, 24)
         }
         .scrollIndicators(.hidden)
+        .onHover { isCardHovered = $0 }
         .contextMenu {
             Button("Add Column") { addColumn() }
             Button("Edit as Text") { onEditAsText() }
@@ -113,11 +115,12 @@ struct KanbanCardView: View {
         }
         .onChange(of: isFocused) { _, wants in
             // Карточке выдали фокус снаружи (новая карточка из шаблона) — в первый пункт.
-            if wants, focus == nil, let first = board.columns.first {
-                focus = first.items.first.map { .item($0.id) } ?? .title(first.id)
-            }
+            if wants, focus == nil { focusFirstItem() }
         }
-        .onAppear { undoHost.apply = { restore($0) } }
+        .onAppear {
+            undoHost.apply = { restore($0) }
+            if isFocused { focusFirstItem() }
+        }
     }
 
     // MARK: - Колонка
@@ -141,14 +144,9 @@ struct KanbanCardView: View {
                 tile(item, column: index, position: position, isLast: position == column.items.count - 1)
             }
 
-            Button { addItem(toColumn: index) } label: {
-                Image(systemName: "plus")
-                    .font(.system(size: 14, weight: .semibold))
-                    .foregroundStyle(ink.opacity(0.85))
-                    .frame(width: 36, height: 36)
-                    .background(Circle().fill(ink.opacity(0.14)))
+            KanbanPlusButton(ink: ink, isVisible: isCardHovered || isFocused || dragging != nil) {
+                addItem(toColumn: index)
             }
-            .buttonStyle(.plain)
             .frame(maxWidth: .infinity)
             .padding(.top, 2)
             // Пустая колонка: линия вставки — над «+».
@@ -156,7 +154,7 @@ struct KanbanCardView: View {
                 if column.items.isEmpty { dropIndicator(column: index, position: 0).offset(y: -6) }
             }
         }
-        .padding(.horizontal, 4)
+        .padding(.horizontal, 14)
         .frame(maxHeight: .infinity, alignment: .top)
         .contentShape(Rectangle())
         .contextMenu {
@@ -184,6 +182,11 @@ struct KanbanCardView: View {
             },
             onDragEnded: { pointer in finishDrag(item.id, at: pointer) }
         )
+        // Мягкое появление и исчезновение (галочка «готово», «+»).
+        .transition(.asymmetric(
+            insertion: .opacity.combined(with: .scale(scale: 0.96)),
+            removal: .opacity.combined(with: .scale(scale: 0.9))
+        ))
         // Линия вставки — на стыке плиток (поверх, макет не двигает).
         .overlay(alignment: .top) { dropIndicator(column: column, position: position).offset(y: -6.5) }
         .overlay(alignment: .bottom) {
@@ -208,6 +211,14 @@ struct KanbanCardView: View {
             get: { board.location(of: id).map { board.columns[$0.column].items[$0.index].text } ?? "" },
             set: { newValue in commit(undoable: false) { $0.setText(newValue, of: id) } }
         )
+    }
+
+    /// Фокус — в первый пункт первой колонки (или в её имя, если пунктов нет).
+    private func focusFirstItem() {
+        guard let first = board.columns.first else { return }
+        DispatchQueue.main.async {
+            focus = first.items.first.map { .item($0.id) } ?? .title(first.id)
+        }
     }
 
     private func addItem(toColumn column: Int, at index: Int? = nil) {
@@ -290,7 +301,12 @@ struct KanbanCardView: View {
 
     private func commit(undoable: Bool, _ edit: (inout KanbanBoard) -> Void) {
         let before = board.serialized()
-        edit(&board)
+        // Структурные правки (добавить, убрать, перенести) — плавно; набор текста — без анимации.
+        if undoable {
+            withAnimation(.easeInOut(duration: 0.24)) { edit(&board) }
+        } else {
+            edit(&board)
+        }
         let after = board.serialized()
         guard after != before else { return }
         if undoable { registerUndo(restoring: before) }
@@ -399,5 +415,33 @@ private struct KanbanTile: View {
         .help("Done \u{2014} remove")
         .opacity(controlsVisible ? 1 : 0)
         .allowsHitTesting(controlsVisible)
+    }
+}
+
+// MARK: - Кнопка «+»
+
+/// «+» без подложки: круг появляется по наведению, а у карточки вне фокуса
+/// кнопки нет совсем.
+private struct KanbanPlusButton: View {
+    let ink: Color
+    let isVisible: Bool
+    let action: () -> Void
+    @State private var isHovering = false
+
+    var body: some View {
+        Button(action: action) {
+            Image(systemName: "plus")
+                .font(.system(size: 14, weight: .medium))
+                .foregroundStyle(ink.opacity(0.7))
+                .frame(width: 34, height: 34)
+                .background(Circle().fill(ink.opacity(isHovering ? 0.14 : 0)))
+                .contentShape(Circle())
+        }
+        .buttonStyle(.plain)
+        .onHover { isHovering = $0 }
+        .opacity(isVisible ? 1 : 0)
+        .allowsHitTesting(isVisible)
+        .animation(.easeOut(duration: 0.15), value: isHovering)
+        .animation(.easeOut(duration: 0.15), value: isVisible)
     }
 }

@@ -129,6 +129,11 @@ struct CardView: View {
                             .frame(height: 15)
                     }
                 }
+                .onReceive(NotificationCenter.default.publisher(for: .focusNewCard)) { notification in
+                    if let targetID = notification.object as? UUID, targetID == card.id {
+                        isTextFocused = true
+                    }
+                }
             } else if !isPrivacyLocked {
                 CardTextView(
                     text: $card.text,
