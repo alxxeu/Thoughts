@@ -109,7 +109,10 @@ struct ContentView: View {
     @State private var creationStart: CGPoint?
     @State private var draftFrame: CGRect?
     /// Где сейчас указатель над пустой канвой — сюда встаёт карточка из шаблона.
-    @State private var canvasPointer: CGPoint = .zero
+    /// Ссылкой, а не значением: указатель обновляется на каждое движение мыши, и
+    /// @State перерисовывал бы канву — открытое контекстное меню дёргалось и
+    /// «прыгало» (подменю шаблонов).
+    @State private var canvasPointer = PointerBox()
     @State private var placementPreview: CGRect?
     @State private var edgeHints: [EdgeHint] = []
     @State private var newlyCreatedCardID: UUID? = nil
@@ -322,7 +325,7 @@ struct ContentView: View {
                     }
                     // Правый клик по пустому месту: карточка из шаблона — в точке клика.
                     .onContinuousHover(coordinateSpace: .named("canvas")) { phase in
-                        if case .active(let point) = phase { canvasPointer = point }
+                        if case .active(let point) = phase { canvasPointer.point = point }
                     }
                     .contextMenu {
                         Menu("New Kanban Card") {
@@ -599,7 +602,7 @@ struct ContentView: View {
 
     private func addCard(from template: CardTemplate, canvasSize: CGSize) {
         let size = CGSize(width: BoardViewModel.snap(template.size.width), height: BoardViewModel.snap(template.size.height))
-        let origin = BoardViewModel.clampedPosition(canvasPointer, size: size, canvasSize: canvasSize, topInset: effectiveTopInset)
+        let origin = BoardViewModel.clampedPosition(canvasPointer.point, size: size, canvasSize: canvasSize, topInset: effectiveTopInset)
         let card = viewModel.addCard(at: origin, size: size, text: template.text)
         card.tagColor = template.tag
         newlyCreatedCardID = card.id
@@ -667,4 +670,9 @@ struct ContentView: View {
 #Preview {
     ContentView(viewModel: BoardViewModel())
         .frame(width: 900, height: 600)
+}
+
+/// Последняя позиция указателя над канвой — меняется без перерисовки (см. canvasPointer).
+final class PointerBox {
+    var point: CGPoint = .zero
 }
