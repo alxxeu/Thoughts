@@ -60,7 +60,7 @@ struct KanbanCardView: View {
 
     private static let sidePadding: CGFloat = 10
     /// Подсказки имён первых колонок — «намёк», что их можно переименовать.
-    private static let titleHints = ["Plan", "To go", "Ready"]
+    private static let titleHints = ["Plan", "To go", "Ready", "Done"]
     private static func titleHint(_ column: Int) -> String? {
         titleHints.indices.contains(column) ? titleHints[column] : nil
     }
@@ -100,6 +100,15 @@ struct KanbanCardView: View {
         .contextMenu {
             Button("Add Column") { addColumn() }
                 .disabled(board.columns.count >= KanbanBoard.maxColumns)
+            // Тот же пункт, что в меню самой колонки, — и для пустого места под колонками.
+            if board.columns.count > 1 {
+                Menu("Remove Column") {
+                    ForEach(Array(board.columns.enumerated()), id: \.element.id) { index, column in
+                        Button(column.title.isEmpty ? (Self.titleHint(index) ?? "Column \(index + 1)") : column.title,
+                               role: .destructive) { change { $0.removeColumn(index) } }
+                    }
+                }
+            }
         }
         .onChange(of: text) { _, newText in
             // Текст поменяли снаружи (синк, Ask AI, импорт) — перечитать.
@@ -360,6 +369,13 @@ private struct KanbanTile: View {
             .onKeyPress(.delete) {
                 guard text.isEmpty else { return .ignored }
                 onBackspaceWhenEmpty()
+                return .handled
+            }
+            // ⇧Return — перенос строки внутри пункта (Return — новый пункт, см. onSubmit).
+            .onKeyPress(keys: [.return], phases: .down) { press in
+                guard press.modifiers.contains(.shift),
+                      let editor = NSApp.keyWindow?.firstResponder as? NSTextView else { return .ignored }
+                editor.insertNewlineIgnoringFieldEditor(nil)
                 return .handled
             }
             // Отступы симметричны; плитку переносят за любое место подложки вне поля ввода
