@@ -24,6 +24,6 @@ struct CardTemplate: Identifiable {
     static let kanban = CardTemplate(
         id: "kanban", name: "New Kanban Card",
         text: "::: board\n# Plan\n- \n||\n||",
-        columns: 10, rows: 6
+        columns: 12, rows: 6
     )
 }

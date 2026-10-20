@@ -126,7 +126,7 @@ struct KanbanCardView: View {
     // MARK: - Колонка
 
     private func columnView(_ column: KanbanBoard.Column, index: Int) -> some View {
-        VStack(alignment: .leading, spacing: 10) {
+        VStack(alignment: .leading, spacing: 8) {
             // Пока имени нет — полупрозрачная подсказка (Plan / To go / Ready);
             // она становится настоящим именем, когда в колонке появляется пункт.
             TextField("", text: titleBinding(column.id),
@@ -154,7 +154,7 @@ struct KanbanCardView: View {
                 if column.items.isEmpty { dropIndicator(column: index, position: 0).offset(y: -6) }
             }
         }
-        .padding(.horizontal, 14)
+        .padding(.horizontal, 12)
         .frame(maxHeight: .infinity, alignment: .top)
         .contentShape(Rectangle())
         .contextMenu {
@@ -188,9 +188,9 @@ struct KanbanCardView: View {
             removal: .opacity.combined(with: .scale(scale: 0.9))
         ))
         // Линия вставки — на стыке плиток (поверх, макет не двигает).
-        .overlay(alignment: .top) { dropIndicator(column: column, position: position).offset(y: -6.5) }
+        .overlay(alignment: .top) { dropIndicator(column: column, position: position).offset(y: -4.5) }
         .overlay(alignment: .bottom) {
-            if isLast { dropIndicator(column: column, position: position + 1).offset(y: 6.5) }
+            if isLast { dropIndicator(column: column, position: position + 1).offset(y: 4.5) }
         }
     }
 
@@ -271,9 +271,9 @@ struct KanbanCardView: View {
             Text(dragging.text.isEmpty ? " " : dragging.text)
                 .font(itemFont).foregroundStyle(ink)
                 .lineLimit(3)
-                .padding(.horizontal, 16).padding(.vertical, 14)
+                .padding(.horizontal, 14).padding(.vertical, 10)
                 .frame(width: dragging.width, alignment: .leading)
-                .background(RoundedRectangle(cornerRadius: 16, style: .continuous).fill(ink.opacity(0.3)))
+                .background(RoundedRectangle(cornerRadius: 13, style: .continuous).fill(ink.opacity(0.3)))
                 .shadow(color: .black.opacity(0.3), radius: 8, y: 3)
                 .position(x: dragging.pointer.x, y: dragging.pointer.y)
                 .allowsHitTesting(false)
@@ -362,17 +362,17 @@ private struct KanbanTile: View {
                 return .handled
             }
             // Справа — место под галочку, чтобы текст не прыгал по наведению.
-            .padding(.leading, 16)
-            .padding(.trailing, 36)
-            .padding(.vertical, 14)
-            .frame(maxWidth: .infinity, minHeight: 58, alignment: .topLeading)
+            .padding(.leading, 14)
+            .padding(.trailing, 24)
+            .padding(.vertical, 10)
+            .frame(maxWidth: .infinity, minHeight: 44, alignment: .topLeading)
             .background(
-                RoundedRectangle(cornerRadius: 16, style: .continuous)
+                RoundedRectangle(cornerRadius: 13, style: .continuous)
                     .fill(ink.opacity(0.18))
                     .contextMenu { Button("Delete", role: .destructive, action: onDelete) }
             )
             .overlay(alignment: .top) { dragStrip }
-            .overlay(alignment: .bottomTrailing) { doneButton.padding(6) }
+            .overlay(alignment: .bottomTrailing) { doneButton.padding(3) }
             .opacity(isBeingDragged ? 0.35 : 1)
             .onHover { isHovering = $0 }
             .animation(.easeOut(duration: 0.12), value: isHovering)
