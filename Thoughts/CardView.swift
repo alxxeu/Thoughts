@@ -49,6 +49,8 @@ struct CardView: View {
     @State private var aiPopInScale: CGFloat = 1.0
     
     @State private var isTextFocused: Bool = false
+    /// Карточка-виджет (метка `::: board`) показана текстом — «Edit as Text».
+    @State private var showsBoardAsText = false
     // @GestureState, а не @State: должен сбрасываться самой системой жестов
     // при завершении/прерывании попытки, а не только через .onEnded — иначе
     // при перестановке карточки в bringToFront (меняет z-порядок в ZStack,
@@ -103,7 +105,31 @@ struct CardView: View {
             // Тот же принцип, что уже применён к заблокированному Space
             // целиком (см. ContentView.swift — ForEach с карточками не
             // создаётся вовсе, пока Space заблокирован).
-            if !isPrivacyLocked {
+            if !isPrivacyLocked, KanbanBoard.isBoard(card.text), !showsBoardAsText {
+                KanbanCardView(
+                    text: $card.text,
+                    isFocused: $isTextFocused,
+                    cardSize: effectiveSize,
+                    typography: viewModel.appearanceSettings.cardTypography,
+                    onTextChange: { viewModel.scheduleDebouncedSave() },
+                    onFocusChange: { focused in
+                        if focused { viewModel.bringToFront(card) }
+                    },
+                    onEditAsText: { showsBoardAsText = true }
+                )
+                .opacity(isFocusTransitioning ? 0 : 1)
+                .animation(isFocusTransitioning ? nil : .easeIn(duration: 0.15), value: isFocusTransitioning)
+                .zIndex(0)
+                .mask(alignment: .top) {
+                    VStack(spacing: 0) {
+                        LinearGradient(colors: [.clear, .black], startPoint: .top, endPoint: .bottom)
+                            .frame(height: 15)
+                        Color.black
+                        LinearGradient(colors: [.black, .clear], startPoint: .top, endPoint: .bottom)
+                            .frame(height: 15)
+                    }
+                }
+            } else if !isPrivacyLocked {
                 CardTextView(
                     text: $card.text,
                     isFocused: $isTextFocused,
@@ -117,7 +143,8 @@ struct CardView: View {
                         }
                     },
                     onEscape: isInFocusMode ? onRequestExitFocus : nil,
-                    typography: viewModel.appearanceSettings.cardTypography
+                    typography: viewModel.appearanceSettings.cardTypography,
+                    onShowAsBoard: KanbanBoard.isBoard(card.text) ? { showsBoardAsText = false } : nil
                 )
                 .opacity(isFocusTransitioning ? 0 : 1)
                 // Асимметрично и намеренно: прячем мгновенно (иначе текст

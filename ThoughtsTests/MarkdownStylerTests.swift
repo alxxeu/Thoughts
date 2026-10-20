@@ -151,4 +151,9 @@ struct MarkdownStylerTests {
         #expect(MarkdownStyler.parse("a || b").allSatisfy { !$0.isColumnBreak })
         #expect(MarkdownStyler.plainText("a\n||\nb") == "a\n\nb")
     }
+
+    @Test func boardMarkerIsNotIndexed() {
+        #expect(MarkdownStyler.plainText("::: board\n# Plan\n- a").hasPrefix("\n"))
+        #expect(!MarkdownStyler.plainText("::: board\n# Plan\n- a").contains(":::"))
+    }
 }

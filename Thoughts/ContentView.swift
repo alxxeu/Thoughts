@@ -108,6 +108,8 @@ struct ContentView: View {
     @Environment(\.openSettings) private var openSettings
     @State private var creationStart: CGPoint?
     @State private var draftFrame: CGRect?
+    /// Где сейчас указатель над пустой канвой — сюда встаёт карточка из шаблона.
+    @State private var canvasPointer: CGPoint = .zero
     @State private var placementPreview: CGRect?
     @State private var edgeHints: [EdgeHint] = []
     @State private var newlyCreatedCardID: UUID? = nil
@@ -317,6 +319,17 @@ struct ContentView: View {
                     .onTapGesture {
                         NotificationCenter.default.post(name: .clearTextSelection, object: nil)
                         NSApp.keyWindow?.makeFirstResponder(nil)
+                    }
+                    // Правый клик по пустому месту: карточка из шаблона — в точке клика.
+                    .onContinuousHover(coordinateSpace: .named("canvas")) { phase in
+                        if case .active(let point) = phase { canvasPointer = point }
+                    }
+                    .contextMenu {
+                        Menu("New from Template") {
+                            ForEach(CardTemplate.all) { template in
+                                Button(template.name) { addCard(from: template, canvasSize: proxy.size) }
+                            }
+                        }
                     }
 
                 ForEach(viewModel.cards) { card in
@@ -582,6 +595,14 @@ struct ContentView: View {
     private var workspacePillTopPadding: CGFloat {
         guard viewModel.desktopOverlay.isEnabled else { return 10 }
         return (NSScreen.main?.safeAreaInsets.top ?? 0) + 12
+    }
+
+    private func addCard(from template: CardTemplate, canvasSize: CGSize) {
+        let size = CGSize(width: BoardViewModel.snap(template.size.width), height: BoardViewModel.snap(template.size.height))
+        let origin = BoardViewModel.clampedPosition(canvasPointer, size: size, canvasSize: canvasSize, topInset: effectiveTopInset)
+        let card = viewModel.addCard(at: origin, size: size, text: template.text)
+        card.tagColor = template.tag
+        newlyCreatedCardID = card.id
     }
 
     private func canvasDragGesture(in canvasSize: CGSize) -> some Gesture {

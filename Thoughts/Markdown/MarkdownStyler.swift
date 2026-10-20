@@ -185,6 +185,8 @@ nonisolated enum MarkdownStyler {
         let ns = text as NSString
         return parse(text).map { paragraph -> String in
             if paragraph.isColumnBreak { return "" }
+            // Метка карточки-виджета — служебная, в индекс не идёт.
+            if paragraph.range.location == 0, ns.substring(with: paragraph.range).trimmingCharacters(in: .whitespaces) == "::: board" { return "" }
             switch paragraph.block {
             case .divider, .codeFence:
                 return ""
