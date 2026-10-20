@@ -57,6 +57,7 @@ struct SettingsView: View {
             detail
                 .id(SettingsNavigation.shared.selectedTab)
                 .navigationTitle(Self.title(for: SettingsNavigation.shared.selectedTab))
+                .toolbarTitleDisplayMode(.inline)
         }
         .toolbar { navigationButtons }
     }
