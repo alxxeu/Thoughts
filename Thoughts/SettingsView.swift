@@ -44,29 +44,55 @@ struct SettingsView: View {
                 // Вертикальные вкладки — боковая панель слева, как в системных настройках.
                 HStack(spacing: 0) {
                     sidebar
-                        .frame(width: 190)
+                        .frame(width: 236)
+                        .frame(maxHeight: .infinity)
+                        .background(Color.primary.opacity(0.04))
                     Divider()
-                    detail
-                        .frame(maxWidth: .infinity, maxHeight: .infinity)
+                    VStack(alignment: .leading, spacing: 0) {
+                        // Крупный заголовок выбранного раздела, как в настройках Thaw.
+                        Text(Self.title(for: SettingsNavigation.shared.selectedTab))
+                            .font(.system(size: 26, weight: .semibold))
+                            .padding(.horizontal, 30)
+                            .padding(.top, 24)
+                            .padding(.bottom, 6)
+                        detail
+                            .id(SettingsNavigation.shared.selectedTab)
+                            .transition(.opacity)
+                    }
+                    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+                    .animation(.easeInOut(duration: 0.15), value: SettingsNavigation.shared.selectedTab)
                 }
                 .frame(width: Self.windowSize.width, height: Self.windowSize.height)
             }
         }
     }
 
-    private static let windowSize = CGSize(width: 720, height: 520)
+    private static let windowSize = CGSize(width: 920, height: 640)
+
+    /// Разделы в боковой панели — тремя группами и «About» отдельно.
+    private static let tabGroups: [[SettingsNavigation.Tab]] = [
+        [.general, .appearance], [.security, .shortcuts], [.ai, .plugins], [.about]
+    ]
 
     private var sidebar: some View {
-        List(selection: Binding<SettingsNavigation.Tab?>(
-            get: { SettingsNavigation.shared.selectedTab },
-            set: { if let tab = $0 { SettingsNavigation.shared.selectedTab = tab } }
-        )) {
-            ForEach(SettingsNavigation.Tab.allCases, id: \.self) { tab in
-                Label(Self.title(for: tab), systemImage: Self.symbol(for: tab))
-                    .tag(tab)
+        VStack(alignment: .leading, spacing: 20) {
+            ForEach(Array(Self.tabGroups.enumerated()), id: \.offset) { _, group in
+                VStack(spacing: 3) {
+                    ForEach(group, id: \.self) { tab in
+                        SidebarRow(
+                            title: Self.title(for: tab),
+                            symbol: Self.symbol(for: tab),
+                            isSelected: SettingsNavigation.shared.selectedTab == tab
+                        ) {
+                            SettingsNavigation.shared.selectedTab = tab
+                        }
+                    }
+                }
             }
+            Spacer()
         }
-        .listStyle(.sidebar)
+        .padding(.horizontal, 14)
+        .padding(.top, 22)
     }
 
     @ViewBuilder
@@ -229,5 +255,37 @@ struct SettingsView: View {
             // В случае ошибки возвращаем тумблер в актуальное состояние
             launchAtLogin = (SMAppService.mainApp.status == .enabled)
         }
+    }
+}
+
+/// Строка боковой панели: крупная иконка и название, выбранная — на скруглённой плашке.
+private struct SidebarRow: View {
+    let title: String
+    let symbol: String
+    let isSelected: Bool
+    let action: () -> Void
+    @State private var isHovering = false
+
+    var body: some View {
+        Button(action: action) {
+            HStack(spacing: 12) {
+                Image(systemName: symbol)
+                    .font(.system(size: 16))
+                    .frame(width: 24)
+                    .foregroundStyle(isSelected ? Color.primary : Color.secondary)
+                Text(title)
+                    .font(.system(size: 14, weight: isSelected ? .semibold : .regular))
+                Spacer()
+            }
+            .padding(.horizontal, 12)
+            .frame(height: 38)
+            .background(
+                RoundedRectangle(cornerRadius: 11, style: .continuous)
+                    .fill(Color.primary.opacity(isSelected ? 0.13 : (isHovering ? 0.06 : 0)))
+            )
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .onHover { isHovering = $0 }
     }
 }
