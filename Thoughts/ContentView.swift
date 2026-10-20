@@ -601,6 +601,12 @@ struct ContentView: View {
         let card = viewModel.addCard(at: origin, size: size, text: template.text)
         card.tagColor = template.tag
         newlyCreatedCardID = card.id
+        // Карточка ещё монтируется — подсказка (CardView) чуть позже.
+        let id = card.id
+        Task { @MainActor in
+            try? await Task.sleep(for: .milliseconds(400))
+            NotificationCenter.default.post(name: .boardTemplateCreated, object: id)
+        }
     }
 
     private func canvasDragGesture(in canvasSize: CGSize) -> some Gesture {

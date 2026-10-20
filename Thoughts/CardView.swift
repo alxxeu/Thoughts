@@ -42,6 +42,8 @@ struct CardView: View {
     // или новая карточка — снова доступно).
     @State private var focusTipHint = HintTimer()
     @State private var hasShownFocusTipHint = false
+    /// Подсказка про колонки — один раз, сразу после создания карточки из шаблона.
+    @State private var boardTipHint = HintTimer()
     // Одноразовая анимация появления карточки из Ask AI/Summarize —
     // "выскакивает" из-под нотча к своей итоговой позиции. См.
     // triggerAIPopInAnimationIfNeeded().
@@ -412,6 +414,17 @@ struct CardView: View {
                     .offset(y: -22)
             }
         }
+        .overlay(alignment: .top) {
+            if boardTipHint.isVisible {
+                HintLabel(text: "Right-click to add or remove columns", fontSize: 10, color: AnyShapeStyle(.primary), opacity: 0.5)
+                    .offset(y: -22)
+            }
+        }
+        .onReceive(NotificationCenter.default.publisher(for: .boardTemplateCreated)) { notification in
+            if let id = notification.object as? UUID, id == card.id {
+                boardTipHint.show(holdFor: Self.boardTipHoldDuration)
+            }
+        }
         .scaleEffect(aiPopInScale)
         .offset(aiPopInOffset)
         .onAppear { triggerAIPopInAnimationIfNeeded() }
@@ -525,6 +538,7 @@ struct CardView: View {
     private static let focusTipThreshold = 60
     /// Достаточно долго, чтобы подсказку успели прочитать.
     private static let focusTipHoldDuration: Double = 4.5
+    private static let boardTipHoldDuration: Double = 6
 
     // MARK: - Helper Methods & Gestures
 

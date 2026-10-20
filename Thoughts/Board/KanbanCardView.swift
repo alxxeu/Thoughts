@@ -272,7 +272,7 @@ struct KanbanCardView: View {
                 .lineLimit(3)
                 .padding(.horizontal, 14).padding(.vertical, 10)
                 .frame(width: dragging.width, alignment: .leading)
-                .background(RoundedRectangle(cornerRadius: 13, style: .continuous).fill(KanbanTile.fill(opacity: 1.4)))
+                .background(RoundedRectangle(cornerRadius: 13, style: .continuous).fill(ink.opacity(0.18)))
                 .shadow(color: .black.opacity(0.3), radius: 8, y: 3)
                 .position(x: dragging.pointer.x, y: dragging.pointer.y)
                 .allowsHitTesting(false)
@@ -346,9 +346,6 @@ private struct KanbanTile: View {
     var onDragChanged: (CGPoint) -> Void
     var onDragEnded: (CGPoint) -> Void
 
-    /// Подложка плитки. Тёмная: чёрная с прозрачностью (светлая была `ink.opacity(0.18)`).
-    static func fill(opacity k: Double = 1) -> Color { Color.black.opacity(0.3 * k) }
-
     @State private var isHovering = false
     @State private var isPressingDone = false
     @State private var doneProgress: CGFloat = 0
@@ -374,7 +371,7 @@ private struct KanbanTile: View {
             .frame(maxWidth: .infinity, minHeight: 44, alignment: .topLeading)
             .background(
                 RoundedRectangle(cornerRadius: 13, style: .continuous)
-                    .fill(Self.fill())
+                    .fill(ink.opacity(0.10))
                     .contextMenu { Button("Delete", role: .destructive, action: onDelete) }
                     .onHover { inside in
                         if inside { NSCursor.arrow.set() }
@@ -405,12 +402,12 @@ private struct KanbanTile: View {
     private var doneButton: some View {
         ZStack {
             KanbanCheckmark()
-                .stroke(ink.opacity(isPressingDone ? 0.45 : 0.7), style: StrokeStyle(lineWidth: 1.8, lineCap: .round, lineJoin: .round))
+                .stroke(ink.opacity(isPressingDone ? 0.45 : 0.7), style: StrokeStyle(lineWidth: 1.5, lineCap: .round, lineJoin: .round))
             KanbanCheckmark()
                 .trim(from: 0, to: doneProgress)
-                .stroke(Self.doneGreen, style: StrokeStyle(lineWidth: 2.2, lineCap: .round, lineJoin: .round))
+                .stroke(Self.doneGreen, style: StrokeStyle(lineWidth: 1.9, lineCap: .round, lineJoin: .round))
         }
-        .frame(width: 12, height: 10)
+        .frame(width: 9, height: 7)
         .frame(width: 22, height: 22)
         .contentShape(Rectangle())
         .onHover { inside in
@@ -435,7 +432,7 @@ private struct KanbanTile: View {
     }
 
     private static let doneGreen = Color(red: 0.32, green: 0.84, blue: 0.47)
-    private static let doneHoldDuration: Double = 0.6
+    private static let doneHoldDuration: Double = 0.3
 
     private func resetDone() {
         isPressingDone = false
