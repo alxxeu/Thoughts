@@ -32,12 +32,30 @@ struct AppearanceSettingsTab: View {
             }
 
             Section("Cards") {
+                // Темы из плагинов: выбор применяет шрифт, цвет и паттерн разом.
+                if !ThemeOption.plugins.isEmpty {
+                    LabeledContent("Theme Preset") {
+                        Menu("Apply\u{2026}") {
+                            ForEach(ThemeOption.plugins) { theme in
+                                Button(theme.title) { settings.apply(theme) }
+                            }
+                        }
+                        .fixedSize()
+                    }
+                }
+
                 Picker("Font", selection: Binding(
                     get: { settings.cardFontID },
                     set: { settings.cardFontID = $0 }
                 )) {
                     ForEach(CardFontOption.builtIn) { option in
                         Text(option.title).tag(option.id)
+                    }
+                    if !CardFontOption.plugins.isEmpty {
+                        Divider()
+                        ForEach(CardFontOption.plugins) { option in
+                            Text(option.title).tag(option.id)
+                        }
                     }
                     if !installedFamilies.isEmpty {
                         Divider()
@@ -62,8 +80,11 @@ struct AppearanceSettingsTab: View {
 
                 LabeledContent("Text Color") {
                     HStack(spacing: 8) {
-                        ForEach(TextColorOption.builtIn) { option in
+                        ForEach(TextColorOption.builtIn + TextColorOption.plugins) { option in
                             colorSwatch(option)
+                        }
+                        ForEach(settings.recentTextColorIDs, id: \.self) { id in
+                            colorSwatch(TextColorOption.resolve(id))
                         }
                         ColorPicker("Custom Color", selection: customColorBinding, supportsOpacity: false)
                             .labelsHidden()
@@ -72,13 +93,19 @@ struct AppearanceSettingsTab: View {
                 }
             }
 
-            Section("Background") {
+            Section {
                 Picker("Pattern", selection: Binding(
                     get: { settings.canvasPatternID },
                     set: { settings.canvasPatternID = $0 }
                 )) {
                     ForEach(CanvasPattern.builtIn) { pattern in
                         Text(pattern.title).tag(pattern.id)
+                    }
+                    if !CanvasPattern.plugins.isEmpty {
+                        Divider()
+                        ForEach(CanvasPattern.plugins) { pattern in
+                            Text(pattern.title).tag(pattern.id)
+                        }
                     }
                 }
 
@@ -93,6 +120,23 @@ struct AppearanceSettingsTab: View {
                     .frame(maxWidth: 200)
                 }
                 .disabled(settings.canvasPattern.kind == .none)
+
+                LabeledContent("Full Screen") {
+                    HStack(spacing: 8) {
+                        ForEach(FullScreenBackgroundOption.builtIn + settings.recentFullScreenBackgroundIDs.map(FullScreenBackgroundOption.resolve)) { option in
+                            swatch(option.color, title: option.title, isSelected: settings.fullScreenBackgroundID == option.id) {
+                                settings.fullScreenBackgroundID = option.id
+                            }
+                        }
+                        ColorPicker("Custom Color", selection: fullScreenColorBinding, supportsOpacity: false)
+                            .labelsHidden()
+                            .help("Custom Color")
+                    }
+                }
+            } header: {
+                Text("Background")
+            } footer: {
+                Text("In full screen there is no desktop behind the window to blur, so Thoughts fills it with this color.")
             }
         }
         .formStyle(.grouped)
@@ -115,6 +159,10 @@ struct AppearanceSettingsTab: View {
 
         return ZStack {
             Color(nsColor: .underPageBackgroundColor)
+            // Канва Thoughts — размытие .hudWindow того, что под окном (обои).
+            // Здесь то же самое вживую: файл обоев из песочницы не прочитать,
+            // а desktopImageURL после смены обоев отдаёт старый путь.
+            PreviewBackdrop()
             CanvasPatternView(pattern: settings.canvasPattern, opacity: settings.patternOpacity)
 
             VStack(alignment: .leading, spacing: 6) {
@@ -129,18 +177,22 @@ struct AppearanceSettingsTab: View {
             .background(CardSurfaceBackground())
         }
         .frame(height: 170)
+        .frame(maxWidth: .infinity)
         .clipped()
     }
 
     // MARK: - Text color
 
     private func colorSwatch(_ option: TextColorOption) -> some View {
-        let isSelected = settings.textColorID == option.id
-        return Button {
+        swatch(option.color, title: option.title, isSelected: settings.textColorID == option.id) {
             settings.textColorID = option.id
-        } label: {
+        }
+    }
+
+    private func swatch(_ color: NSColor, title: String, isSelected: Bool, action: @escaping () -> Void) -> some View {
+        Button(action: action) {
             Circle()
-                .fill(Color(nsColor: option.color))
+                .fill(Color(nsColor: color))
                 .overlay(Circle().stroke(Color.primary.opacity(0.25), lineWidth: 0.5))
                 .frame(width: 16, height: 16)
                 .padding(3)
@@ -151,13 +203,34 @@ struct AppearanceSettingsTab: View {
                 )
         }
         .buttonStyle(.plain)
-        .help(option.title)
+        .help(title)
+    }
+
+    private var fullScreenColorBinding: Binding<Color> {
+        Binding(
+            get: { Color(nsColor: settings.fullScreenBackground.color) },
+            set: { settings.pickCustomFullScreenBackground(NSColor($0)) }
+        )
     }
 
     private var customColorBinding: Binding<Color> {
         Binding(
             get: { Color(nsColor: settings.cardTypography.color) },
-            set: { settings.textColorID = TextColorOption.custom(NSColor($0)).id }
+            set: { settings.pickCustomTextColor(NSColor($0)) }
         )
     }
+}
+
+/// Размытие того, что лежит под окном Settings (обои рабочего стола), — как
+/// фон главного окна, но без его подталкиваний окна при смене Spaces.
+private struct PreviewBackdrop: NSViewRepresentable {
+    func makeNSView(context: Context) -> NSVisualEffectView {
+        let view = NSVisualEffectView()
+        view.material = .hudWindow
+        view.blendingMode = .behindWindow
+        view.state = .active
+        return view
+    }
+
+    func updateNSView(_ nsView: NSVisualEffectView, context: Context) {}
 }

@@ -105,7 +105,7 @@ private struct WindowAccessor: NSViewRepresentable {
 struct ContentView: View {
     var viewModel: BoardViewModel
     /// Отдаётся в SettingsNavigation — см. комментарий там.
-    @Environment(\.openSettings) private var openSettings
+    @Environment(\.openWindow) private var openWindow
     @State private var creationStart: CGPoint?
     @State private var draftFrame: CGRect?
     @State private var placementPreview: CGRect?
@@ -205,7 +205,7 @@ struct ContentView: View {
         .animation(.easeOut(duration: 0.1), value: viewModel.activeSlot)
         .animation(.easeOut(duration: 0.25), value: onboardingViewModel.isActive)
         .onAppear {
-            SettingsNavigation.shared.openSettingsAction = openSettings
+            SettingsNavigation.shared.openWindowAction = openWindow
         }
         .background(
             WindowAccessor { overlayWindow.attach($0) }
@@ -317,6 +317,12 @@ struct ContentView: View {
                     .onTapGesture {
                         NotificationCenter.default.post(name: .clearTextSelection, object: nil)
                         NSApp.keyWindow?.makeFirstResponder(nil)
+                    }
+                    // Правый клик по пустому месту: карточка из шаблона — в точке клика.
+                    .overlay {
+                        CanvasContextMenu { template, point in
+                            addCard(from: template, at: point, canvasSize: proxy.size)
+                        }
                     }
 
                 ForEach(viewModel.cards) { card in
@@ -472,13 +478,17 @@ struct ContentView: View {
                         .allowsHitTesting(false)
                 }
                 
-                HStack(spacing: 0) {
-                    Color.clear
-                        .frame(width: 76)
-                    WindowDragArea()
+                // Зона перетаскивания окна — только в обычном режиме: в Desktop Overlay окно
+                // закреплено на весь экран и двигаться не должно.
+                if !viewModel.desktopOverlay.isEnabled {
+                    HStack(spacing: 0) {
+                        Color.clear
+                            .frame(width: 76)
+                        WindowDragArea()
+                    }
+                    .frame(height: effectiveTopInset)
+                    .frame(maxWidth: .infinity, alignment: .topLeading)
                 }
-                .frame(height: effectiveTopInset)
-                .frame(maxWidth: .infinity, alignment: .topLeading)
             }
             
             .coordinateSpace(name: "canvas")
@@ -582,6 +592,21 @@ struct ContentView: View {
     private var workspacePillTopPadding: CGFloat {
         guard viewModel.desktopOverlay.isEnabled else { return 10 }
         return (NSScreen.main?.safeAreaInsets.top ?? 0) + 12
+    }
+
+    private func addCard(from template: CardTemplate, at point: CGPoint, canvasSize: CGSize) {
+        let size = CGSize(width: BoardViewModel.snap(template.size.width), height: BoardViewModel.snap(template.size.height))
+        let origin = BoardViewModel.clampedPosition(point, size: size, canvasSize: canvasSize, topInset: effectiveTopInset)
+        let card = viewModel.addCard(at: origin, size: size, text: template.text)
+        card.tagColor = template.tag
+        newlyCreatedCardID = card.id
+        guard template.isBoard else { return }
+        // Карточка ещё монтируется — подсказка (CardView) чуть позже.
+        let id = card.id
+        Task { @MainActor in
+            try? await Task.sleep(for: .milliseconds(400))
+            NotificationCenter.default.post(name: .boardTemplateCreated, object: id)
+        }
     }
 
     private func canvasDragGesture(in canvasSize: CGSize) -> some Gesture {

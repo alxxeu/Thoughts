@@ -7,7 +7,7 @@ import SwiftUI
 ///
 /// Выбрать можно только провайдера, который реально сработает
 /// (AISettings.hasKey): Apple Intelligence — если она доступна на этом Mac,
-/// ChatGPT/Claude — если задан API-ключ.
+/// остальные — если задан API-ключ (Ollama — всегда).
 struct AIProviderMenu: View {
     enum Style {
         /// Светлый текст — для тёмных панелей Space и Focus Mode.
@@ -42,7 +42,7 @@ struct AIProviderMenu: View {
             // foregroundStyle и в светлой теме становился чёрным на тёмной
             // панели. .button + .plain рисуют подпись как есть, целиком.
             HStack(spacing: 4) {
-                Text(Self.shortName(for: settings.selectedProvider))
+                Text(settings.selectedProvider.shortName)
                     .font(.system(size: 11, weight: .medium))
                 Image(systemName: "chevron.down")
                     .font(.system(size: 8, weight: .bold))
@@ -64,18 +64,9 @@ struct AIProviderMenu: View {
 
     private func title(for provider: AIProviderKind) -> String {
         guard !settings.hasKey(for: provider) else { return provider.displayName }
-        switch provider {
-        case .appleIntelligence: return "\(provider.displayName) \u{2014} not available on this Mac"
-        case .openAI, .anthropic: return "\(provider.displayName) \u{2014} add an API key in Settings"
-        }
-    }
-
-    static func shortName(for provider: AIProviderKind) -> String {
-        switch provider {
-        case .appleIntelligence: return "Apple"
-        case .openAI: return "ChatGPT"
-        case .anthropic: return "Claude"
-        }
+        return provider == .appleIntelligence
+            ? "\(provider.displayName) \u{2014} not available on this Mac"
+            : "\(provider.displayName) \u{2014} add an API key in Settings"
     }
 }
 

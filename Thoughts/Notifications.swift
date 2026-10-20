@@ -26,6 +26,8 @@ extension Notification.Name {
     /// Только что созданная карточка домаунтилась — просит её собственный
     /// CardTextView взять фокус (см. задержку в ContentView.addCard-flow).
     static let focusNewCard = Notification.Name("FocusNewCard")
+    /// Карточка-виджет создана из шаблона (object — UUID карточки): показать подсказку про колонки.
+    static let boardTemplateCreated = Notification.Name("BoardTemplateCreated")
 
     // MARK: - Onboarding-гейты (см. OnboardingViewModel.handle) — сигналят
     // о РЕАЛЬНОМ завершении жеста (не о начале), чтобы шаг интерактивного

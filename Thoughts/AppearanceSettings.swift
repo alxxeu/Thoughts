@@ -28,6 +28,12 @@ final class AppearanceSettings {
     private static let textSizeKey = "appearance.textSize"
     private static let canvasPatternKey = "appearance.canvasPattern"
     private static let patternOpacityKey = "appearance.patternOpacity"
+    private static let fullScreenBackgroundKey = "appearance.fullScreenBackground"
+    private static let recentTextColorsKey = "appearance.recentTextColors"
+    private static let recentFullScreenColorsKey = "appearance.recentFullScreenBackgrounds"
+
+    /// Сколько последних своих цветов помнить у каждого пикера.
+    static let recentColorsLimit = 3
 
     static let patternOpacityRange: ClosedRange<Double> = 0.04...0.3
 
@@ -58,10 +64,29 @@ final class AppearanceSettings {
         }
     }
 
+    /// Последние свои цвета текста (id вида `custom:#RRGGBB`), новые первыми.
+    private(set) var recentTextColorIDs: [String]
+    /// Последние свои цвета фона fullscreen.
+    private(set) var recentFullScreenBackgroundIDs: [String]
+
+    @ObservationIgnored private var lastTextColorPick = Date.distantPast
+    @ObservationIgnored private var lastFullScreenPick = Date.distantPast
+
     var canvasPatternID: String {
         didSet {
             UserDefaults.standard.set(canvasPatternID, forKey: Self.canvasPatternKey)
         }
+    }
+
+    /// Ровный фон окна в fullscreen (там под окном нечего размывать).
+    var fullScreenBackgroundID: String {
+        didSet {
+            UserDefaults.standard.set(fullScreenBackgroundID, forKey: Self.fullScreenBackgroundKey)
+        }
+    }
+
+    var fullScreenBackground: FullScreenBackgroundOption {
+        FullScreenBackgroundOption.resolve(fullScreenBackgroundID)
     }
 
     var patternOpacity: Double {
@@ -73,6 +98,34 @@ final class AppearanceSettings {
     /// Хранится, а не вычисляется на лету: CardView читает его на каждый
     /// body, а resolve семейства шрифта пробегает весь список установленных.
     private(set) var cardTypography: CardTypography
+
+    /// Цвет из ColorPicker: применить и запомнить среди недавних. Клик по
+    /// уже сохранённому свотчу идёт мимо — свотчи не прыгают под курсором.
+    func pickCustomTextColor(_ color: NSColor) {
+        textColorID = TextColorOption.custom(color).id
+        Self.remember(textColorID, in: &recentTextColorIDs, stamp: &lastTextColorPick, key: Self.recentTextColorsKey)
+    }
+
+    func pickCustomFullScreenBackground(_ color: NSColor) {
+        fullScreenBackgroundID = FullScreenBackgroundOption.custom(color).id
+        Self.remember(fullScreenBackgroundID, in: &recentFullScreenBackgroundIDs, stamp: &lastFullScreenPick, key: Self.recentFullScreenColorsKey)
+    }
+
+    /// Свой цвет — в начало списка недавних (без повторов, не больше трёх).
+    /// ColorPicker шлёт значение на каждое движение по палитре: выборы чаще
+    /// раза в 1.5 с считаем одним и заменяем первый элемент, а не копим
+    /// промежуточные оттенки.
+    private static func remember(_ id: String, in list: inout [String], stamp: inout Date, key: String) {
+        let now = Date()
+        if now.timeIntervalSince(stamp) < 1.5, !list.isEmpty {
+            list.removeFirst()
+        }
+        stamp = now
+        list.removeAll { $0 == id }
+        list.insert(id, at: 0)
+        if list.count > recentColorsLimit { list.removeLast(list.count - recentColorsLimit) }
+        UserDefaults.standard.set(list, forKey: key)
+    }
 
     var canvasPattern: CanvasPattern {
         CanvasPattern.resolve(canvasPatternID)
@@ -93,12 +146,26 @@ final class AppearanceSettings {
         textColorID = colorID
         textSize = size
         canvasPatternID = defaults.string(forKey: Self.canvasPatternKey) ?? CanvasPattern.defaultID
+        fullScreenBackgroundID = defaults.string(forKey: Self.fullScreenBackgroundKey) ?? FullScreenBackgroundOption.defaultID
+        recentTextColorIDs = defaults.stringArray(forKey: Self.recentTextColorsKey) ?? []
+        recentFullScreenBackgroundIDs = defaults.stringArray(forKey: Self.recentFullScreenColorsKey) ?? []
         if defaults.object(forKey: Self.patternOpacityKey) != nil {
             patternOpacity = defaults.double(forKey: Self.patternOpacityKey)
         } else {
             patternOpacity = 0.12
         }
         cardTypography = Self.makeTypography(fontID: fontID, colorID: colorID, size: size)
+    }
+
+    /// Плагин со шрифтом или цветом включили/выключили — id те же, а итог другой.
+    func refreshTypography() { updateTypography() }
+
+    /// Тема из плагина: применяет то, что в ней задано, остальное не трогает.
+    func apply(_ theme: ThemeOption) {
+        if let id = theme.fontID { cardFontID = id }
+        if let id = theme.textColorID { textColorID = id }
+        if let id = theme.patternID { canvasPatternID = id }
+        if let value = theme.patternIntensity { patternOpacity = value }
     }
 
     private func updateTypography() {

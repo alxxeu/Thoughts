@@ -7,10 +7,10 @@ import AppKit
 enum MarkdownRenderer {
     /// Отметка строки-разделителя `---` — по ней CardNSTextView рисует линию.
     static let dividerKey = NSAttributedString.Key("thoughts.markdownDivider")
-    /// Служебные символы, которые сейчас не показываются: прозрачные и
-    /// крохотного размера. Не глифы нулевой ширины (.null) — такие AppKit
-    /// прикрепляет к концу предыдущей строки, и `> `/`# ` в начале строки
-    /// уезжали в строку выше вместе со своим абзацем.
+    /// Служебные символы Markdown (скрыты всегда): прозрачные и нулевой ширины
+    /// (кернинг). Не глифы нулевой ширины (.null) — такие AppKit прикрепляет к
+    /// концу предыдущей строки, и `> `/`# ` в начале строки уезжали в строку
+    /// выше вместе со своим абзацем.
     static let hiddenKey = NSAttributedString.Key("thoughts.markdownHidden")
     /// `-` маркера списка, который рисуется как `•`.
     static let bulletKey = NSAttributedString.Key("thoughts.markdownBullet")
@@ -32,17 +32,15 @@ enum MarkdownRenderer {
         ]
     }
 
-    /// Перекрашивает весь текст. `selection` — выделение в редакторе в фокусе:
-    /// служебные символы фрагмента видны, только пока курсор его касается
-    /// (как в Bear); nil — карточка не в фокусе, скрыто всё.
+    /// Перекрашивает весь текст. Служебные символы скрыты всегда — что именно,
+    /// решает LiveMarkdown.hiddenRanges (та же модель, что в редакторе iPhone).
     /// shortcut: каждый раз целиком — для карточек размером с заметку это
     /// микросекунды; если на очень длинных текстах начнёт подтормаживать,
     /// перекрашивать только изменённые абзацы.
-    static func style(_ storage: NSMutableAttributedString, typography: CardTypography, selection: NSRange? = nil) {
+    static func style(_ storage: NSMutableAttributedString, typography: CardTypography) {
         let full = NSRange(location: 0, length: storage.length)
         guard full.length > 0 else { return }
         let ns = storage.string as NSString
-        let markerColor = typography.color.withAlphaComponent(0.35)
 
         storage.beginEditing()
         storage.setAttributes(baseAttributes(typography), range: full)
@@ -50,25 +48,17 @@ enum MarkdownRenderer {
         var linkedRanges: [NSRange] = []
         var codeRanges: [NSRange] = []
 
-        /// Бледный символ блока; скрыт, пока курсор не на его строке.
-        func revealOrHide(_ marker: NSRange?, near range: NSRange) {
-            guard let marker else { return }
-            storage.addAttribute(.foregroundColor, value: markerColor, range: marker)
-            if !touches(selection, range) {
-                storage.addAttribute(hiddenKey, value: true, range: marker)
-            }
-        }
-        /// Бледная строка, пока курсор рядом; иначе прозрачная (высота строки остаётся).
-        func showOrClear(_ line: NSRange, near range: NSRange) {
-            storage.addAttribute(.foregroundColor, value: touches(selection, range) ? markerColor : NSColor.clear, range: line)
-        }
-
         let paragraphs = MarkdownStyler.parse(storage.string)
-        // Блоки кода, в которых уже есть хоть одна строка кода: пустой или
-        // одиночный ``` — ещё не блок, а просто текст.
-        let filledCodeBlocks = Set(paragraphs.filter { $0.block == .code }.compactMap { $0.codeBlock?.location })
+        let filledCodeBlocks = LiveMarkdown.filledCodeBlocks(paragraphs)
+        var fenceLines: [NSRange] = []
 
         for paragraph in paragraphs where paragraph.range.length > 0 {
+            if paragraph.isColumnBreak {
+                // `||` не видна и почти не занимает места — как строки ```.
+                storage.addAttributes([.font: NSFont.systemFont(ofSize: 4), .foregroundColor: NSColor.clear], range: paragraph.range)
+                fenceLines.append(paragraph.range)
+                continue
+            }
             var paragraphFont = typography.font
             let mono = NSFont.monospacedSystemFont(ofSize: typography.font.pointSize * 0.92, weight: .regular)
             switch paragraph.block {
@@ -79,14 +69,12 @@ enum MarkdownRenderer {
                     toHaveTrait: .boldFontMask
                 )
                 storage.addAttribute(.font, value: paragraphFont, range: paragraph.range)
-                // `# ` виден (бледно), пока курсор на строке заголовка, — как остальные символы.
-                revealOrHide(paragraph.blockMarker, near: paragraph.range)
             case .divider:
                 storage.addAttribute(dividerKey, value: true, range: paragraph.range)
                 // Прозрачные дефисы, а не скрытые глифы: строке нужна своя
                 // высота, линию CardNSTextView рисует по её середине (глифы
                 // нулевой ширины AppKit относит к предыдущей строке).
-                showOrClear(paragraph.range, near: paragraph.range)
+                storage.addAttribute(.foregroundColor, value: NSColor.clear, range: paragraph.range)
             case .bullet:
                 if let marker = paragraph.blockMarker {
                     storage.addAttribute(bulletKey, value: true, range: NSRange(location: marker.location, length: 1))
@@ -96,24 +84,17 @@ enum MarkdownRenderer {
                 storage.addAttribute(quoteKey, value: NSValue(range: block), range: paragraph.range)
                 // Отступ под полосу слева и место под иконку « справа; поля
                 // сверху и снизу — у первой и последней строки цитаты.
-                // Пока `> ` видно, перенесённые строки выравниваются по
-                // тексту после него, а не по самому `>`.
-                let markerWidth = touches(selection, paragraph.range) && paragraph.blockMarker != nil
-                    ? (ns.substring(with: paragraph.blockMarker!) as NSString).size(withAttributes: [.font: typography.font]).width
-                    : 0
                 storage.addAttribute(.paragraphStyle, value: blockStyle(
-                    indent: 18, hanging: markerWidth, tail: -26,
+                    indent: 18, tail: -26,
                     before: paragraph.range.location == block.location ? 12 : 0,
                     after: NSMaxRange(paragraph.range) == NSMaxRange(block) ? 12 : 0
                 ), range: paragraph.range)
-                revealOrHide(paragraph.blockMarker, near: paragraph.range)
             case .task(let done):
-                // Квадратик рисуется слева, на отступе строки: `[] ` скрыт
-                // целиком, кроме пробела — у строки всегда есть видимый глиф,
+                // Квадратик рисуется слева, на отступе строки: `- [ ]` скрыт
+                // (LiveMarkdown.hiddenRanges), кроме пробела — у строки всегда есть видимый глиф,
                 // по нему CardNSTextView находит строку (даже пустого пункта).
                 guard let marker = paragraph.blockMarker else { break }
                 let space = NSRange(location: NSMaxRange(marker) - 1, length: 1)
-                storage.addAttribute(hiddenKey, value: true, range: NSRange(location: marker.location, length: marker.length - 1))
                 storage.addAttribute(taskBoxKey, value: done, range: space)
                 storage.addAttribute(.paragraphStyle, value: blockStyle(indent: taskIndent(typography)), range: paragraph.range)
                 let body = NSRange(location: NSMaxRange(marker), length: NSMaxRange(paragraph.range) - NSMaxRange(marker))
@@ -122,21 +103,14 @@ enum MarkdownRenderer {
                     storage.addAttribute(.foregroundColor, value: typography.color.withAlphaComponent(0.45), range: body)
                 }
             case .codeFence:
-                guard let block = paragraph.codeBlock, filledCodeBlocks.contains(block.location) else {
-                    storage.addAttribute(.foregroundColor, value: markerColor, range: paragraph.range)
-                    break
-                }
+                guard let block = paragraph.codeBlock, filledCodeBlocks.contains(block.location) else { break }
                 storage.addAttribute(codeBlockKey, value: NSValue(range: block), range: paragraph.range)
                 codeRanges.append(block)
-                if touches(selection, block) {
-                    storage.addAttribute(.font, value: mono, range: paragraph.range)
-                    storage.addAttribute(.foregroundColor, value: markerColor, range: paragraph.range)
-                } else {
-                    // ``` не видны и почти не занимают места — узкое поле блока,
-                    // а не пустая строка (прозрачные, а не скрытые: см. divider).
-                    storage.addAttribute(.font, value: NSFont.systemFont(ofSize: 4), range: paragraph.range)
-                    storage.addAttribute(.foregroundColor, value: NSColor.clear, range: paragraph.range)
-                }
+                // ``` не видны и почти не занимают места — узкое поле блока,
+                // а не пустая строка (прозрачные, а не скрытые: см. divider).
+                storage.addAttribute(.font, value: NSFont.systemFont(ofSize: 4), range: paragraph.range)
+                storage.addAttribute(.foregroundColor, value: NSColor.clear, range: paragraph.range)
+                fenceLines.append(paragraph.range)
             case .code:
                 storage.addAttribute(.font, value: mono, range: paragraph.range)
                 storage.addAttribute(.foregroundColor, value: codeColor(typography), range: paragraph.range)
@@ -166,28 +140,27 @@ enum MarkdownRenderer {
                     storage.addAttribute(.font, value: mono, range: range)
                     storage.addAttribute(.foregroundColor, value: codeColor(typography), range: range)
                 case .link(let url):
-                    if let target = URL(string: url) {
+                    if let target = linkTarget(url) {
                         storage.addAttribute(.link, value: target, range: range)
                         linkedRanges.append(range)
                     }
                 }
             }
+        }
 
-            for marker in paragraph.markers {
-                storage.addAttribute(.foregroundColor, value: markerColor, range: marker)
-                let isRevealed = paragraph.spans.contains { NSLocationInRange(marker.location, $0) && touches(selection, $0) }
-                if !isRevealed {
-                    storage.addAttribute(hiddenKey, value: true, range: marker)
-                }
-            }
+        for range in LiveMarkdown.hiddenRanges(paragraphs) where !fenceLines.contains(range) {
+            storage.addAttribute(hiddenKey, value: true, range: range)
         }
 
         // Голые адреса — тоже ссылки. Автоопределение NSTextView выключено:
         // полная перекраска выше стирала бы его атрибуты.
+        // Адрес внутри скрытого `](url)` ссылкой не делаем: NSTextView рисует .link
+        // синим даже поверх прозрачного цвета — у скрытого текста выйдет «пятно».
+        let hiddenLinkRanges = LiveMarkdown.hiddenRanges(paragraphs)
         if let detector = linkDetector {
             for match in detector.matches(in: storage.string, range: full) {
                 guard let url = match.url,
-                      !(linkedRanges + codeRanges).contains(where: { NSIntersectionRange($0, match.range).length > 0 }),
+                      !(linkedRanges + codeRanges + hiddenLinkRanges).contains(where: { NSIntersectionRange($0, match.range).length > 0 }),
                       ns.substring(with: match.range).contains(".") else { continue }
                 storage.addAttribute(.link, value: url, range: match.range)
             }
@@ -195,35 +168,70 @@ enum MarkdownRenderer {
         // Скрытое — прозрачное и почти нулевой ширины, но остаётся в своей строке.
         storage.enumerateAttribute(hiddenKey, in: full) { value, range, _ in
             guard value != nil else { return }
-            storage.addAttributes([.font: hiddenFont, .foregroundColor: NSColor.clear], range: range)
+            hide(range, in: storage)
         }
+        applyColumns(paragraphs, to: storage, typography: typography)
         storage.endEditing()
     }
 
-    private static let hiddenFont = NSFont.systemFont(ofSize: 0.1)
-    private static let linkDetector = try? NSDataDetector(types: NSTextCheckingResult.CheckingType.link.rawValue)
-
-    /// Что раскрыто при таком положении курсора — строки, блоки кода и
-    /// фрагменты, которых он касается (те же правила, что в style). Пока ответ
-    /// не меняется, перекрашивать при движении курсора незачем: перекраска
-    /// длинной карточки с перевёрсткой — около 10 мс на каждое нажатие стрелки.
-    static func revealedRanges(in text: String, selection: NSRange?) -> [NSRange] {
-        guard selection != nil else { return [] }
-        var result: [NSRange] = []
-        for paragraph in MarkdownStyler.parse(text) {
-            if touches(selection, paragraph.range) { result.append(paragraph.range) }
-            if let block = paragraph.codeBlock, touches(selection, block) { result.append(block) }
-            result += paragraph.spans.filter { touches(selection, $0) }
+    /// Колонки карточки (строки `||`): абзацы колонки становятся ячейками одной
+    /// строки системной таблицы (NSTextTable), между ячейками — тонкая линия.
+    /// Стиль абзаца ячейки несёт `textBlocks`; уже заданные отступы (цитата,
+    /// чек-лист) сохраняются. Строка вместе с переводом строки — иначе ячейка
+    /// рвётся на невидимом `\n`.
+    private static func applyColumns(_ paragraphs: [MarkdownStyler.Paragraph], to storage: NSMutableAttributedString, typography: CardTypography) {
+        let count = (paragraphs.map(\.column).max() ?? 0) + 1
+        guard count > 1 else { return }
+        let table = NSTextTable()
+        table.numberOfColumns = count
+        table.layoutAlgorithm = .fixedLayoutAlgorithm
+        table.setContentWidth(100, type: .percentageValueType)
+        let lineColor = typography.color.withAlphaComponent(0.22)
+        let blocks = (0..<count).map { column -> NSTextTableBlock in
+            let block = NSTextTableBlock(table: table, startingRow: 0, rowSpan: 1, startingColumn: column, columnSpan: 1)
+            block.setContentWidth(100 / CGFloat(count), type: .percentageValueType)
+            block.setWidth(column == 0 ? 0 : 14, type: .absoluteValueType, for: .padding, edge: .minX)
+            block.setWidth(column == count - 1 ? 0 : 14, type: .absoluteValueType, for: .padding, edge: .maxX)
+            if column > 0 {
+                block.setWidth(1, type: .absoluteValueType, for: .border, edge: .minX)
+                block.setBorderColor(lineColor, for: .minX)
+            }
+            return block
         }
-        return result
+        let ns = storage.string as NSString
+        for paragraph in paragraphs {
+            let line = ns.lineRange(for: paragraph.range)
+            guard line.length > 0 else { continue }
+            let source = storage.attribute(.paragraphStyle, at: line.location, effectiveRange: nil) as? NSParagraphStyle
+            let style = (source?.mutableCopy() as? NSMutableParagraphStyle) ?? NSMutableParagraphStyle()
+            style.textBlocks = [blocks[paragraph.column]]
+            storage.addAttribute(.paragraphStyle, value: style, range: line)
+        }
     }
 
-    /// Курсор внутри диапазона или вплотную к нему (как в Bear: только что
-    /// напечатанное `**жирное**` ещё показывает звёздочки).
-    private static func touches(_ selection: NSRange?, _ range: NSRange) -> Bool {
-        guard let selection else { return false }
-        if selection.length > 0 { return NSIntersectionRange(selection, range).length > 0 }
-        return selection.location >= range.location && selection.location <= NSMaxRange(range)
+    /// Прозрачно и без ширины (кернинг минус ширина символа), но шрифтом своей
+    /// строки — как в редакторе iPhone. Крохотный шрифт сжимал строку, где кроме
+    /// служебных символов пока ничего нет (`# `, `- [ ] `): после первой буквы
+    /// курсор съезжал на строку ниже.
+    private static func hide(_ range: NSRange, in storage: NSMutableAttributedString) {
+        for index in range.location..<NSMaxRange(range) {
+            let char = NSRange(location: index, length: 1)
+            let font = storage.attribute(.font, at: index, effectiveRange: nil) as? NSFont ?? NSFont.systemFont(ofSize: 15)
+            // Глиф скрытого символа — пробел (MarkdownBulletGlyphs), его ширину и гасим.
+            let width = " ".size(withAttributes: [.font: font]).width
+            storage.addAttributes([.foregroundColor: NSColor.clear, .kern: -width], range: char)
+        }
+    }
+
+    private static let linkDetector = try? NSDataDetector(types: NSTextCheckingResult.CheckingType.link.rawValue)
+
+    /// Адрес ссылки с протоколом: `[текст](example.com)` без него система открыть
+    /// не может (ошибка -50), поэтому дописываем https://.
+    static func linkTarget(_ raw: String) -> URL? {
+        let trimmed = raw.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return nil }
+        let hasScheme = trimmed.range(of: #"^(?:[A-Za-z][A-Za-z0-9+.-]*://|mailto:|tel:)"#, options: .regularExpression) != nil
+        return URL(string: hasScheme ? trimmed : "https://" + trimmed)
     }
 
     /// Цвет кода — блоков и `инлайн`: нейтральный, светлее/бледнее текста.
@@ -236,11 +244,11 @@ enum MarkdownRenderer {
         (typography.font.pointSize * 1.5).rounded()
     }
 
-    private static func blockStyle(indent: CGFloat = 0, hanging: CGFloat = 0, tail: CGFloat = 0, before: CGFloat = 0, after: CGFloat = 0) -> NSParagraphStyle {
+    private static func blockStyle(indent: CGFloat = 0, tail: CGFloat = 0, before: CGFloat = 0, after: CGFloat = 0) -> NSParagraphStyle {
         let style = NSMutableParagraphStyle()
         style.lineSpacing = 4
         style.firstLineHeadIndent = indent
-        style.headIndent = indent + hanging
+        style.headIndent = indent
         style.tailIndent = tail
         style.paragraphSpacingBefore = before
         style.paragraphSpacing = after

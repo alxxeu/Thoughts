@@ -112,6 +112,9 @@ final class DesktopOverlayWindowController {
             window.styleMask.remove([.closable, .miniaturizable, .resizable, .titled])
             window.titleVisibility = .hidden
             window.title = ""
+            // Окно закреплено: его нельзя сдвинуть ни за какую зону (раньше за верхнюю полосу можно было).
+            window.isMovable = false
+            window.isMovableByWindowBackground = false
             // Плавающий title pill позиционируется относительно верхнего
             // края фрейма окна (подтверждено эмпирически), поэтому подвинуть
             // его ниже без потери полного покрытия экрана сверху невозможно
@@ -127,6 +130,7 @@ final class DesktopOverlayWindowController {
             unregisterHotKeys()
             window.level = .normal
             window.collectionBehavior = []
+            window.isMovable = true
             window.hasShadow = true
             window.styleMask.insert([.closable, .miniaturizable, .resizable, .titled])
             window.titleVisibility = .visible

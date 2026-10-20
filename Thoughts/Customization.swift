@@ -3,7 +3,7 @@ import AppKit
 
 // Кастомизация карточек и канвы — каждый вариант описан данными со
 // строковым id, а не enum-кейсом: встроенные наборы ниже — это просто
-// статические массивы, и будущие плагины (см. docs/plugins.md) смогут
+// статические массивы, и будущие плагины (см. thoughts-plugins/docs/plugins.md) смогут
 // добавлять свои варианты в тот же реестр под id вида "pluginID/itemID".
 // Неизвестный id (например, после удаления плагина) всегда откатывается
 // к варианту по умолчанию, а не ломает отрисовку.
@@ -68,8 +68,11 @@ struct CardFontOption: Identifiable, Hashable {
             .sorted { $0.localizedCaseInsensitiveCompare($1) == .orderedAscending }
     }
 
+    /// Шрифты из включённых плагинов (`pluginID/itemID`).
+    static var plugins: [CardFontOption] { PluginsModel.shared.contributions.fonts }
+
     static func resolve(_ id: String) -> CardFontOption {
-        if let option = builtIn.first(where: { $0.id == id }) {
+        if let option = builtIn.first(where: { $0.id == id }) ?? plugins.first(where: { $0.id == id }) {
             return option
         }
         if id.hasPrefix(familyPrefix) {
@@ -152,12 +155,55 @@ struct TextColorOption: Identifiable, Hashable {
         return TextColorOption(id: customPrefix + hex, title: "Custom", color: NSColor(hex: hex) ?? color)
     }
 
+    /// Цвета из включённых плагинов.
+    static var plugins: [TextColorOption] { PluginsModel.shared.contributions.textColors }
+
     static func resolve(_ id: String) -> TextColorOption {
-        if let option = builtIn.first(where: { $0.id == id }) {
+        if let option = builtIn.first(where: { $0.id == id }) ?? plugins.first(where: { $0.id == id }) {
             return option
         }
         if id.hasPrefix(customPrefix), let color = NSColor(hex: String(id.dropFirst(customPrefix.count))) {
             return TextColorOption(id: id, title: "Custom", color: color)
+        }
+        return builtIn[0]
+    }
+}
+
+// MARK: - Фон в полноэкранном режиме
+
+/// Ровный цвет фона окна в fullscreen — тот же принцип, что у
+/// TextColorOption: несколько готовых тонов и свой через ColorPicker.
+struct FullScreenBackgroundOption: Identifiable, Hashable {
+    let id: String
+    let title: String
+    let color: NSColor
+
+    static let defaultID = "builtin.graphite"
+    private static let customPrefix = "custom:"
+
+    static let builtIn: [FullScreenBackgroundOption] = [
+        preset(defaultID, "Graphite", 0x1E1E20),
+        preset("builtin.midnight", "Midnight", 0x16203A),
+        preset("builtin.plum", "Plum", 0x2A1D2E),
+        preset("builtin.forest", "Forest", 0x18261F),
+        preset("builtin.sand", "Sand", 0xE8E1D5)
+    ]
+
+    private static func preset(_ id: String, _ title: String, _ rgb: Int) -> FullScreenBackgroundOption {
+        FullScreenBackgroundOption(id: id, title: title, color: NSColor(rgb: rgb))
+    }
+
+    static func custom(_ color: NSColor) -> FullScreenBackgroundOption {
+        let hex = color.hexString
+        return FullScreenBackgroundOption(id: customPrefix + hex, title: "Custom", color: NSColor(hex: hex) ?? color)
+    }
+
+    static func resolve(_ id: String) -> FullScreenBackgroundOption {
+        if let option = builtIn.first(where: { $0.id == id }) {
+            return option
+        }
+        if id.hasPrefix(customPrefix), let color = NSColor(hex: String(id.dropFirst(customPrefix.count))) {
+            return FullScreenBackgroundOption(id: id, title: "Custom", color: color)
         }
         return builtIn[0]
     }
@@ -189,9 +235,27 @@ struct CanvasPattern: Identifiable, Hashable {
         CanvasPattern(id: "builtin.diagonal", title: "Diagonal", kind: .diagonal, spacing: 18)
     ]
 
+    /// Паттерны из включённых плагинов.
+    static var plugins: [CanvasPattern] { PluginsModel.shared.contributions.patterns }
+
     static func resolve(_ id: String) -> CanvasPattern {
-        builtIn.first { $0.id == id } ?? builtIn[0]
+        builtIn.first { $0.id == id } ?? plugins.first { $0.id == id } ?? builtIn[0]
     }
+}
+
+// MARK: - Темы
+
+/// Тема из плагина: набор шрифт + цвет текста + паттерн (+ интенсивность).
+/// Выбор применяет значения в AppearanceSettings — отдельно тема не хранится.
+struct ThemeOption: Identifiable, Hashable {
+    let id: String
+    let title: String
+    var fontID: String?
+    var textColorID: String?
+    var patternID: String?
+    var patternIntensity: Double?
+
+    static var plugins: [ThemeOption] { PluginsModel.shared.contributions.themes }
 }
 
 // MARK: - Hex-цвета

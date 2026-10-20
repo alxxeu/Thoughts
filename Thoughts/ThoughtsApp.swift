@@ -40,7 +40,7 @@ struct ThoughtsApp: App {
                     // прозрачным — реальный рабочий стол виден без единого
                     // визуального следа Thoughts поверх него.
                     if !viewModel.desktopOverlay.isDesktopModeActive {
-                        VisualEffectBlur(material: .hudWindow, blendingMode: .behindWindow)
+                        WindowBackdrop(settings: viewModel.appearanceSettings)
                     }
                 }
                 .ignoresSafeArea()
@@ -65,6 +65,14 @@ struct ThoughtsApp: App {
                 formatButton("Underline", "markdownUnderline:", "u")
                 formatButton("Strikethrough", "markdownStrikethrough:", "x", modifiers: [.command, .shift])
                 formatButton("Highlight", "markdownHighlight:", "h", modifiers: [.command, .shift])
+                Button(FormatCommand.code.title) { FormatCommand.code.send() }
+                Button(FormatCommand.link.title) { FormatCommand.link.send() }
+
+                Divider()
+
+                ForEach(FormatCommand.blocks, id: \.self) { command in
+                    Button(command.title) { command.send() }
+                }
 
                 Divider()
 
@@ -136,13 +144,18 @@ struct ThoughtsApp: App {
                 .keyboardShortcut("f", modifiers: .command)
                 .disabled(viewModel.isActiveSpaceLocked || viewModel.desktopOverlay.isDesktopModeActive)
             }
-            // Системный пункт "Settings…" (со своей иконкой в App-меню)
-            // оставлен как есть — не переопределяем .appSettings отдельной
-            // кнопкой без иконки, получался дубль. Барьер против побега из
-            // заблокированного Space в Settings всё равно живёт в самом
-            // SettingsView (isActiveSpaceLocked → lockedPlaceholder), а не
-            // в disabled-состоянии пункта меню — так что убрать дубль можно
-            // без потери защиты.
+            // Settings — сцена Window, системного пункта "Settings…" у неё нет:
+            // ставим свой на место .appSettings. Барьер против побега из
+            // заблокированного Space живёт в самом SettingsView
+            // (isActiveSpaceLocked → lockedPlaceholder).
+            CommandGroup(replacing: .appSettings) {
+                Button {
+                    SettingsNavigation.shared.open(SettingsNavigation.shared.selectedTab)
+                } label: {
+                    Label("Settings\u{2026}", systemImage: "gearshape")
+                }
+                .keyboardShortcut(",", modifiers: .command)
+            }
             // .after(.windowArrangement) — стандартная точка вставки
             // приложением своих пунктов в системное меню Window, ниже
             // "Zoom"/"Move Window to..." и разделителя перед списком окон.
@@ -193,10 +206,16 @@ struct ThoughtsApp: App {
                 }
             }
         }
-        Settings {
+        // Settings — обычное окно, как у Thaw: сцена Settings центрирует заголовок
+        // и рисует пустую полосу тулбара, а Window с .titleBar + .unified даёт
+        // заголовок раздела слева в одной строке с кнопками окна.
+        Window("Settings", id: SettingsNavigation.windowID) {
             SettingsView(viewModel: viewModel)
                 .preferredColorScheme(preferredColorScheme)
         }
+        .windowStyle(.titleBar)
+        .windowToolbarStyle(.unified)
+        .windowResizability(.contentSize)
     }
 
     /// Пункт Format: действие уходит в карточку с курсором (CardNSTextView);
@@ -235,6 +254,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         _ = DirectUpdater.controller // запускает Sparkle и его автопроверку
         #endif
         NSApp.windows.first?.acceptsMouseMovedEvents = true
+        #if PLUGINS
+        PluginsModel.shared.attachConverters()
+        PluginsModel.shared.reload()
+        #endif
         if let viewModel {
             QuickCaptureController.shared.start(viewModel: viewModel)
             CloudSyncEngine.shared.start(viewModel: viewModel)
@@ -325,6 +348,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     /// `[ ] | { }`). keyCode — физические клавиши, от раскладки не зависят.
     /// Регистрируются на всё время работы приложения; занятое другим
     /// приложением сочетание просто не сработает.
+    /// Из Finder (рабочий стол) хватает и голого ⌥1–9 — см. registerSpaceHotKeys.
     /// ⌥1–9 — здесь, а не только шорткатом пункта меню: через меню каждое
     /// нажатие подсвечивало меню, перерисовывало Space синхронно внутри
     /// подсветки, а на частых нажатиях AppKit ещё и притормаживал повторы —
@@ -352,15 +376,123 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         for (index, keyCode) in Self.digitKeyCodes.enumerated() {
             let slot = index + 1
             GlobalHotKeyManager.shared.register(keyCode: keyCode, modifiers: UInt32(controlKey | optionKey)) { [weak self] in
-                let overlay = viewModel.desktopOverlay
-                // Уже на этом Space и он на экране — зажатый хоткей ничего не повторяет.
-                if slot == viewModel.activeSlot, !overlay.isDesktopModeActive,
-                   overlay.isEnabled || NSApp.isActive { return }
-                // В Overlay окно живёт на уровне стола — активировать нечего,
-                // достаточно выйти из Desktop mode.
-                if !overlay.isEnabled { self?.showMainWindow() }
-                overlay.isDesktopModeActive = false
-                NotificationCenter.default.post(name: .switchWorkspace, object: slot)
+                self?.switchSpaceFromHotKey(slot, viewModel: viewModel)
+            }
+        }
+
+        // Голый ⌥1–9 — только пока впереди Finder (рабочий стол, Desktop
+        // mode после клика по иконке): регистрируется при его активации и
+        // снимается при уходе, так что в остальных приложениях ⌥+цифра
+        // печатает свои символы как обычно.
+        NSWorkspace.shared.notificationCenter.addObserver(
+            forName: NSWorkspace.didActivateApplicationNotification,
+            object: nil,
+            queue: .main
+        ) { [weak self] note in
+            let app = note.userInfo?[NSWorkspace.applicationUserInfoKey] as? NSRunningApplication
+            self?.updateFinderSpaceHotKeys(finderIsActive: app?.bundleIdentifier == Self.finderBundleID, viewModel: viewModel)
+        }
+        updateFinderSpaceHotKeys(
+            finderIsActive: NSWorkspace.shared.frontmostApplication?.bundleIdentifier == Self.finderBundleID,
+            viewModel: viewModel
+        )
+    }
+
+    private static let finderBundleID = "com.apple.finder"
+    private var finderSpaceHotKeys: [HotKeyToken] = []
+
+    private func updateFinderSpaceHotKeys(finderIsActive: Bool, viewModel: BoardViewModel) {
+        if finderIsActive {
+            guard finderSpaceHotKeys.isEmpty else { return }
+            for (index, keyCode) in Self.digitKeyCodes.enumerated() {
+                let slot = index + 1
+                if case .success(let token) = GlobalHotKeyManager.shared.register(keyCode: keyCode, modifiers: UInt32(optionKey), action: { [weak self] in
+                    self?.switchSpaceFromHotKey(slot, viewModel: viewModel)
+                }) {
+                    finderSpaceHotKeys.append(token)
+                }
+            }
+        } else if !finderSpaceHotKeys.isEmpty {
+            GlobalHotKeyManager.shared.unregister(finderSpaceHotKeys)
+            finderSpaceHotKeys = []
+        }
+    }
+
+    private func switchSpaceFromHotKey(_ slot: Int, viewModel: BoardViewModel) {
+        let overlay = viewModel.desktopOverlay
+        // Уже на этом Space и он на экране — зажатый хоткей ничего не повторяет.
+        if slot == viewModel.activeSlot, !overlay.isDesktopModeActive,
+           overlay.isEnabled || NSApp.isActive { return }
+        // В Overlay окно живёт на уровне стола — активировать нечего,
+        // достаточно выйти из Desktop mode.
+        if !overlay.isEnabled { showMainWindow() }
+        overlay.isDesktopModeActive = false
+        NotificationCenter.default.post(name: .switchWorkspace, object: slot)
+    }
+}
+
+/// Фон главного окна. Ultra Thin Material — живой блюр с наименее заметными
+/// швами (BACKLOG «прямоугольные швы»). В fullscreen и Split View под окном
+/// чёрный фон отдельного Space, блюр съедает цвет — там ровный цвет из
+/// Settings → Appearance → Full Screen.
+private struct WindowBackdrop: View {
+    var settings: AppearanceSettings
+    @State private var isFullScreen = false
+    @State private var host = HostWindow()
+
+    var body: some View {
+        Group {
+            if isFullScreen {
+                Color(nsColor: settings.fullScreenBackground.color)
+            } else {
+                Rectangle().fill(.ultraThinMaterial)
+            }
+        }
+        // Фон пересоздаётся при выходе из Desktop mode — состояние берём у окна.
+        .background(HostWindowReader(host: host) { window in
+            isFullScreen = window.styleMask.contains(.fullScreen)
+        })
+        // На willEnter — чтобы цвет был уже во время анимации перехода.
+        .onReceive(NotificationCenter.default.publisher(for: NSWindow.willEnterFullScreenNotification)) { note in
+            if isOwnWindow(note) { isFullScreen = true }
+        }
+        .onReceive(NotificationCenter.default.publisher(for: NSWindow.didExitFullScreenNotification)) { note in
+            if isOwnWindow(note) { isFullScreen = false }
+        }
+    }
+
+    /// Окно Settings тоже может уйти в fullscreen — реагируем только на своё.
+    private func isOwnWindow(_ note: Notification) -> Bool {
+        guard let window = note.object as? NSWindow else { return false }
+        return window === host.window
+    }
+
+    final class HostWindow {
+        weak var window: NSWindow?
+    }
+
+    private struct HostWindowReader: NSViewRepresentable {
+        let host: HostWindow
+        let onResolve: (NSWindow) -> Void
+
+        func makeNSView(context: Context) -> Probe { Probe(host: host, onResolve: onResolve) }
+        func updateNSView(_ nsView: Probe, context: Context) {}
+
+        final class Probe: NSView {
+            let host: HostWindow
+            let onResolve: (NSWindow) -> Void
+            init(host: HostWindow, onResolve: @escaping (NSWindow) -> Void) {
+                self.host = host
+                self.onResolve = onResolve
+                super.init(frame: .zero)
+            }
+            required init?(coder: NSCoder) { fatalError() }
+            override func viewDidMoveToWindow() {
+                super.viewDidMoveToWindow()
+                host.window = window
+                guard let window else { return }
+                // Не менять @State посреди обновления вида.
+                DispatchQueue.main.async { [onResolve] in onResolve(window) }
             }
         }
     }

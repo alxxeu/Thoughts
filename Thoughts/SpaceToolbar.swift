@@ -35,6 +35,16 @@ struct SpaceToolbar: View {
     @State private var tooltipVisibleLabel: String?
     @State private var tooltipTask: Task<Void, Never>?
 
+    // Настройка капсулы: шестерёнка выплывает по наведению, режим правки («тряска»)
+    // скрывает и возвращает иконки (SpaceToolbarSettings), пазл открывает панель Plugins.
+    private let toolbarSettings = SpaceToolbarSettings.shared
+    @State private var isEditingToolbar = false
+    @State private var isHoveringPill = false
+    @State private var isHoveringGear = false
+    @State private var pillHideTask: Task<Void, Never>?
+    @State private var gearHideTask: Task<Void, Never>?
+    @State private var isShowingPluginsPanel = false
+
     /// Заметка для плашки What’s new; nil — плашки нет.
     @State private var whatsNewNote = WhatsNew.pendingNote()
     /// После ✕ плашка пару секунд подсказывает, где найти заметки.
@@ -88,32 +98,22 @@ struct SpaceToolbar: View {
                 // функция была ещё одной иконкой в этом же ряду, а не
                 // ещё одной строкой вниз.
                 if !isEditingWorkspaceName {
-                    Rectangle()
-                        .fill(Color.white.opacity(0.15))
-                        .frame(width: 1, height: 14)
-
-                    // Развёрнутая на 45° звёздочка читается как крестик —
-                    // понятная подсказка "нажми ещё раз, чтобы закрыть".
-                    toolbarButton("Ask AI", icon: "sparkle", isActive: isAskingSpaceAI, rotation: isAskingSpaceAI ? 45 : 0) {
-                        // Если в этот момент печатали в какой-то карточке,
-                        // её текстовое поле удерживает first responder —
-                        // панель Ask AI должна явно получить его, а не
-                        // соревноваться за фокус в тот же момент.
-                        NSApp.keyWindow?.makeFirstResponder(nil)
-                        withAnimation(spaceAISpring) { isAskingSpaceAI.toggle() }
+                    let items = ToolbarItem.available.filter {
+                        ($0 != .askAI || viewModel.aiSettings.isEnabled)
+                            && (isEditingToolbar || !toolbarSettings.isHidden($0))
                     }
-
-                    toolbarButton("Tidy Cards", icon: "square.grid.2x2.fill") {
-                        withAnimation(.spring(response: 0.4, dampingFraction: 0.8)) {
-                            viewModel.tidyCards(canvasSize: canvasSize, topInset: topInset)
+                    if !items.isEmpty {
+                        Rectangle()
+                            .fill(Color.white.opacity(0.15))
+                            .frame(width: 1, height: 14)
+                    }
+                    ForEach(Array(items.enumerated()), id: \.element) { index, item in
+                        if isEditingToolbar {
+                            editableIcon(item, phase: index)
+                        } else {
+                            toolbarIcon(item)
                         }
                     }
-                    .disabled(viewModel.cards.isEmpty)
-
-                    toolbarButton("Clear Space", icon: "trash.fill") {
-                        NotificationCenter.default.post(name: .requestClearSpace, object: nil)
-                    }
-                    .disabled(viewModel.cards.isEmpty)
                 }
             }
             .padding(.horizontal, 14)
@@ -127,9 +127,14 @@ struct SpaceToolbar: View {
                     .fill(.ultraThinMaterial)
                     .overlay(Capsule().fill(Color.black.opacity(colorScheme == .dark ? 0.1 : 0.18)))
             )
+            .onHover { inside in setPillHover(inside) }
+            // За капсулой (background), а не поверх: кружок выезжает из-под неё.
+            .background(alignment: .trailing) { gearButton }
 
             if isAskingSpaceAI {
                 askAIPanel
+            } else if isShowingPluginsPanel {
+                pluginsPanel
             } else if let whatsNewNote, !isOnboardingActive {
                 whatsNewBanner(whatsNewNote)
             }
@@ -142,7 +147,15 @@ struct SpaceToolbar: View {
             withAnimation(spaceAISpring) { isAskingSpaceAI = false }
         }
         .onChange(of: isFocusModeActive) { _, active in
-            if active { isAskingSpaceAI = false }
+            if active {
+                isAskingSpaceAI = false
+                isShowingPluginsPanel = false
+            }
+        }
+        .onReceive(NotificationCenter.default.publisher(for: .clearTextSelection)) { _ in
+            // Клик по свободному холсту — конец правки капсулы и закрытие панели Plugins.
+            if isEditingToolbar { withAnimation(.spring(response: 0.35, dampingFraction: 0.8)) { isEditingToolbar = false } }
+            if isShowingPluginsPanel { withAnimation(spaceAISpring) { isShowingPluginsPanel = false } }
         }
         .onChange(of: viewModel.activeSlot) { _, _ in
             commitWorkspaceRename()
@@ -158,6 +171,191 @@ struct SpaceToolbar: View {
     }
 
     private var spaceAISpring: Animation { .spring(response: 0.4, dampingFraction: 0.76) }
+
+    // MARK: - Иконки капсулы
+
+    /// Обычная иконка-действие.
+    @ViewBuilder
+    private func toolbarIcon(_ item: ToolbarItem) -> some View {
+        switch item {
+        case .askAI:
+            // Развёрнутая на 45° звёздочка читается как крестик —
+            // понятная подсказка "нажми ещё раз, чтобы закрыть".
+            toolbarButton("Ask AI", icon: item.symbol, isActive: isAskingSpaceAI, rotation: isAskingSpaceAI ? 45 : 0) {
+                // Если в этот момент печатали в какой-то карточке,
+                // её текстовое поле удерживает first responder —
+                // панель Ask AI должна явно получить его, а не
+                // соревноваться за фокус в тот же момент.
+                NSApp.keyWindow?.makeFirstResponder(nil)
+                withAnimation(spaceAISpring) {
+                    isShowingPluginsPanel = false
+                    isAskingSpaceAI.toggle()
+                }
+            }
+        case .tidyCards:
+            toolbarButton("Tidy Cards", icon: item.symbol) {
+                withAnimation(.spring(response: 0.4, dampingFraction: 0.8)) {
+                    viewModel.tidyCards(canvasSize: canvasSize, topInset: topInset)
+                }
+            }
+            .disabled(viewModel.cards.isEmpty)
+        case .clearSpace:
+            toolbarButton("Clear Space", icon: item.symbol) {
+                NotificationCenter.default.post(name: .requestClearSpace, object: nil)
+            }
+            .disabled(viewModel.cards.isEmpty)
+        case .plugins:
+            toolbarButton("Plugins", icon: item.symbol, isActive: isShowingPluginsPanel) {
+                NSApp.keyWindow?.makeFirstResponder(nil)
+                withAnimation(spaceAISpring) {
+                    isAskingSpaceAI = false
+                    isShowingPluginsPanel.toggle()
+                }
+            }
+        }
+    }
+
+    /// Иконка в режиме правки: дрожит; «−» — скрыть, у скрытой (приглушена) «+» — вернуть.
+    private func editableIcon(_ item: ToolbarItem, phase: Int) -> some View {
+        let isHidden = toolbarSettings.isHidden(item)
+        return Image(systemName: item.symbol)
+            .font(.system(size: 15))
+            .foregroundStyle(Color.white.opacity(isHidden ? 0.35 : 0.9))
+            .modifier(WobbleEffect(phase: phase))
+            .overlay(alignment: .topLeading) {
+                Image(systemName: isHidden ? "plus" : "minus")
+                    .font(.system(size: 7, weight: .heavy))
+                    .foregroundStyle(.white)
+                    .frame(width: 12, height: 12)
+                    .background(Circle().fill(isHidden ? Color.green : Color.red))
+                    .offset(x: -8, y: -7)
+            }
+            .contentShape(Rectangle())
+            .onTapGesture {
+                withAnimation(.spring(response: 0.3, dampingFraction: 0.8)) {
+                    toolbarSettings.setHidden(item, !isHidden)
+                    if item == .plugins, !isHidden { isShowingPluginsPanel = false }
+                    if item == .askAI, !isHidden { isAskingSpaceAI = false }
+                }
+            }
+    }
+
+    // MARK: - Шестерёнка
+
+    private var isGearShown: Bool { isHoveringPill || isHoveringGear || isEditingToolbar }
+
+    /// Отдельный кружок справа от капсулы: выплывает из неё по наведению. Левый
+    /// отступ внутри области нажатия закрывает зазор между капсулой и кружком —
+    /// иначе при переходе мыши он успевал бы исчезнуть.
+    private var gearButton: some View {
+        Button {
+            withAnimation(.spring(response: 0.35, dampingFraction: 0.75)) { isEditingToolbar.toggle() }
+        } label: {
+            Image(systemName: isEditingToolbar ? "checkmark" : "gearshape.fill")
+                .font(.system(size: 12, weight: .semibold))
+                .foregroundStyle(Color.white.opacity(isEditingToolbar ? 0.95 : 0.6))
+                .frame(width: 26, height: 26)
+                .background(
+                    Circle()
+                        .fill(.ultraThinMaterial)
+                        .overlay(Circle().fill(isEditingToolbar ? Color.accentColor.opacity(0.6) : Color.black.opacity(colorScheme == .dark ? 0.1 : 0.18)))
+                )
+                .padding(.leading, 12)
+                .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .help(isEditingToolbar ? "Done" : "Customize toolbar")
+        .onHover { inside in setGearHover(inside) }
+        // Полупрозрачный в покое; едет из-под капсулы вправо, без масштабирования.
+        .opacity(isGearShown ? (isEditingToolbar ? 1 : 0.7) : 0)
+        .allowsHitTesting(isGearShown)
+        .offset(x: isGearShown ? 26 + 12 : 0)
+        .animation(.spring(response: 0.4, dampingFraction: 0.8), value: isGearShown)
+    }
+
+    /// У капсулы и у кружка — каждому свой таймер скрытия: общий отменял бы чужой,
+    /// и флаг наведения на капсулу «застревал» бы включённым.
+    /// Кружок появляется не сразу (450 мс наведения), а пропадает чуть быстрее.
+    private func setPillHover(_ inside: Bool) {
+        pillHideTask?.cancel()
+        pillHideTask = Task {
+            try? await Task.sleep(for: .milliseconds(inside ? 450 : 220))
+            guard !Task.isCancelled else { return }
+            isHoveringPill = inside
+        }
+    }
+
+    private func setGearHover(_ inside: Bool) {
+        gearHideTask?.cancel()
+        if inside {
+            isHoveringGear = true
+        } else {
+            gearHideTask = Task {
+                try? await Task.sleep(for: .milliseconds(220))
+                guard !Task.isCancelled else { return }
+                isHoveringGear = false
+            }
+        }
+    }
+
+    // MARK: - Панель Plugins
+
+    private var pluginsPanel: some View {
+        let plugins = PluginsModel.shared
+        return VStack(alignment: .leading, spacing: 10) {
+            Text("Plugins")
+                .font(.system(size: 13, weight: .semibold))
+            if plugins.installed.isEmpty {
+                Text("No plugins yet. Plugins add fonts, colors, patterns, themes and card templates.")
+                    .font(.system(size: 12))
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            } else {
+                ForEach(plugins.installed.filter { $0.error == nil }) { plugin in
+                    Toggle(isOn: Binding(
+                        get: { plugin.isEnabled },
+                        set: { plugins.setEnabled($0, for: plugin) }
+                    )) {
+                        Text(plugin.name).font(.system(size: 12))
+                    }
+                    .toggleStyle(.switch)
+                    .controlSize(.mini)
+                }
+            }
+            Button {
+                withAnimation(spaceAISpring) { isShowingPluginsPanel = false }
+                SettingsNavigation.shared.open(.plugins)
+            } label: {
+                HStack(spacing: 6) {
+                    Image(systemName: "plus")
+                    Text("Add Plugins\u{2026}")
+                    Spacer()
+                }
+                .font(.system(size: 12))
+                .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+        }
+        .padding(.horizontal, 14)
+        .padding(.vertical, 12)
+        .frame(width: 260, alignment: .leading)
+        .background(
+            CardSurfaceBackground(
+                cornerRadius: 16,
+                usesGlassEffect: false,
+                tintOpacity: 0.15,
+                materialStyle: .thickMaterial,
+                lightMaterialStyle: .ultraThinMaterial,
+                lightTintOpacity: 0.2
+            )
+        )
+        .transition(
+            .asymmetric(
+                insertion: .scale(scale: 0.5, anchor: .top).combined(with: .opacity).animation(spaceAISpring),
+                removal: .scale(scale: 0.5, anchor: .top).combined(with: .opacity).animation(.easeIn(duration: 0.15))
+            )
+        )
+    }
 
     /// Как у Arc: «обновились» + What’s new (карточка с заметками по центру
     /// Space) или ✕ (подсказка, где заметки лежат, и плашка уходит).
@@ -445,5 +643,22 @@ struct SpaceToolbar: View {
 
     private func cancelWorkspaceRename() {
         renamingSlot = nil
+    }
+}
+
+/// Лёгкая «тряска» иконок в режиме правки капсулы — как в iOS при перестановке
+/// приложений; фаза у каждой иконки своя, чтобы они не качались в унисон.
+private struct WobbleEffect: ViewModifier {
+    let phase: Int
+    @State private var isOn = false
+
+    func body(content: Content) -> some View {
+        content
+            .rotationEffect(.degrees(isOn ? 2.2 : -2.2))
+            .animation(
+                .easeInOut(duration: 0.12 + Double(phase % 3) * 0.015).repeatForever(autoreverses: true),
+                value: isOn
+            )
+            .onAppear { isOn = true }
     }
 }

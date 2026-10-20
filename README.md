@@ -13,7 +13,7 @@ https://github.com/user-attachments/assets/3dead5b6-c2e1-49d7-8cc9-fe3771b8cc8c
 ## Features
 
 - **Free-form canvas** — click and drag anywhere to create a card, move and resize it freely
-- **Markdown** — headings, bold, italic, underline, strikethrough, highlight, code, links, lists, task lists, quotes, code blocks and dividers; the formatting characters show next to the cursor and hide everywhere else
+- **Markdown** — headings, bold, italic, underline, strikethrough, highlight, code, links, lists, task lists, quotes, code blocks and dividers; the formatting characters stay out of sight, and the cursor skips over them
 - **Color tags** — tag cards by color to organize at a glance, right from the keyboard with ⌃1–7
 - **Card privacy** — blur a card's contents (Spoiler) or hide it completely behind your passcode (Lock)
 - **Space Lock** — protect an entire Space with a passcode and Touch ID
@@ -50,7 +50,7 @@ check for updates in Settings → About. See the
 
 Community plugins — fonts, colors, canvas patterns, themes, AI actions and
 card templates — are being designed. See the draft spec in
-[docs/plugins.md](docs/plugins.md); feedback is welcome.
+[thoughts-plugins](https://github.com/alxxeu/thoughts-plugins); feedback is welcome.
 
 ## Privacy
 

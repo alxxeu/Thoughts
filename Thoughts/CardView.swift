@@ -42,6 +42,8 @@ struct CardView: View {
     // или новая карточка — снова доступно).
     @State private var focusTipHint = HintTimer()
     @State private var hasShownFocusTipHint = false
+    /// Подсказка про колонки — один раз, сразу после создания карточки из шаблона.
+    @State private var boardTipHint = HintTimer()
     // Одноразовая анимация появления карточки из Ask AI/Summarize —
     // "выскакивает" из-под нотча к своей итоговой позиции. См.
     // triggerAIPopInAnimationIfNeeded().
@@ -103,7 +105,37 @@ struct CardView: View {
             // Тот же принцип, что уже применён к заблокированному Space
             // целиком (см. ContentView.swift — ForEach с карточками не
             // создаётся вовсе, пока Space заблокирован).
-            if !isPrivacyLocked {
+            if !isPrivacyLocked, KanbanBoard.isBoard(card.text) {
+                KanbanCardView(
+                    text: $card.text,
+                    isFocused: $isTextFocused,
+                    cardSize: effectiveSize,
+                    typography: viewModel.appearanceSettings.cardTypography,
+                    onTextChange: { viewModel.scheduleDebouncedSave() },
+                    onFocusChange: { focused in
+                        if focused { viewModel.bringToFront(card) }
+                    }
+                )
+                // Не пересчитывать доску на каждый кадр, пока карточку двигают.
+                .equatable()
+                .opacity(isFocusTransitioning ? 0 : 1)
+                .animation(isFocusTransitioning ? nil : .easeIn(duration: 0.15), value: isFocusTransitioning)
+                .zIndex(0)
+                .mask(alignment: .top) {
+                    VStack(spacing: 0) {
+                        LinearGradient(colors: [.clear, .black], startPoint: .top, endPoint: .bottom)
+                            .frame(height: 15)
+                        Color.black
+                        LinearGradient(colors: [.black, .clear], startPoint: .top, endPoint: .bottom)
+                            .frame(height: 15)
+                    }
+                }
+                .onReceive(NotificationCenter.default.publisher(for: .focusNewCard)) { notification in
+                    if let targetID = notification.object as? UUID, targetID == card.id {
+                        isTextFocused = true
+                    }
+                }
+            } else if !isPrivacyLocked {
                 CardTextView(
                     text: $card.text,
                     isFocused: $isTextFocused,
@@ -356,7 +388,7 @@ struct CardView: View {
         // футера, которая скачет между кнопкой и раскрытой панелью
         // (alignmentGuide внутри overlay это не решает).
         .overlay(alignment: .top) {
-            if isFocusFooterVisible {
+            if isFocusFooterVisible, viewModel.aiSettings.isEnabled {
                 CardAskAIPanel(
                     card: card,
                     viewModel: viewModel,
@@ -382,6 +414,17 @@ struct CardView: View {
                 // пустого Space.
                 HintLabel(text: "Try \u{2318}F to focus this card", fontSize: 10, color: AnyShapeStyle(.primary), opacity: 0.5)
                     .offset(y: -22)
+            }
+        }
+        .overlay(alignment: .top) {
+            if boardTipHint.isVisible {
+                HintLabel(text: "Right-click to add or remove columns", fontSize: 10, color: AnyShapeStyle(.primary), opacity: 0.5)
+                    .offset(y: -22)
+            }
+        }
+        .onReceive(NotificationCenter.default.publisher(for: .boardTemplateCreated)) { notification in
+            if let id = notification.object as? UUID, id == card.id {
+                boardTipHint.show(holdFor: Self.boardTipHoldDuration)
             }
         }
         .scaleEffect(aiPopInScale)
@@ -497,6 +540,7 @@ struct CardView: View {
     private static let focusTipThreshold = 60
     /// Достаточно долго, чтобы подсказку успели прочитать.
     private static let focusTipHoldDuration: Double = 4.5
+    private static let boardTipHoldDuration: Double = 6
 
     // MARK: - Helper Methods & Gestures
 

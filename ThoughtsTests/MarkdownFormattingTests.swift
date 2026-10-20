@@ -59,4 +59,55 @@ struct MarkdownFormattingTests {
         // Вставка посреди строки: первая строка продолжает чужую — не трогаем.
         #expect(MarkdownFormatting.standardizingTaskMarkers("[] a\n[] b", atLineStart: false) == "[] a\n- [ ] b")
     }
+
+    // MARK: Блоки
+
+    private func block(_ kind: MarkdownFormatting.BlockKind, _ text: String, caretAt: String? = nil, select: String? = nil) -> (text: String, selection: NSRange) {
+        let ns = text as NSString
+        let selection = select.map { ns.range(of: $0) } ?? NSRange(location: caretAt.map { ns.range(of: $0).location } ?? ns.length, length: 0)
+        let edit = MarkdownFormatting.toggleBlock(kind, in: ns, selection: selection)
+        return (ns.replacingCharacters(in: edit.range, with: edit.replacement), edit.selection)
+    }
+
+    @Test func blockMarkerAddedReplacedAndRemoved() {
+        #expect(block(.heading(2), "title").text == "## title")
+        #expect(block(.heading(2), "## title").text == "title")
+        #expect(block(.heading(1), "## title").text == "# title")
+        #expect(block(.quote, "- item").text == "> item")
+        #expect(block(.task, "[x] done").text == "- [ ] done")
+        #expect(block(.bullet, "- [ ] a").text == "- a")
+        #expect(block(.bullet, "").text == "- ")
+    }
+
+    @Test func blockCaretStaysInLineText() {
+        let added = block(.heading(1), "title", caretAt: "tle")
+        #expect(added.selection == NSRange(location: 4, length: 0)) // t|itle → после «# »
+        let removed = block(.heading(1), "# title", caretAt: "tle")
+        #expect(removed.selection == NSRange(location: 2, length: 0))
+        #expect(block(.bullet, "", caretAt: nil).selection == NSRange(location: 2, length: 0))
+    }
+
+    @Test func blockOnSeveralLines() {
+        #expect(block(.numbered, "a\n\nb", select: "a\n\nb").text == "1. a\n\n2. b")
+        #expect(block(.numbered, "1. a\n\n2. b", select: "1. a\n\n2. b").text == "a\n\nb")
+        // Часть строк уже такого вида — ставим всем.
+        #expect(block(.bullet, "- a\nb", select: "- a\nb").text == "- a\n- b")
+    }
+
+    @Test func dividerOnItsOwnLine() {
+        let ns = "abc" as NSString
+        let edit = MarkdownFormatting.insertDivider(in: ns, selection: NSRange(location: 3, length: 0))
+        #expect(ns.replacingCharacters(in: edit.range, with: edit.replacement) == "abc\n--\n")
+        let start = MarkdownFormatting.insertDivider(in: ns, selection: NSRange(location: 0, length: 0))
+        #expect(ns.replacingCharacters(in: start.range, with: start.replacement) == "--\nabc")
+    }
+
+    @Test func codeBlockWrapsAndUnwraps() {
+        let ns = "code" as NSString
+        let wrap = MarkdownFormatting.toggleCodeBlock(in: ns, selection: NSRange(location: 0, length: 4))
+        let wrapped = ns.replacingCharacters(in: wrap.range, with: wrap.replacement)
+        #expect(wrapped == "```\ncode\n```")
+        let unwrap = MarkdownFormatting.toggleCodeBlock(in: wrapped as NSString, selection: NSRange(location: 4, length: 4))
+        #expect((wrapped as NSString).replacingCharacters(in: unwrap.range, with: unwrap.replacement) == "code")
+    }
 }

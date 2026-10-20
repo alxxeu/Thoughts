@@ -14,6 +14,9 @@ private final class CardNSTextView: NSTextView {
     var onFirstResponderChange: ((Bool) -> Void)?
     /// Непустой только когда карточка в Focus Mode — см. cancelOperation ниже.
     var onEscape: (() -> Void)?
+    /// Места, где курсору нельзя стоять (внутри скрытых символов Markdown) —
+    /// обновляет restyle; между правкой и перекраской пустые.
+    var atoms: [LiveMarkdown.Atom] = []
 
     // Производный от цвета текста (Settings → Appearance), а не
     // адаптивный labelColor — фон карточки (CardSurfaceStyle) не
@@ -61,9 +64,63 @@ private final class CardNSTextView: NSTextView {
     @objc func markdownStrikethrough(_ sender: Any?) { toggleMarkdown("~~") }
     @objc func markdownHighlight(_ sender: Any?) { toggleMarkdown("==") }
 
-    /// Через shouldChangeText/didChangeText — правка попадает в ⌘Z и в card.text.
+    @objc func markdownCode(_ sender: Any?) { toggleMarkdown("`") }
+    @objc func markdownHeading1(_ sender: Any?) { toggleBlock(.heading(1)) }
+    @objc func markdownHeading2(_ sender: Any?) { toggleBlock(.heading(2)) }
+    @objc func markdownHeading3(_ sender: Any?) { toggleBlock(.heading(3)) }
+    @objc func markdownBulletList(_ sender: Any?) { toggleBlock(.bullet) }
+    @objc func markdownNumberedList(_ sender: Any?) { toggleBlock(.numbered) }
+    @objc func markdownTask(_ sender: Any?) { toggleBlock(.task) }
+    @objc func markdownQuote(_ sender: Any?) { toggleBlock(.quote) }
+    @objc func markdownCodeBlock(_ sender: Any?) {
+        apply(MarkdownFormatting.toggleCodeBlock(in: string as NSString, selection: selectedRange()))
+    }
+    @objc func markdownDivider(_ sender: Any?) {
+        apply(MarkdownFormatting.insertDivider(in: string as NSString, selection: selectedRange()))
+    }
+
+    /// Ссылка: адрес и текст спрашиваем в окне — в тексте `](адрес)` скрыт, вписать
+    /// его там было бы негде. Выделение попадает в поле текста; пустой текст —
+    /// вставится просто адрес.
+    @objc func markdownLink(_ sender: Any?) {
+        let selection = selectedRange()
+        let ns = string as NSString
+        let alert = NSAlert()
+        alert.messageText = "Link"
+        alert.informativeText = "Text is optional \u{2014} without it the address itself is shown."
+        let textField = NSTextField(frame: NSRect(x: 0, y: 32, width: 280, height: 24))
+        textField.placeholderString = "Text (optional)"
+        if selection.length > 0, NSMaxRange(selection) <= ns.length {
+            textField.stringValue = ns.substring(with: selection)
+        }
+        let addressField = NSTextField(frame: NSRect(x: 0, y: 0, width: 280, height: 24))
+        addressField.placeholderString = "https://"
+        let fields = NSView(frame: NSRect(x: 0, y: 0, width: 280, height: 56))
+        fields.addSubview(textField)
+        fields.addSubview(addressField)
+        alert.accessoryView = fields
+        alert.addButton(withTitle: "Add")
+        alert.addButton(withTitle: "Cancel")
+        alert.window.initialFirstResponder = addressField
+        guard alert.runModal() == .alertFirstButtonReturn,
+              let url = MarkdownRenderer.linkTarget(addressField.stringValue),
+              selection.location <= (string as NSString).length else { return }
+        let title = textField.stringValue.trimmingCharacters(in: .whitespacesAndNewlines)
+        let markdown = title.isEmpty ? url.absoluteString : "[\(title)](\(url.absoluteString))"
+        apply(.init(range: selection, replacement: markdown,
+                    selection: NSRange(location: selection.location + (markdown as NSString).length, length: 0)))
+    }
+
     private func toggleMarkdown(_ marker: String) {
-        let edit = MarkdownFormatting.toggle(marker, in: string as NSString, selection: selectedRange())
+        apply(MarkdownFormatting.toggle(marker, in: string as NSString, selection: selectedRange()))
+    }
+
+    private func toggleBlock(_ kind: MarkdownFormatting.BlockKind) {
+        apply(MarkdownFormatting.toggleBlock(kind, in: string as NSString, selection: selectedRange()))
+    }
+
+    /// Через shouldChangeText/didChangeText — правка попадает в ⌘Z и в card.text.
+    private func apply(_ edit: MarkdownFormatting.Edit) {
         guard shouldChangeText(in: edit.range, replacementString: edit.replacement) else { return }
         textStorage?.replaceCharacters(in: edit.range, with: edit.replacement)
         didChangeText()
@@ -109,6 +166,111 @@ private final class CardNSTextView: NSTextView {
     override func draw(_ dirtyRect: NSRect) {
         super.draw(dirtyRect)
         decorator?.drawOverlays()
+        drawConverterGhost()
+    }
+
+    // MARK: - Конвертеры (как в Spotlight)
+
+    /// Результат конвертера для строки с кареткой: серый хвост после строки, Tab
+    /// дописывает его. `line` — диапазон строки без перевода строки.
+    private var converterGhost: (suffix: String, line: NSRange, text: String)? {
+        didSet { needsDisplay = true }
+    }
+
+    /// Каретка в конце строки и выделения нет — спросить конвертеры; иначе убрать.
+    private func updateConverterGhost() {
+        #if !PLUGINS
+        return
+        #else
+        let ns = string as NSString
+        let selection = selectedRange()
+        guard selection.length == 0, hasMarkedText() == false, isEditable, window?.firstResponder === self else {
+            clearConverterGhost()
+            return
+        }
+        let paragraph = ns.paragraphRange(for: NSRange(location: selection.location, length: 0))
+        var line = paragraph
+        if line.length > 0, ns.character(at: NSMaxRange(line) - 1) == 0x0A { line.length -= 1 }
+        let text = ns.substring(with: line)
+        guard selection.location == NSMaxRange(line), Self.allowsConverter(on: text, at: line, in: textStorage) else {
+            clearConverterGhost()
+            return
+        }
+        if let ghost = converterGhost, ghost.line == line, ghost.text == text { return }
+        if converterGhost != nil { converterGhost = nil }
+        ConverterService.shared.request(text) { [weak self] result in
+            guard let self, let result else { return }
+            let now = self.string as NSString
+            // Пока считали, текст или каретка могли уйти.
+            guard NSMaxRange(line) <= now.length, now.substring(with: line) == text,
+                  self.selectedRange() == NSRange(location: NSMaxRange(line), length: 0) else { return }
+            self.converterGhost = (ConverterService.suffix(for: text, result: result), line, text)
+        }
+        #endif
+    }
+
+    private func clearConverterGhost() {
+        ConverterService.shared.cancel()
+        if converterGhost != nil { converterGhost = nil }
+    }
+
+    /// Не на служебных строках Markdown: заборы кода, разделители колонок `||`,
+    /// ячейки колонок (NSTextTable) и строки с доской.
+    private static func allowsConverter(on text: String, at line: NSRange, in storage: NSTextStorage?) -> Bool {
+        let trimmed = text.trimmingCharacters(in: .whitespaces)
+        guard !trimmed.isEmpty, !trimmed.hasPrefix("```"), trimmed != "||", !trimmed.hasPrefix(":::") else { return false }
+        if let storage, line.length > 0,
+           let style = storage.attribute(.paragraphStyle, at: line.location, effectiveRange: nil) as? NSParagraphStyle,
+           !style.textBlocks.isEmpty { return false }
+        return true
+    }
+
+    /// Tab при видимом результате: дописать его к строке одной правкой (одно ⌘Z).
+    func acceptConverterGhost() -> Bool {
+        guard let ghost = converterGhost, selectedRange() == NSRange(location: NSMaxRange(ghost.line), length: 0) else { return false }
+        let insertAt = NSRange(location: NSMaxRange(ghost.line), length: 0)
+        converterGhost = nil
+        apply(.init(range: insertAt, replacement: ghost.suffix,
+                    selection: NSRange(location: insertAt.location + (ghost.suffix as NSString).length, length: 0)))
+        return true
+    }
+
+    /// Серый хвост справа от последнего видимого символа строки (скрытые символы
+    /// Markdown — `**`, `](url)` — не в счёт). Не влезает в ширину — не рисуем.
+    private func drawConverterGhost() {
+        guard let ghost = converterGhost, let layoutManager, let textContainer, let textStorage,
+              NSMaxRange(ghost.line) <= textStorage.length, ghost.line.length > 0 else { return }
+        var last = NSMaxRange(ghost.line) - 1
+        while last > ghost.line.location, textStorage.attribute(MarkdownRenderer.hiddenKey, at: last, effectiveRange: nil) != nil {
+            last -= 1
+        }
+        let glyph = layoutManager.glyphIndexForCharacter(at: last)
+        guard glyph < layoutManager.numberOfGlyphs else { return }
+        let lineRect = layoutManager.lineFragmentRect(forGlyphAt: glyph, effectiveRange: nil)
+        let glyphRect = layoutManager.boundingRect(forGlyphRange: NSRange(location: glyph, length: 1), in: textContainer)
+        let baseline = lineRect.minY + layoutManager.location(forGlyphAt: glyph).y
+        let font = (textStorage.attribute(.font, at: last, effectiveRange: nil) as? NSFont)
+            ?? (typingAttributes[.font] as? NSFont) ?? NSFont.systemFont(ofSize: NSFont.systemFontSize)
+        let attributes: [NSAttributedString.Key: Any] = [.font: font, .foregroundColor: NSColor.tertiaryLabelColor]
+        let size = (ghost.suffix as NSString).size(withAttributes: attributes)
+        let origin = textContainerOrigin
+        let right = origin.x + textContainer.size.width - textContainer.lineFragmentPadding
+        let x = glyphRect.maxX + origin.x
+        if x + size.width <= right {
+            (ghost.suffix as NSString).draw(at: NSPoint(x: x, y: baseline + origin.y - font.ascender), withAttributes: attributes)
+            return
+        }
+
+        // Не влезает после строки (узкая карточка, длинный результат) — строкой ниже,
+        // от левого края строки. Не влезает и там — обрезаем с «…»; Tab всё равно
+        // вставит результат целиком.
+        let text = ghost.suffix.trimmingCharacters(in: .whitespaces) as NSString
+        let left = origin.x + lineRect.minX + textContainer.lineFragmentPadding
+        let lineHeight = layoutManager.defaultLineHeight(for: font)
+        let width = min(text.size(withAttributes: attributes).width, right - left)
+        guard width > 0 else { return }
+        let box = NSRect(x: left, y: origin.y + lineRect.maxY, width: width, height: lineHeight)
+        text.draw(with: box, options: [.usesLineFragmentOrigin, .truncatesLastVisibleLine], attributes: attributes)
     }
 
     /// Клик по квадратику отмечает пункт (с ⌘Z); клик по значку в углу блока
@@ -141,8 +303,17 @@ private final class CardNSTextView: NSTextView {
     /// именованные клавиатурные команды и не видит мышь вообще), это
     /// гарантированно перехватывает абсолютно все пути — поэтому именно здесь
     /// не даём выделению/курсору заходить ДО конца маркера списка.
+    /// После правки `atoms` описывают старый текст: AppKit ставит курсор уже в новом, и
+    /// сдвинутый атом маркера следующей строки уносил бы курсор туда. Пока перекраска
+    /// (textDidChange) не пересчитала их — пусто.
+    override func shouldChangeText(in affectedCharRange: NSRange, replacementString: String?) -> Bool {
+        atoms = []
+        return super.shouldChangeText(in: affectedCharRange, replacementString: replacementString)
+    }
+
     override func setSelectedRange(_ charRange: NSRange, affinity: NSSelectionAffinity, stillSelecting stillSelectingFlag: Bool) {
-        super.setSelectedRange(Self.clampSelectionRange(charRange, in: self), affinity: affinity, stillSelecting: stillSelectingFlag)
+        super.setSelectedRange(Self.clampSelectionRange(charRange, in: self, from: selectedRange().location), affinity: affinity, stillSelecting: stillSelectingFlag)
+        if !stillSelectingFlag { updateConverterGhost() }
         // super сам инвалидирует только разницу между старым и новым
         // диапазоном выделения — но раз мы подменяем диапазон клэмпом,
         // реально нарисованная на экране область не всегда совпадает с тем,
@@ -188,6 +359,7 @@ private final class CardNSTextView: NSTextView {
     }
 
     override func resignFirstResponder() -> Bool {
+        if converterGhost != nil { converterGhost = nil }
         let result = super.resignFirstResponder()
         window?.invalidateCursorRects(for: self)
         if result {
@@ -245,15 +417,21 @@ private final class CardNSTextView: NSTextView {
         item.target = self
         item.image = NSImage(systemSymbolName: "sparkle", accessibilityDescription: nil)
 
+        let format = FormatCommand.contextMenuItem(target: self)
+
         // "Siri" — имя бренда, в локализациях не переводится. Сразу под Ask
         // Siri macOS 27 не рисует иконку пункта — так и задумано, не
         // переставляем.
         if let siriIndex = menu.items.firstIndex(where: { $0.title.contains("Siri") }) {
             menu.insertItem(item, at: siriIndex + 1)
+            menu.insertItem(format, at: siriIndex + 2)
         } else {
             menu.insertItem(item, at: 0)
-            menu.insertItem(.separator(), at: 1)
+            menu.insertItem(format, at: 1)
+            menu.insertItem(.separator(), at: 2)
         }
+        // AI выключен в Settings → AI — пункта нет.
+        if !AISettings.shared.isEnabled { menu.removeItem(item) }
         return menu
     }
 
@@ -277,9 +455,21 @@ private final class CardNSTextView: NSTextView {
         return visible.isEmpty ? clickRect : visible
     }
 
-    private static func clampSelectionRange(_ range: NSRange, in textView: NSTextView) -> NSRange {
+    private static func clampSelectionRange(_ range: NSRange, in textView: NSTextView, from old: Int) -> NSRange {
         guard let textStorage = textView.textStorage, textStorage.length > 0 else { return range }
         let ns = textStorage.string as NSString
+        let atoms = (textView as? CardNSTextView)?.atoms ?? []
+        // Сдвиг курсора на один символ (стрелка) идёт сквозь скрытые символы в
+        // сторону движения, иначе ←/→ застревали бы у `**`; остальное
+        // (клик, ⌘←, выделение) — к ближайшему допустимому месту.
+        let isStep = range.length == 0 && abs(range.location - old) == 1
+
+        func snapped(_ location: Int) -> Int {
+            guard let atom = atoms.first(where: { $0.lower <= location && location <= $0.upper }) else { return location }
+            guard isStep else { return LiveMarkdown.snap(location, atoms: atoms) }
+            let through = old < atom.lower ? atom.upper + 1 : old > atom.upper ? atom.lower - 1 : atom.target
+            return (0...ns.length).contains(through) ? LiveMarkdown.snap(through, atoms: atoms) : old
+        }
 
         func clamp(_ location: Int) -> Int {
             guard location >= 0, location <= ns.length, ns.length > 0 else { return location }
@@ -298,8 +488,8 @@ private final class CardNSTextView: NSTextView {
             return contentStart
         }
 
-        let start = clamp(range.location)
-        let end = clamp(range.location + range.length)
+        let start = snapped(clamp(range.location))
+        let end = snapped(clamp(range.location + range.length))
         let newStart = min(start, end)
         let newEnd = max(start, end)
         return NSRange(location: newStart, length: newEnd - newStart)
@@ -515,13 +705,13 @@ struct CardTextView: NSViewRepresentable {
 
     // MARK: - Attributed string helpers
 
-    /// Перекраска с учётом курсора: символы фрагмента рядом с ним видны.
+    /// Перекраска и пересчёт мест, куда курсору нельзя (скрытые символы).
     /// Во время составного ввода (IME) не трогаем — смена атрибутов
     /// посреди набора его ломает; после подтверждения придёт новый вызов.
     fileprivate static func restyle(_ textView: NSTextView, typography: CardTypography) {
         guard !textView.hasMarkedText(), let storage = textView.textStorage else { return }
-        let isFocused = textView.window?.firstResponder === textView
-        MarkdownRenderer.style(storage, typography: typography, selection: isFocused ? textView.selectedRange() : nil)
+        MarkdownRenderer.style(storage, typography: typography)
+        (textView as? CardNSTextView)?.atoms = LiveMarkdown.atoms(MarkdownStyler.parse(storage.string), length: storage.length)
         textView.typingAttributes = MarkdownRenderer.baseAttributes(typography)
     }
 
@@ -550,10 +740,6 @@ struct CardTextView: NSViewRepresentable {
         func undoManager(for view: NSTextView) -> UndoManager? {
             undoManager
         }
-        /// Что было раскрыто при последней перекраске по движению курсора —
-        /// см. MarkdownRenderer.revealedRanges.
-        /// Вне фокуса ничего не раскрыто — новая карточка уже раскрашена так.
-        var lastRevealed: [NSRange]? = []
         private var typography: CardTypography { lastTypography ?? AppearanceSettings.shared.cardTypography }
 
         init(_ parent: CardTextView) {
@@ -573,6 +759,10 @@ struct CardTextView: NSViewRepresentable {
             }
             if commandSelector == #selector(NSResponder.moveLeft(_:)) {
                 return jumpOverMarkerOnMoveLeftIfNeeded(in: textView)
+            }
+            // Tab при сером результате конвертера — вставить его; иначе обычный Tab.
+            if commandSelector == #selector(NSResponder.insertTab(_:)) {
+                return (textView as? CardNSTextView)?.acceptConverterGhost() ?? false
             }
             return false
         }
@@ -616,6 +806,14 @@ struct CardTextView: NSViewRepresentable {
             let cursor = textView.selectedRange()
             guard cursor.length == 0, cursor.location > 0 else { return false }
 
+            // Заголовки, цитаты, пункты, `**`, ссылки, ```: что стереть, решает LiveMarkdown.
+            if let range = LiveMarkdown.backspaceRange(at: cursor.location, text: textView.string) {
+                guard replaceUndoably(range, with: "", in: textView) else { return true }
+                refreshLayout(of: textView, from: range.location)
+                textView.setSelectedRange(NSRange(location: range.location, length: 0))
+                return true
+            }
+
             let ns = textView.string as NSString
             var lineRange = ns.paragraphRange(for: NSRange(location: cursor.location, length: 0))
             if lineRange.length > 0,
@@ -623,6 +821,7 @@ struct CardTextView: NSViewRepresentable {
                 lineRange.length -= 1
             }
 
+            // Остался нумерованный список: `1. ` скрыт не бывает.
             guard let prefix = CardNSTextView.detectListPrefix(in: ns, lineRange: lineRange) else { return false }
             // Курсор должен стоять ровно сразу после маркера — иначе это
             // обычный backspace где-то в тексте пункта, не наша забота.
@@ -664,6 +863,14 @@ struct CardTextView: NSViewRepresentable {
             let cursor = textView.selectedRange()
             guard cursor.length == 0 else { return false }
 
+            // Конец строки списка/цитаты, второй Return в блоке кода: правило — LiveMarkdown.
+            if let edit = LiveMarkdown.newline(at: cursor.location, text: textView.string) {
+                guard replaceUndoably(edit.range, with: edit.replacement, in: textView) else { return true }
+                refreshLayout(of: textView, from: edit.range.location)
+                textView.setSelectedRange(edit.selection)
+                return true
+            }
+
             let ns = textView.string as NSString
             var lineRange = ns.paragraphRange(for: NSRange(location: cursor.location, length: 0))
             if lineRange.length > 0,
@@ -671,6 +878,7 @@ struct CardTextView: NSViewRepresentable {
                 lineRange.length -= 1
             }
 
+            // Остаток: Return в середине пункта (текст после курсора уходит в новый пункт).
             guard let prefix = CardNSTextView.detectListPrefix(in: ns, lineRange: lineRange) else { return false }
 
             let contentRange = NSRange(location: lineRange.location + prefix.length, length: lineRange.length - prefix.length)
@@ -696,7 +904,8 @@ struct CardTextView: NSViewRepresentable {
         func textDidChange(_ notification: Notification) {
             guard let textView = notification.object as? NSTextView else { return }
             CardTextView.restyle(textView, typography: typography)
-            lastRevealed = nil // текст другой — при следующем движении курсора перекрасить
+            // Новая разметка — курсор мог оказаться внутри скрытых символов.
+            textView.setSelectedRange(textView.selectedRange())
             parent.text = textView.string
             parent.onTextChange()
         }
@@ -717,20 +926,6 @@ struct CardTextView: NSViewRepresentable {
             return false
         }
 
-        /// Курсор сдвинулся — показываем символы фрагмента, к которому он
-        /// подошёл, и прячем у того, от которого ушёл.
-        func textViewDidChangeSelection(_ notification: Notification) {
-            guard let textView = notification.object as? NSTextView else { return }
-            let isFocused = textView.window?.firstResponder === textView
-            // Без фокуса выделение меняет только установка текста — разбирать нечего.
-            guard isFocused || lastRevealed != [] else { return }
-            let revealed = MarkdownRenderer.revealedRanges(in: textView.string, selection: isFocused ? textView.selectedRange() : nil)
-            guard revealed != lastRevealed else { return }
-            lastRevealed = revealed
-            CardTextView.restyle(textView, typography: typography)
-            textView.needsDisplay = true
-        }
-
         /// Единственный реальный источник смены фокуса — см. комментарий у
         /// CardNSTextView.onFirstResponderChange. textDidBeginEditing/
         /// textDidEndEditing из NSTextViewDelegate на практике не
@@ -739,11 +934,6 @@ struct CardTextView: NSViewRepresentable {
             DispatchQueue.main.async {
                 self.parent.isFocused = focused
                 self.parent.onFocusChange(focused)
-                // Вне фокуса все служебные символы скрыты.
-                if let textView = self.textView {
-                    CardTextView.restyle(textView, typography: self.typography)
-                    self.lastRevealed = focused ? nil : []
-                }
             }
         }
     }

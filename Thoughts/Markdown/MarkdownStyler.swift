@@ -48,9 +48,14 @@ nonisolated enum MarkdownStyler {
         var codeBlock: NSRange?
         /// У строк цитаты — вся цитата: соседние строки `> ` — один блок.
         var quoteBlock: NSRange?
+        /// Строка `||` — разделитель колонок карточки (канбан). Сама не показывается.
+        var isColumnBreak = false
+        /// Номер колонки: строки до первой `||` — 0, после неё — 1 и т.д.
+        var column = 0
 
         static func == (lhs: Paragraph, rhs: Paragraph) -> Bool {
             lhs.range == rhs.range && lhs.block == rhs.block && lhs.blockMarker == rhs.blockMarker
+                && lhs.isColumnBreak == rhs.isColumnBreak && lhs.column == rhs.column
                 && lhs.markers == rhs.markers && lhs.spans == rhs.spans && lhs.codeBlock == rhs.codeBlock && lhs.quoteBlock == rhs.quoteBlock
                 && lhs.inlines.map(\.range) == rhs.inlines.map(\.range)
                 && lhs.inlines.map(\.style) == rhs.inlines.map(\.style)
@@ -77,12 +82,19 @@ nonisolated enum MarkdownStyler {
                     openFence = result.count - 1
                 }
             } else {
-                result.append(paragraph(in: ns, lineRange: lineRange))
+                result.append(paragraph(in: ns, lineRange: lineRange, continuesQuote: result.last?.block == .quote))
             }
             location = NSMaxRange(lineRange)
         } while location < ns.length
         // Незакрытый блок кода тянется до конца текста.
         if let start = openFence { closeCodeBlock(&result, from: start) }
+
+        // Колонки: каждая `||` вне блока кода начинает следующую; сама `||` — в левой.
+        var column = 0
+        for index in result.indices {
+            result[index].column = column
+            if result[index].isColumnBreak { column += 1 }
+        }
 
         // Соседние строки цитаты — один блок (одна подложка и полоса).
         var index = 0
@@ -115,13 +127,20 @@ nonisolated enum MarkdownStyler {
     }
 
     /// Разбор одной строки вне блока кода; lineRange может включать перевод строки.
-    static func paragraph(in ns: NSString, lineRange: NSRange) -> Paragraph {
+    /// Цитата начинается с `> ` (с пробелом — пока его нет, это просто текст);
+    /// голый `>` — пустая строка внутри цитаты, только если строка выше тоже цитата.
+    static func paragraph(in ns: NSString, lineRange: NSRange, continuesQuote: Bool = false) -> Paragraph {
         let range = contentRange(in: ns, lineRange: lineRange)
         let line = ns.substring(with: range)
 
         // Разделитель — строка из 2–10 дефисов (`--` — наше расширение,
         // в стандартном Markdown минимум три).
         let trimmed = line.trimmingCharacters(in: .whitespaces)
+        if trimmed == "||" {
+            var columnBreak = Paragraph(range: range, block: .paragraph, blockMarker: nil, inlines: [], markers: [])
+            columnBreak.isColumnBreak = true
+            return columnBreak
+        }
         if (2...10).contains(trimmed.count), trimmed.allSatisfy({ $0 == "-" }) {
             return Paragraph(range: range, block: .divider, blockMarker: range, inlines: [], markers: [])
         }
@@ -141,7 +160,7 @@ nonisolated enum MarkdownStyler {
             block = .task(done: marker.contains("x") || marker.contains("X"))
             blockMarker = NSRange(location: range.location, length: length)
             bodyStart += length
-        } else if line.hasPrefix("> ") || line == ">" {
+        } else if line.hasPrefix("> ") || (continuesQuote && line == ">") {
             let length = min(2, (line as NSString).length)
             block = .quote
             blockMarker = NSRange(location: range.location, length: length)
@@ -165,6 +184,9 @@ nonisolated enum MarkdownStyler {
     static func plainText(_ text: String) -> String {
         let ns = text as NSString
         return parse(text).map { paragraph -> String in
+            if paragraph.isColumnBreak { return "" }
+            // Метка карточки-виджета — служебная, в индекс не идёт.
+            if paragraph.range.location == 0, ns.substring(with: paragraph.range).trimmingCharacters(in: .whitespaces) == "::: board" { return "" }
             switch paragraph.block {
             case .divider, .codeFence:
                 return ""

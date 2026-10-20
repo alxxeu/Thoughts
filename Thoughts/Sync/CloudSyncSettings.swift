@@ -17,7 +17,11 @@ enum CloudSyncStatus: Equatable {
 final class CloudSyncSettings {
     static let shared = CloudSyncSettings()
 
+    #if DEBUG
+    private static let isEnabledKey = "sync.isEnabled.debug" // см. BoardStore.dataFolder
+    #else
     private static let isEnabledKey = "sync.isEnabled"
+    #endif
 
     /// Включён пользователем. Меняется только через CloudSyncEngine.enable /
     /// disable — там же первое включение, сброс состояния и т.п.
