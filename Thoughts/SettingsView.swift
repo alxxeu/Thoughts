@@ -41,58 +41,68 @@ struct SettingsView: View {
                 lockedPlaceholder
                     .frame(width: Self.windowSize.width, height: Self.windowSize.height)
             } else {
-                // Вертикальные вкладки — боковая панель слева, как в системных настройках.
-                HStack(spacing: 0) {
+                // Нативный NavigationSplitView с боковой панелью — как в настройках Thaw
+                // и системных (List(.sidebar), Label + tag, заголовок раздела в панели окна).
+                NavigationSplitView {
                     sidebar
-                        .frame(width: 236)
-                        .frame(maxHeight: .infinity)
-                        .background(Color.primary.opacity(0.04))
-                    Divider()
-                    VStack(alignment: .leading, spacing: 0) {
-                        // Крупный заголовок выбранного раздела, как в настройках Thaw.
-                        Text(Self.title(for: SettingsNavigation.shared.selectedTab))
-                            .font(.system(size: 26, weight: .semibold))
-                            .padding(.horizontal, 30)
-                            .padding(.top, 24)
-                            .padding(.bottom, 6)
-                        detail
-                            .id(SettingsNavigation.shared.selectedTab)
-                            .transition(.opacity)
+                        .navigationSplitViewColumnWidth(ideal: 210, max: 240)
+                } detail: {
+                    detail
+                        .id(SettingsNavigation.shared.selectedTab)
+                        .navigationTitle(Self.title(for: SettingsNavigation.shared.selectedTab))
+                }
+                .toolbar {
+                    ToolbarItem(placement: .navigation) {
+                        ControlGroup {
+                            Button { step(-1) } label: { Image(systemName: "chevron.left") }
+                                .disabled(currentIndex == 0)
+                                .help("Back")
+                            Button { step(1) } label: { Image(systemName: "chevron.right") }
+                                .disabled(currentIndex == SettingsNavigation.Tab.allCases.count - 1)
+                                .help("Forward")
+                        }
+                        .controlGroupStyle(.navigation)
                     }
-                    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
-                    .animation(.easeInOut(duration: 0.15), value: SettingsNavigation.shared.selectedTab)
                 }
                 .frame(width: Self.windowSize.width, height: Self.windowSize.height)
             }
         }
     }
 
-    private static let windowSize = CGSize(width: 920, height: 640)
+    private static let windowSize = CGSize(width: 900, height: 640)
 
-    /// Разделы в боковой панели — тремя группами и «About» отдельно.
+    /// Группы разделов в боковой панели (между группами — стандартный отступ списка).
     private static let tabGroups: [[SettingsNavigation.Tab]] = [
         [.general, .appearance], [.security, .shortcuts], [.ai, .plugins], [.about]
     ]
 
     private var sidebar: some View {
-        VStack(alignment: .leading, spacing: 20) {
+        List(selection: Binding<SettingsNavigation.Tab?>(
+            get: { SettingsNavigation.shared.selectedTab },
+            set: { if let tab = $0 { SettingsNavigation.shared.selectedTab = tab } }
+        )) {
             ForEach(Array(Self.tabGroups.enumerated()), id: \.offset) { _, group in
-                VStack(spacing: 3) {
+                Section {
                     ForEach(group, id: \.self) { tab in
-                        SidebarRow(
-                            title: Self.title(for: tab),
-                            symbol: Self.symbol(for: tab),
-                            isSelected: SettingsNavigation.shared.selectedTab == tab
-                        ) {
-                            SettingsNavigation.shared.selectedTab = tab
-                        }
+                        Label(Self.title(for: tab), systemImage: Self.symbol(for: tab))
+                            .tag(tab)
                     }
                 }
             }
-            Spacer()
         }
-        .padding(.horizontal, 14)
-        .padding(.top, 22)
+        .listStyle(.sidebar)
+    }
+
+    private var currentIndex: Int {
+        SettingsNavigation.Tab.allCases.firstIndex(of: SettingsNavigation.shared.selectedTab) ?? 0
+    }
+
+    /// ‹ › в панели окна — по разделам подряд, как у Thaw.
+    private func step(_ delta: Int) {
+        let tabs = SettingsNavigation.Tab.allCases
+        let index = currentIndex + delta
+        guard tabs.indices.contains(index) else { return }
+        SettingsNavigation.shared.selectedTab = tabs[index]
     }
 
     @ViewBuilder
@@ -255,37 +265,5 @@ struct SettingsView: View {
             // В случае ошибки возвращаем тумблер в актуальное состояние
             launchAtLogin = (SMAppService.mainApp.status == .enabled)
         }
-    }
-}
-
-/// Строка боковой панели: крупная иконка и название, выбранная — на скруглённой плашке.
-private struct SidebarRow: View {
-    let title: String
-    let symbol: String
-    let isSelected: Bool
-    let action: () -> Void
-    @State private var isHovering = false
-
-    var body: some View {
-        Button(action: action) {
-            HStack(spacing: 12) {
-                Image(systemName: symbol)
-                    .font(.system(size: 16))
-                    .frame(width: 24)
-                    .foregroundStyle(isSelected ? Color.primary : Color.secondary)
-                Text(title)
-                    .font(.system(size: 14, weight: isSelected ? .semibold : .regular))
-                Spacer()
-            }
-            .padding(.horizontal, 12)
-            .frame(height: 38)
-            .background(
-                RoundedRectangle(cornerRadius: 11, style: .continuous)
-                    .fill(Color.primary.opacity(isSelected ? 0.13 : (isHovering ? 0.06 : 0)))
-            )
-            .contentShape(Rectangle())
-        }
-        .buttonStyle(.plain)
-        .onHover { isHovering = $0 }
     }
 }
