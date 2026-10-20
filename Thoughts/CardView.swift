@@ -560,12 +560,14 @@ struct CardView: View {
                 }
                 guard let origin = dragOrigin else { return }
 
-                card.position = BoardViewModel.clampedPosition(
+                let position = BoardViewModel.clampedPosition(
                     CGPoint(x: origin.x + value.translation.width, y: origin.y + value.translation.height),
                     size: card.size,
                     canvasSize: canvasSize,
                     topInset: effectiveTopInset
                 )
+                // В онбординге — не дальше «окна» в Space.
+                card.position = BoardViewModel.clampedToSandbox(CGRect(origin: position, size: card.size)).origin
                 
                 if let preview = BoardViewModel.placementPreview(
                     movingId: card.id,
@@ -615,6 +617,10 @@ struct CardView: View {
                     }
                 }
                 
+                // Прилипание к краям канвы не должно выносить карточку из «окна» онбординга.
+                if BoardViewModel.onboardingSandbox != nil {
+                    card.position = BoardViewModel.clampedToSandbox(CGRect(origin: card.position, size: card.size)).origin
+                }
                 onPlacementPreviewChange(nil)
                 onEdgeHintsChange([])
                 // dragOrigin ставится только в onChanged реального драга — если

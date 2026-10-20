@@ -1048,6 +1048,19 @@ extension BoardViewModel {
     /// драга создания). Здесь — одна функция с обеими границами и size,
     /// которая покрывает все три случая (size: .zero эквивалентен старому
     /// clamped).
+    /// «Окно» в Space на экране 3 онбординга: пока задано, новая карточка
+    /// создаётся и двигается только внутри (координаты канвы).
+    static var onboardingSandbox: CGRect?
+
+    /// Рамка карточки, зажатая в «окно» онбординга (если оно есть).
+    static func clampedToSandbox(_ frame: CGRect) -> CGRect {
+        guard let box = onboardingSandbox else { return frame }
+        let size = CGSize(width: min(frame.width, box.width), height: min(frame.height, box.height))
+        let x = min(max(frame.minX, box.minX), box.maxX - size.width)
+        let y = min(max(frame.minY, box.minY), box.maxY - size.height)
+        return CGRect(origin: CGPoint(x: x, y: y), size: size)
+    }
+
     static func clampedPosition(_ point: CGPoint, size: CGSize, canvasSize: CGSize, topInset: CGFloat = topCreationLimit) -> CGPoint {
         let pad = canvasSidePadding
         let top = topInset

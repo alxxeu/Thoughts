@@ -194,6 +194,11 @@ struct SpaceToolbar: View {
                     isShowingPluginsPanel = false
                     isAskingSpaceAI.toggle()
                 }
+                if isAskingSpaceAI {
+                    TipsState.shared.offer(.askAI)
+                } else {
+                    TipsState.shared.noteAction(for: .askAI)
+                }
             }
         case .tidyCards:
             toolbarButton("Tidy Cards", icon: item.symbol) {

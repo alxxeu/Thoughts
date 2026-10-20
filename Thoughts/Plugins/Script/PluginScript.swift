@@ -1,5 +1,5 @@
 import Foundation
-import JavaScriptCore
+@preconcurrency import JavaScriptCore
 import os
 
 /// Скрипт одного плагина (`main.js`) в своём JSContext на своей очереди. Скрипту

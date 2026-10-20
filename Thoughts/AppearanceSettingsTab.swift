@@ -83,8 +83,8 @@ struct AppearanceSettingsTab: View {
                         ForEach(TextColorOption.builtIn + TextColorOption.plugins) { option in
                             colorSwatch(option)
                         }
-                        ForEach(settings.recentTextColorIDs, id: \.self) { id in
-                            colorSwatch(TextColorOption.resolve(id))
+                        ForEach(settings.recentTextColorIDs.map(TextColorOption.resolve)) { option in
+                            colorSwatch(option)
                         }
                         ColorPicker("Custom Color", selection: customColorBinding, supportsOpacity: false)
                             .labelsHidden()

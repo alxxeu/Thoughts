@@ -246,9 +246,10 @@ final class PluginsModel {
 
     /// Скрипт загрузился и зарегистрировал всё, что объявлено в манифесте? Иначе — ошибка.
     private func check(_ script: PluginScript, declared: [String]) {
-        script.status { registered, loadError in
-            Task { @MainActor [weak self] in
-                guard let self else { return }
+        script.status { [weak self] registered, loadError in
+            let owner = self
+            Task { @MainActor [owner] in
+                guard let self = owner else { return }
                 let missing = declared.filter { !registered.contains($0) }
                 if let loadError {
                     self.runtimeErrors[script.pluginID] = loadError

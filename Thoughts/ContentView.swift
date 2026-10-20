@@ -190,9 +190,12 @@ struct ContentView: View {
                 }
             }
         }
+        .overlay(alignment: .bottom) {
+            TipToastLayer(isHidden: onboardingViewModel.isActive)
+        }
         .overlay {
             if onboardingViewModel.isActive {
-                OnboardingView(onboardingViewModel: onboardingViewModel)
+                OnboardingView(onboardingViewModel: onboardingViewModel, board: viewModel)
                     .transition(.opacity)
             }
         }
@@ -206,6 +209,7 @@ struct ContentView: View {
         .animation(.easeOut(duration: 0.25), value: onboardingViewModel.isActive)
         .onAppear {
             SettingsNavigation.shared.openWindowAction = openWindow
+            configureOnboarding()
         }
         .background(
             WindowAccessor { overlayWindow.attach($0) }
@@ -245,10 +249,12 @@ struct ContentView: View {
                     viewModel.switchWorkspace(to: slot)
                 }
                 onboardingViewModel.handle(.spaceSwitched)
+                didSwitchSpace(to: slot)
             }
         }
         .onReceive(NotificationCenter.default.publisher(for: .lockCurrentSpace)) { _ in
             viewModel.lockActiveSpaceManually()
+            TipsState.shared.noteAction(for: .spaceLock)
         }
         .onReceive(NotificationCenter.default.publisher(for: .toggleFocusCard)) { _ in
             guard !viewModel.isActiveSpaceLocked,
@@ -256,12 +262,14 @@ struct ContentView: View {
                   !onboardingViewModel.isActive else { return }
             if focusedCardID != nil {
                 setFocusedCard(nil)
+                TipsState.shared.noteAction(for: .focusMode)
             } else if let textFocusedCardID {
                 setFocusedCard(textFocusedCardID)
+                TipsState.shared.offer(.focusMode)
             }
         }
         .onReceive(NotificationCenter.default.publisher(for: .replayOnboarding)) { _ in
-            onboardingViewModel.start()
+            onboardingViewModel.start(currentHome: viewModel.desktopOverlay.isEnabled ? .desktop : .window)
         }
         .onReceive(NotificationCenter.default.publisher(for: .cardWasMoved)) { _ in
             onboardingViewModel.handle(.cardMoved)
@@ -589,6 +597,30 @@ struct ContentView: View {
     /// chrome окна), так что отступ под неё можно менять независимо от
     /// самого окна/frame — без компромисса с покрытием экрана, в отличие
     /// от системных элементов.
+    /// Обучение по ходу работы при смене Space: карточка-совет в пустом Space
+    /// (слой 3) и подсказки про Spaces / Space Lock (слой 2).
+    private func didSwitchSpace(to slot: Int) {
+        SpaceTipCards.addIfNeeded(slot: slot, viewModel: viewModel)
+        // Сначала — «сделал то, о чём была плашка», потом — новые.
+        TipsState.shared.noteAction(for: .spaceSwitch)
+        TipsState.shared.offer(.spaceSwitch)
+        if !viewModel.securitySettings.isPasscodeEnabled { TipsState.shared.offer(.spaceLock) }
+    }
+
+    /// Конец онбординга: выбранный режим (окно / рабочий стол) и шпаргалка на доске.
+    private func configureOnboarding() {
+        let board = viewModel
+        onboardingViewModel.onFinish = { home, isFirstRun in
+            if let home { board.desktopOverlay.isEnabled = home == .desktop }
+            if isFirstRun { CheatSheetCard.add(to: board) }
+            // Первая подсказка после тура — про Spaces: карточки уже умеем, дальше —
+            // где их ещё держать.
+            DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) {
+                TipsState.shared.offer(.spaceSwitch)
+            }
+        }
+    }
+
     private var workspacePillTopPadding: CGFloat {
         guard viewModel.desktopOverlay.isEnabled else { return 10 }
         return BoardViewModel.screenTopInset + 12
@@ -633,14 +665,15 @@ struct ContentView: View {
                 // канву — та же проблема, что clampedPosition уже решает для
                 // отображения обычных карточек, но с учётом их реального size.
                 let clampedOrigin = BoardViewModel.clampedPosition(origin, size: size, canvasSize: canvasSize, topInset: effectiveTopInset)
-                draftFrame = CGRect(origin: clampedOrigin, size: size)
+                draftFrame = BoardViewModel.clampedToSandbox(CGRect(origin: clampedOrigin, size: size))
             }
             .onEnded { _ in
                 defer { creationStart = nil; draftFrame = nil }
                 guard let frame = draftFrame else { return }
                 
-                newlyCreatedCardID = viewModel.addCard(at: frame.origin, size: frame.size).id
-                onboardingViewModel.handle(.cardCreated)
+                let card = viewModel.addCard(at: frame.origin, size: frame.size)
+                newlyCreatedCardID = card.id
+                onboardingViewModel.cardCreated(card.id)
             }
     }
 

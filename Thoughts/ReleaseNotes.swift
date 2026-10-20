@@ -19,7 +19,7 @@ struct ReleaseNote: Identifiable {
 
 enum ReleaseNotes {
     static let all: [ReleaseNote] = [
-        ReleaseNote(version: "1.4.1", sections: [
+        ReleaseNote(version: "1.4.2", sections: [
             .init(title: "New", items: [
                 "**Kanban cards** \u{2014} right-click an empty spot on the board and choose New Kanban Card with 1 to 4 columns. Add tiles, drag them between columns, hold the check to finish one.",
                 "**New Card** in the same right-click menu.",
@@ -27,7 +27,8 @@ enum ReleaseNotes {
                 "**Next and previous Space** with \u{2325}\u{2190} and \u{2325}\u{2192}.",
                 "**Customize the Space bar** \u{2014} hover it, click the gear, then hide icons or drag them into your own order.",
                 "**More AI providers** \u{2014} Google Gemini, OpenRouter, Groq, Mistral and Ollama, plus an option to turn AI off.",
-                "**Format menu** with every Markdown style, also in the right-click menu of a card."
+                "**Format menu** with every Markdown style, also in the right-click menu of a card.",
+                "**Quick Capture** is now \u{2303}\u{2325}N (was \u{2303}\u{2325}\u{2318}N), unless you set your own."
             ]),
             .init(title: "Improved", items: [
                 "A new **Settings** window with a sidebar.",
