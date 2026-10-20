@@ -11,7 +11,7 @@ final class DebugBackdrop {
     static let shared = DebugBackdrop()
 
     enum Option: String, CaseIterable, Identifiable {
-        case hudWindow, ultraThin, thin, regular, thick, ultraThick, flatTint
+        case hudWindow, ultraThin, thin, regular, thick, ultraThick, flatTint, wallpaperSnapshot
 
         var id: String { rawValue }
 
@@ -24,6 +24,7 @@ final class DebugBackdrop {
             case .thick: return "Thick Material"
             case .ultraThick: return "Ultra Thick Material"
             case .flatTint: return "Flat Tint (no blur)"
+            case .wallpaperSnapshot: return "Wallpaper Snapshot (Screen Recording)"
             }
         }
     }
@@ -52,6 +53,7 @@ struct DebugBackdropView: View {
         case .thick: Rectangle().fill(.thickMaterial)
         case .ultraThick: Rectangle().fill(.ultraThickMaterial)
         case .flatTint: Color(nsColor: .windowBackgroundColor).opacity(0.85)
+        case .wallpaperSnapshot: WallpaperSnapshotBackground()
         }
     }
 }
