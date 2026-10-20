@@ -254,6 +254,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         _ = DirectUpdater.controller // запускает Sparkle и его автопроверку
         #endif
         NSApp.windows.first?.acceptsMouseMovedEvents = true
+        maximizeOnFirstLaunch()
         #if PLUGINS
         PluginsModel.shared.attachConverters()
         PluginsModel.shared.reload()
@@ -332,6 +333,20 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         showMainWindow()
         viewModel?.focusOnCard(id: cardID)
         return true
+    }
+
+    /// Первый запуск (тур ещё не пройден): окно — на весь экран (без Dock и строки
+    /// меню), а не маленьким по умолчанию — онбординг и доска должны дышать.
+    /// Дальше размер окна помнит сама система.
+    private func maximizeOnFirstLaunch() {
+        guard !OnboardingState.hasCompletedTour else { return }
+        DispatchQueue.main.async {
+            guard let window = NSApp.windows.first(where: { $0.isVisible && $0.canBecomeMain }) ?? NSApp.windows.first,
+                  let screen = window.screen ?? NSScreen.main,
+                  !window.styleMask.contains(.fullScreen),
+                  !(self.viewModel?.desktopOverlay.isEnabled ?? false) else { return }
+            window.setFrame(screen.visibleFrame, display: true, animate: false)
+        }
     }
 
     private func showMainWindow() {
