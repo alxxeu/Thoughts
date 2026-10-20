@@ -105,7 +105,7 @@ private struct WindowAccessor: NSViewRepresentable {
 struct ContentView: View {
     var viewModel: BoardViewModel
     /// Отдаётся в SettingsNavigation — см. комментарий там.
-    @Environment(\.openSettings) private var openSettings
+    @Environment(\.openWindow) private var openWindow
     @State private var creationStart: CGPoint?
     @State private var draftFrame: CGRect?
     @State private var placementPreview: CGRect?
@@ -205,7 +205,7 @@ struct ContentView: View {
         .animation(.easeOut(duration: 0.1), value: viewModel.activeSlot)
         .animation(.easeOut(duration: 0.25), value: onboardingViewModel.isActive)
         .onAppear {
-            SettingsNavigation.shared.openSettingsAction = openSettings
+            SettingsNavigation.shared.openWindowAction = openWindow
         }
         .background(
             WindowAccessor { overlayWindow.attach($0) }

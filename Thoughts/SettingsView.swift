@@ -39,31 +39,27 @@ struct SettingsView: View {
                 // не существует, пока активный Space заблокирован — так же,
                 // как карточки не существуют под SpaceLockOverlayView.
                 lockedPlaceholder
-                    .frame(width: Self.windowSize.width, height: Self.windowSize.height)
+                    .frame(minWidth: 850, maxWidth: .infinity, minHeight: 600, maxHeight: .infinity)
             } else {
                 splitView
-                    .frame(width: Self.windowSize.width, height: Self.windowSize.height)
+                    .frame(minWidth: 850, minHeight: 600)
             }
         }
     }
 
-    /// Нативный NavigationSplitView с боковой панелью — как в настройках Thaw и
-    /// системных (List(.sidebar), Label + tag, заголовок раздела в панели окна).
+    /// Как в Thaw: обычный NavigationSplitView в сцене Window (не Settings —
+    /// та центрирует заголовок и рисует пустую полосу тулбара), заголовок
+    /// раздела — слева в панели окна через navigationTitle.
     private var splitView: some View {
         NavigationSplitView {
             sidebar
-                .background(SidebarLimits())
-                .toolbar(removing: .sidebarToggle)
-                .navigationSplitViewColumnWidth(min: 200, ideal: 210, max: 240)
+                .navigationSplitViewColumnWidth(ideal: 180, max: 220)
         } detail: {
             detail
                 .id(SettingsNavigation.shared.selectedTab)
-                .navigationTitle("Settings")
-                .fullHeightToolbar()
         }
+        .navigationTitle(Self.title(for: SettingsNavigation.shared.selectedTab))
     }
-
-    private static let windowSize = CGSize(width: 900, height: 640)
 
     /// Группы разделов в боковой панели (между группами — стандартный отступ списка).
     private static let tabGroups: [[SettingsNavigation.Tab]] = [
@@ -132,8 +128,6 @@ struct SettingsView: View {
                         .onChange(of: launchAtLogin) { _, newValue in
                             updateLaunchAtLogin(enabled: newValue)
                         }
-                } header: {
-                    SettingsHeader(category: "General", title: "Startup")
                 }
 
                 Section {
@@ -175,8 +169,6 @@ struct SettingsView: View {
                         isShowingReleaseNotes = true
                     }
                     CheckForUpdatesRow()
-                } header: {
-                    SettingsHeader(category: "About", title: "Thoughts")
                 }
 
                 Section {

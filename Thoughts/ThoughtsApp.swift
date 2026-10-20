@@ -144,13 +144,18 @@ struct ThoughtsApp: App {
                 .keyboardShortcut("f", modifiers: .command)
                 .disabled(viewModel.isActiveSpaceLocked || viewModel.desktopOverlay.isDesktopModeActive)
             }
-            // Системный пункт "Settings…" (со своей иконкой в App-меню)
-            // оставлен как есть — не переопределяем .appSettings отдельной
-            // кнопкой без иконки, получался дубль. Барьер против побега из
-            // заблокированного Space в Settings всё равно живёт в самом
-            // SettingsView (isActiveSpaceLocked → lockedPlaceholder), а не
-            // в disabled-состоянии пункта меню — так что убрать дубль можно
-            // без потери защиты.
+            // Settings — сцена Window, системного пункта "Settings…" у неё нет:
+            // ставим свой на место .appSettings. Барьер против побега из
+            // заблокированного Space живёт в самом SettingsView
+            // (isActiveSpaceLocked → lockedPlaceholder).
+            CommandGroup(replacing: .appSettings) {
+                Button {
+                    SettingsNavigation.shared.open(SettingsNavigation.shared.selectedTab)
+                } label: {
+                    Label("Settings\u{2026}", systemImage: "gearshape")
+                }
+                .keyboardShortcut(",", modifiers: .command)
+            }
             // .after(.windowArrangement) — стандартная точка вставки
             // приложением своих пунктов в системное меню Window, ниже
             // "Zoom"/"Move Window to..." и разделителя перед списком окон.
@@ -201,13 +206,17 @@ struct ThoughtsApp: App {
                 }
             }
         }
-        Settings {
+        // Settings — обычное окно, как у Thaw: сцена Settings центрирует заголовок
+        // и рисует пустую полосу тулбара, а Window с .titleBar + .unified даёт
+        // заголовок раздела слева в одной строке с кнопками окна.
+        Window("Settings", id: SettingsNavigation.windowID) {
             SettingsView(viewModel: viewModel)
                 .preferredColorScheme(preferredColorScheme)
         }
-        // Заголовок раздела — слева в одной строке с кнопками окна (как у Thaw), а не
-        // по центру отдельной строкой над панелью инструментов.
-        .windowToolbarStyle(.unified(showsTitle: true))
+        .windowStyle(.titleBar)
+        .windowToolbarStyle(.unified)
+        .windowResizability(.contentSize)
+        .defaultSize(width: 950, height: 650)
     }
 
     /// Пункт Format: действие уходит в карточку с курсором (CardNSTextView);

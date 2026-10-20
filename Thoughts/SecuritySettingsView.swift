@@ -28,8 +28,6 @@ struct SecuritySettingsTab: View {
                 Section {
                     Toggle("Passcode", isOn: passcodeEnabledBinding)
                         .toggleStyle(.switch)
-                } header: {
-                    SettingsHeader(category: "Security", title: "Passcode")
                 } footer: {
                     Text("Protect individual Spaces with a passcode lock screen. Turn a Space's lock on with Cmd+L or from the list below, once enabled here.")
                 }
@@ -42,8 +40,6 @@ struct SecuritySettingsTab: View {
                         isFirstTimePasscodeSetup = false
                         isShowingPasscodeSetup = true
                     }
-                } header: {
-                    SettingsHeader(category: "Security", title: "Passcode")
                 } footer: {
                     Text("When a Space is locked, unlock it with your passcode, or press Cmd+L to lock the current Space immediately.")
                 }

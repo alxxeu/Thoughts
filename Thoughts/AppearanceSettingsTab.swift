@@ -15,8 +15,6 @@ struct AppearanceSettingsTab: View {
             Section {
                 preview
                     .listRowInsets(EdgeInsets())
-            } header: {
-                SettingsHeader(category: "Appearance", title: "Preview")
             }
 
             Section {
