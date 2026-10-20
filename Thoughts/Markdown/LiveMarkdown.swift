@@ -24,6 +24,7 @@ nonisolated enum LiveMarkdown {
         let filled = filledCodeBlocks(paragraphs)
         var result: [NSRange] = []
         for paragraph in paragraphs {
+            if paragraph.isColumnBreak { result.append(paragraph.range) }
             switch paragraph.block {
             case .heading, .quote:
                 if let marker = paragraph.blockMarker { result.append(marker) }
@@ -48,6 +49,11 @@ nonisolated enum LiveMarkdown {
         let filled = filledCodeBlocks(paragraphs)
         var result: [Atom] = []
         for paragraph in paragraphs {
+            // `||`: курсор — на начало первой строки следующей колонки. Если ниже
+            // ничего нет (только что набрали), атома нет — иначе из строки не выйти.
+            if paragraph.isColumnBreak, NSMaxRange(paragraph.range) < length {
+                result.append(Atom(lower: paragraph.range.location, upper: NSMaxRange(paragraph.range), target: NSMaxRange(paragraph.range) + 1))
+            }
             switch paragraph.block {
             case .heading, .quote, .task, .bullet:
                 if let marker = paragraph.blockMarker, marker.length > 0 {
@@ -91,6 +97,11 @@ nonisolated enum LiveMarkdown {
     static func backspaceRange(at location: Int, text: String, paragraphs: [MarkdownStyler.Paragraph]? = nil) -> NSRange? {
         guard location > 0 else { return nil }
         let paragraphs = paragraphs ?? MarkdownStyler.parse(text)
+        // Первая строка колонки: Backspace убирает `||` вместе с переводом строки
+        // (колонки сливаются), а не склеивает её с невидимой `||`.
+        if let columnBreak = paragraphs.first(where: { $0.isColumnBreak && NSMaxRange($0.range) + 1 == location }) {
+            return NSRange(location: columnBreak.range.location, length: columnBreak.range.length + 1)
+        }
         for (index, paragraph) in paragraphs.enumerated() {
             guard let marker = paragraph.blockMarker, NSMaxRange(marker) == location else { continue }
             // Пустая строка цитаты под другой строкой цитаты — убрать её целиком, курсор —

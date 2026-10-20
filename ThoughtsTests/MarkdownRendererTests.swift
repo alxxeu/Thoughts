@@ -117,4 +117,19 @@ struct MarkdownRendererTests {
         #expect(styled("```\n```").attribute(MarkdownRenderer.codeBlockKey, at: 0, effectiveRange: nil) == nil)
         #expect(styled("```\nx").attribute(MarkdownRenderer.codeBlockKey, at: 0, effectiveRange: nil) != nil)
     }
+
+    @Test func columnsBecomeTableCells() {
+        let s = styled("a\n||\nb\n||\nc")
+        func cell(_ i: Int) -> Int? {
+            (s.attribute(.paragraphStyle, at: i, effectiveRange: nil) as? NSParagraphStyle)?
+                .textBlocks.compactMap { ($0 as? NSTextTableBlock)?.startingColumn }.first
+        }
+        #expect(cell(0) == 0)   // a
+        #expect(cell(2) == 0)   // `||` — в левой колонке, невидима
+        #expect(cell(5) == 1)   // b
+        #expect(cell(10) == 2)  // c
+        #expect(s.attribute(.foregroundColor, at: 2, effectiveRange: nil) as? NSColor == .clear)
+        // Без `||` таблицы нет.
+        #expect(((styled("a\nb").attribute(.paragraphStyle, at: 0, effectiveRange: nil)) as? NSParagraphStyle)?.textBlocks.isEmpty != false)
+    }
 }

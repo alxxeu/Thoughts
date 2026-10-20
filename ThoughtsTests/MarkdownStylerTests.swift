@@ -141,5 +141,14 @@ struct MarkdownStylerTests {
         #expect(link?.style == .link("https://en.wikipedia.org/wiki/Swift_(language)"))
         #expect(MarkdownStyler.plainText(text) == "Swift rocks")
     }
-}
 
+    @Test func columnBreakSplitsColumns() {
+        let paragraphs = MarkdownStyler.parse("# Plan\n- [ ] a\n||\n# To go\n- [ ] b\n||\nReady")
+        #expect(paragraphs.map(\.column) == [0, 0, 0, 1, 1, 1, 2])
+        #expect(paragraphs.map(\.isColumnBreak) == [false, false, true, false, false, true, false])
+        // `||` в блоке кода и внутри строки — не разделитель.
+        #expect(MarkdownStyler.parse("```\n||\n```").allSatisfy { !$0.isColumnBreak })
+        #expect(MarkdownStyler.parse("a || b").allSatisfy { !$0.isColumnBreak })
+        #expect(MarkdownStyler.plainText("a\n||\nb") == "a\n\nb")
+    }
+}

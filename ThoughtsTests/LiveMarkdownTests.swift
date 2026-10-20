@@ -109,4 +109,17 @@ struct LiveMarkdownTests {
         // Непустая строка цитаты в начале — снять маркер, как раньше.
         #expect(LiveMarkdown.backspaceRange(at: 8, text: "> one\n> two") == NSRange(location: 6, length: 2))
     }
+
+    @Test func columnBreakIsHiddenAndSkipped() {
+        let text = "a\n||\nb"
+        let paragraphs = MarkdownStyler.parse(text)
+        #expect(LiveMarkdown.hiddenRanges(paragraphs).contains(NSRange(location: 2, length: 2)))
+        // Курсор внутри `||` или перед ней — на начало следующей колонки.
+        #expect(LiveMarkdown.snap(2, atoms: LiveMarkdown.atoms(paragraphs, length: 6)) == 5)
+        #expect(LiveMarkdown.snap(3, atoms: LiveMarkdown.atoms(paragraphs, length: 6)) == 5)
+        // Только что набранная `||` в конце текста — выйти из неё можно.
+        #expect(LiveMarkdown.atoms(MarkdownStyler.parse("a\n||"), length: 4).isEmpty)
+        // Backspace в начале колонки убирает `||` целиком, с переводом строки.
+        #expect(LiveMarkdown.backspaceRange(at: 5, text: text) == NSRange(location: 2, length: 3))
+    }
 }

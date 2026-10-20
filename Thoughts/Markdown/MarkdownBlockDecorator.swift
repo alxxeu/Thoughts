@@ -63,8 +63,9 @@ struct MarkdownBlockDecorator {
             let lineRect = layoutManager.lineFragmentRect(forGlyphAt: glyphRange.location, effectiveRange: nil)
             let y = (origin.y + lineRect.midY).rounded()
             let path = NSBezierPath()
-            path.move(to: NSPoint(x: origin.x, y: y))
-            path.line(to: NSPoint(x: origin.x + textContainer.size.width, y: y))
+            // По ширине строки: в колонке — только в её пределах.
+            path.move(to: NSPoint(x: origin.x + lineRect.minX, y: y))
+            path.line(to: NSPoint(x: origin.x + lineRect.maxX, y: y))
             path.lineWidth = 1
             lineColor.setStroke()
             path.stroke()
@@ -172,8 +173,9 @@ struct MarkdownBlockDecorator {
                 let isClosed = lines.count > 1 && lines.last?.trimmingCharacters(in: .whitespaces).hasPrefix("```") == true
                 if !isClosed { rect.size.height += 8 }
             }
-            rect.origin.x = origin.x - 6
-            rect.size.width = textContainer.size.width + 12
+            // Поле — по ширине строк блока (в колонке — ячейки), с запасом по 6 pt.
+            rect.origin.x = origin.x + rect.minX - 6
+            rect.size.width = rect.width + 12
             rect.origin.y += origin.y
             boxes.append((block, rect))
         }
@@ -189,7 +191,7 @@ struct MarkdownBlockDecorator {
         let font = textStorage.attribute(.font, at: range.location, effectiveRange: nil) as? NSFont ?? .systemFont(ofSize: 15)
         let side = (font.capHeight * 1.35).rounded()
         let centerY = origin.y + line.minY + baseline - font.xHeight / 2
-        return NSRect(x: origin.x + 1, y: centerY - side / 2, width: side, height: side)
+        return NSRect(x: origin.x + line.minX + 1, y: centerY - side / 2, width: side, height: side)
     }
 
     /// Кнопка/значок в правом верхнем углу поля блока.

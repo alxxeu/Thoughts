@@ -53,6 +53,12 @@ enum MarkdownRenderer {
         var fenceLines: [NSRange] = []
 
         for paragraph in paragraphs where paragraph.range.length > 0 {
+            if paragraph.isColumnBreak {
+                // `||` не видна и почти не занимает места — как строки ```.
+                storage.addAttributes([.font: NSFont.systemFont(ofSize: 4), .foregroundColor: NSColor.clear], range: paragraph.range)
+                fenceLines.append(paragraph.range)
+                continue
+            }
             var paragraphFont = typography.font
             let mono = NSFont.monospacedSystemFont(ofSize: typography.font.pointSize * 0.92, weight: .regular)
             switch paragraph.block {
@@ -164,7 +170,43 @@ enum MarkdownRenderer {
             guard value != nil else { return }
             hide(range, in: storage)
         }
+        applyColumns(paragraphs, to: storage, typography: typography)
         storage.endEditing()
+    }
+
+    /// Колонки карточки (строки `||`): абзацы колонки становятся ячейками одной
+    /// строки системной таблицы (NSTextTable), между ячейками — тонкая линия.
+    /// Стиль абзаца ячейки несёт `textBlocks`; уже заданные отступы (цитата,
+    /// чек-лист) сохраняются. Строка вместе с переводом строки — иначе ячейка
+    /// рвётся на невидимом `\n`.
+    private static func applyColumns(_ paragraphs: [MarkdownStyler.Paragraph], to storage: NSMutableAttributedString, typography: CardTypography) {
+        let count = (paragraphs.map(\.column).max() ?? 0) + 1
+        guard count > 1 else { return }
+        let table = NSTextTable()
+        table.numberOfColumns = count
+        table.layoutAlgorithm = .fixedLayoutAlgorithm
+        table.setContentWidth(100, type: .percentageValueType)
+        let lineColor = typography.color.withAlphaComponent(0.22)
+        let blocks = (0..<count).map { column -> NSTextTableBlock in
+            let block = NSTextTableBlock(table: table, startingRow: 0, rowSpan: 1, startingColumn: column, columnSpan: 1)
+            block.setContentWidth(100 / CGFloat(count), type: .percentageValueType)
+            block.setWidth(column == 0 ? 0 : 14, type: .absoluteValueType, for: .padding, edge: .minX)
+            block.setWidth(column == count - 1 ? 0 : 14, type: .absoluteValueType, for: .padding, edge: .maxX)
+            if column > 0 {
+                block.setWidth(1, type: .absoluteValueType, for: .border, edge: .minX)
+                block.setBorderColor(lineColor, for: .minX)
+            }
+            return block
+        }
+        let ns = storage.string as NSString
+        for paragraph in paragraphs {
+            let line = ns.lineRange(for: paragraph.range)
+            guard line.length > 0 else { continue }
+            let source = storage.attribute(.paragraphStyle, at: line.location, effectiveRange: nil) as? NSParagraphStyle
+            let style = (source?.mutableCopy() as? NSMutableParagraphStyle) ?? NSMutableParagraphStyle()
+            style.textBlocks = [blocks[paragraph.column]]
+            storage.addAttribute(.paragraphStyle, value: style, range: line)
+        }
     }
 
     /// Прозрачно и без ширины (кернинг минус ширина символа), но шрифтом своей
