@@ -12,7 +12,6 @@ struct KanbanCardView: View {
     var typography: CardTypography
     var onTextChange: () -> Void
     var onFocusChange: (Bool) -> Void = { _ in }
-    var onEditAsText: () -> Void
 
     @State private var board: KanbanBoard
     @FocusState private var focus: FocusTarget?
@@ -49,15 +48,13 @@ struct KanbanCardView: View {
     }
 
     init(text: Binding<String>, isFocused: Binding<Bool>, cardSize: CGSize, typography: CardTypography,
-         onTextChange: @escaping () -> Void, onFocusChange: @escaping (Bool) -> Void = { _ in },
-         onEditAsText: @escaping () -> Void) {
+         onTextChange: @escaping () -> Void, onFocusChange: @escaping (Bool) -> Void = { _ in }) {
         _text = text
         _isFocused = isFocused
         self.cardSize = cardSize
         self.typography = typography
         self.onTextChange = onTextChange
         self.onFocusChange = onFocusChange
-        self.onEditAsText = onEditAsText
         _board = State(initialValue: KanbanBoard.parse(text.wrappedValue) ?? KanbanBoard(columns: [.init(title: "", items: [])]))
     }
 
@@ -102,7 +99,7 @@ struct KanbanCardView: View {
         .onHover { isCardHovered = $0 }
         .contextMenu {
             Button("Add Column") { addColumn() }
-            Button("Edit as Text") { onEditAsText() }
+                .disabled(board.columns.count >= KanbanBoard.maxColumns)
         }
         .onChange(of: text) { _, newText in
             // Текст поменяли снаружи (синк, Ask AI, импорт) — перечитать.
@@ -160,6 +157,7 @@ struct KanbanCardView: View {
         .contentShape(Rectangle())
         .contextMenu {
             Button("Add Column") { addColumn() }
+                .disabled(board.columns.count >= KanbanBoard.maxColumns)
             if board.columns.count > 1 {
                 Button("Remove Column", role: .destructive) { change { $0.removeColumn(index) } }
             }
@@ -274,7 +272,7 @@ struct KanbanCardView: View {
                 .lineLimit(3)
                 .padding(.horizontal, 14).padding(.vertical, 10)
                 .frame(width: dragging.width, alignment: .leading)
-                .background(RoundedRectangle(cornerRadius: 13, style: .continuous).fill(ink.opacity(0.3)))
+                .background(RoundedRectangle(cornerRadius: 13, style: .continuous).fill(KanbanTile.fill(opacity: 1.4)))
                 .shadow(color: .black.opacity(0.3), radius: 8, y: 3)
                 .position(x: dragging.pointer.x, y: dragging.pointer.y)
                 .allowsHitTesting(false)
@@ -348,6 +346,9 @@ private struct KanbanTile: View {
     var onDragChanged: (CGPoint) -> Void
     var onDragEnded: (CGPoint) -> Void
 
+    /// Подложка плитки. Тёмная: чёрная с прозрачностью (светлая была `ink.opacity(0.18)`).
+    static func fill(opacity k: Double = 1) -> Color { Color.black.opacity(0.3 * k) }
+
     @State private var isHovering = false
     @State private var isPressingDone = false
     @State private var doneProgress: CGFloat = 0
@@ -373,7 +374,7 @@ private struct KanbanTile: View {
             .frame(maxWidth: .infinity, minHeight: 44, alignment: .topLeading)
             .background(
                 RoundedRectangle(cornerRadius: 13, style: .continuous)
-                    .fill(ink.opacity(0.18))
+                    .fill(Self.fill())
                     .contextMenu { Button("Delete", role: .destructive, action: onDelete) }
                     .onHover { inside in
                         if inside { NSCursor.arrow.set() }

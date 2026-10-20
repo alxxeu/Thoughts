@@ -14,8 +14,6 @@ private final class CardNSTextView: NSTextView {
     var onFirstResponderChange: ((Bool) -> Void)?
     /// Непустой только когда карточка в Focus Mode — см. cancelOperation ниже.
     var onEscape: (() -> Void)?
-    /// Непустой у карточки-виджета, открытой как текст: пункт «Show as Board».
-    var onShowAsBoard: (() -> Void)?
     /// Места, где курсору нельзя стоять (внутри скрытых символов Markdown) —
     /// обновляет restyle; между правкой и перекраской пустые.
     var atoms: [LiveMarkdown.Atom] = []
@@ -313,12 +311,6 @@ private final class CardNSTextView: NSTextView {
         item.image = NSImage(systemSymbolName: "sparkle", accessibilityDescription: nil)
 
         let format = FormatCommand.contextMenuItem(target: self)
-        let showBoard: NSMenuItem? = onShowAsBoard == nil ? nil : {
-            let item = NSMenuItem(title: "Show as Board", action: #selector(showAsBoard(_:)), keyEquivalent: "")
-            item.target = self
-            item.image = NSImage(systemSymbolName: "rectangle.split.3x1", accessibilityDescription: nil)
-            return item
-        }()
 
         // "Siri" — имя бренда, в локализациях не переводится. Сразу под Ask
         // Siri macOS 27 не рисует иконку пункта — так и задумано, не
@@ -326,17 +318,13 @@ private final class CardNSTextView: NSTextView {
         if let siriIndex = menu.items.firstIndex(where: { $0.title.contains("Siri") }) {
             menu.insertItem(item, at: siriIndex + 1)
             menu.insertItem(format, at: siriIndex + 2)
-            if let showBoard { menu.insertItem(showBoard, at: siriIndex + 3) }
         } else {
             menu.insertItem(item, at: 0)
             menu.insertItem(format, at: 1)
-            if let showBoard { menu.insertItem(showBoard, at: 2) }
-            menu.insertItem(.separator(), at: showBoard == nil ? 2 : 3)
+            menu.insertItem(.separator(), at: 2)
         }
         return menu
     }
-
-    @objc private func showAsBoard(_ sender: NSMenuItem) { onShowAsBoard?() }
 
     @objc private func askAI(_ sender: NSMenuItem) {
         let before = selectionBeforeContextMenu ?? NSRange(location: 0, length: 0)
@@ -470,8 +458,6 @@ struct CardTextView: NSViewRepresentable {
     /// AppearanceSettings внутри: смена стиля должна приводить к
     /// updateNSView, а это происходит только при изменении входных данных.
     var typography: CardTypography
-    /// Карточка-виджет (`::: board`), открытая как текст: вернуть виджет.
-    var onShowAsBoard: (() -> Void)? = nil
 
     /// Единственный источник горизонтального инсета текста — раньше
     /// updateNSView независимо считал ширину как "cardSize.width - 40",
@@ -540,7 +526,6 @@ struct CardTextView: NSViewRepresentable {
         // coordinator.parent (SwiftUI его не освежает) — иначе при входе в
         // Focus Mode текст остался бы со старым, пустым обработчиком.
         textView.onEscape = onEscape
-        textView.onShowAsBoard = onShowAsBoard
 
         // Стиль поменяли в Settings, пока карточка открыта — перекрашиваем
         // уже набранный текст на месте (сам текст не меняется).

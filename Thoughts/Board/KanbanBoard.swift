@@ -122,9 +122,13 @@ struct KanbanBoard: Equatable {
         columns[column].title = title
     }
 
-    /// Новая колонка справа (id нужен, чтобы сфокусировать её заголовок).
+    /// Больше колонок не заводим.
+    static let maxColumns = 10
+
+    /// Новая колонка справа (id нужен, чтобы сфокусировать её заголовок); nil — уже 10.
     @discardableResult
-    mutating func addColumn(title: String = "") -> Column.ID {
+    mutating func addColumn(title: String = "") -> Column.ID? {
+        guard columns.count < Self.maxColumns else { return nil }
         let column = Column(title: title, items: [])
         columns.append(column)
         return column.id

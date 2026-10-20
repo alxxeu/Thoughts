@@ -99,4 +99,11 @@ struct KanbanBoardTests {
         board.removeColumn(0)
         #expect(board.columns.map(\.title) == ["B"])
     }
+
+    @Test func columnsAreCappedAtTen() throws {
+        var board = try #require(KanbanBoard.parse("::: board"))
+        for _ in 0..<20 { board.addColumn() }
+        #expect(board.columns.count == KanbanBoard.maxColumns)
+        #expect(board.addColumn() == nil)
+    }
 }
