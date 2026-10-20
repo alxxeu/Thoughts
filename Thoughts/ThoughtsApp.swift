@@ -207,7 +207,7 @@ struct ThoughtsApp: App {
         }
         // Заголовок раздела — слева в одной строке с кнопками окна (как у Thaw), а не
         // по центру отдельной строкой над панелью инструментов.
-        .windowToolbarStyle(.unified)
+        .windowToolbarStyle(.unified(showsTitle: true))
     }
 
     /// Пункт Format: действие уходит в карточку с курсором (CardNSTextView);

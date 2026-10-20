@@ -176,6 +176,8 @@ struct ShortcutsSettingsTab: View {
                 )
             }
             .disabled(!settings.isEnabled)
+        } header: {
+            SettingsHeader(category: "Shortcuts", title: "Quick Capture")
         } footer: {
             if let quickCaptureError {
                 Text(quickCaptureError)

@@ -52,12 +52,14 @@ struct SettingsView: View {
     private var splitView: some View {
         NavigationSplitView {
             sidebar
-                .navigationSplitViewColumnWidth(ideal: 210, max: 240)
+                .background(SidebarLimits())
+                .toolbar(removing: .sidebarToggle)
+                .navigationSplitViewColumnWidth(min: 200, ideal: 210, max: 240)
         } detail: {
             detail
                 .id(SettingsNavigation.shared.selectedTab)
-                .navigationTitle(Self.title(for: SettingsNavigation.shared.selectedTab))
-                .toolbarTitleDisplayMode(.inline)
+                .navigationTitle("Settings")
+                .fullHeightToolbar()
         }
         .toolbar { navigationButtons }
     }
@@ -165,6 +167,8 @@ struct SettingsView: View {
                         .onChange(of: launchAtLogin) { _, newValue in
                             updateLaunchAtLogin(enabled: newValue)
                         }
+                } header: {
+                    SettingsHeader(category: "General", title: "Startup")
                 }
 
                 Section {
@@ -206,6 +210,8 @@ struct SettingsView: View {
                         isShowingReleaseNotes = true
                     }
                     CheckForUpdatesRow()
+                } header: {
+                    SettingsHeader(category: "About", title: "Thoughts")
                 }
 
                 Section {

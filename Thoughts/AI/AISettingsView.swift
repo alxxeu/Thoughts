@@ -32,7 +32,7 @@ struct AISettingsTab: View {
                     .pickerStyle(.inline)
                     .labelsHidden()
                 } header: {
-                    Text("Provider")
+                    SettingsHeader(category: "AI", title: "Provider")
                 } footer: {
                     VStack(alignment: .leading, spacing: 4) {
                         Text("Apple Intelligence runs on-device and needs no key. ChatGPT and Claude need an API key — add one below.")

@@ -25,6 +25,8 @@ Backlog / Идеи → В работе (план согласован) → Го�
   (нужна регистрация типа в Info.plist).
 - [x] Капсула Space: иконка пазла + панель Plugins; шестерёнка выплывает по наведению;
   режим правки с «тряской» (−/+), можно скрыть всё, кроме имени.
+- [x] Окно Settings в стиле Healper: заголовки разделов (`SettingsHeader`), `SoonBadge`/`SoonRow`,
+  `fullHeightToolbar`, несворачиваемый сайдбар, заголовок «Settings» (`SettingsChrome.swift`).
 - [ ] Проверка автором в Xcode (код не собирался): ⌘U, затем вручную — Settings →
   Plugins, Save as Template → «My Templates ▸», режим правки капсулы и перезапуск.
 

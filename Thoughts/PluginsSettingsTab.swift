@@ -52,7 +52,7 @@ struct PluginsSettingsTab: View {
                 .foregroundStyle(.secondary)
             SettingsRowButton(title: "Open Plugins Folder") { plugins.openFolder() }
         } header: {
-            Text("Plugins")
+            SettingsHeader(category: "Plugins", title: "Installed")
         } footer: {
             Text("Plugins add fonts, themes and templates, and never run code. Installing is coming soon.")
         }
