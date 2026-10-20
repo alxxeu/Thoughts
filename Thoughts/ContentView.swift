@@ -206,6 +206,10 @@ struct ContentView: View {
         .animation(.easeOut(duration: 0.25), value: onboardingViewModel.isActive)
         .onAppear {
             SettingsNavigation.shared.openWindowAction = openWindow
+            onboardingViewModel.onFinish = { [viewModel] home, isFirstRun in
+                if let home { viewModel.desktopOverlay.isEnabled = home == .desktop }
+                if isFirstRun { CheatSheetCard.add(to: viewModel) }
+            }
         }
         .background(
             WindowAccessor { overlayWindow.attach($0) }
@@ -261,7 +265,7 @@ struct ContentView: View {
             }
         }
         .onReceive(NotificationCenter.default.publisher(for: .replayOnboarding)) { _ in
-            onboardingViewModel.start()
+            onboardingViewModel.start(currentHome: viewModel.desktopOverlay.isEnabled ? .desktop : .window)
         }
         .onReceive(NotificationCenter.default.publisher(for: .cardWasMoved)) { _ in
             onboardingViewModel.handle(.cardMoved)
