@@ -12,6 +12,8 @@ struct KanbanCardView: View {
     var typography: CardTypography
     var onTextChange: () -> Void
     var onFocusChange: (Bool) -> Void = { _ in }
+    /// «Save as Template…» в меню пустого места колонки.
+    var onSaveAsTemplate: () -> Void = {}
 
     @State private var board: KanbanBoard
     @FocusState private var focus: FocusTarget?
@@ -58,13 +60,15 @@ struct KanbanCardView: View {
     }
 
     init(text: Binding<String>, isFocused: Binding<Bool>, cardSize: CGSize, typography: CardTypography,
-         onTextChange: @escaping () -> Void, onFocusChange: @escaping (Bool) -> Void = { _ in }) {
+         onTextChange: @escaping () -> Void, onFocusChange: @escaping (Bool) -> Void = { _ in },
+         onSaveAsTemplate: @escaping () -> Void = {}) {
         _text = text
         _isFocused = isFocused
         self.cardSize = cardSize
         self.typography = typography
         self.onTextChange = onTextChange
         self.onFocusChange = onFocusChange
+        self.onSaveAsTemplate = onSaveAsTemplate
         _board = State(initialValue: KanbanBoard.parse(text.wrappedValue) ?? KanbanBoard(columns: [.init(title: "", items: [])]))
         _cache = State(initialValue: BoardCache(text: text.wrappedValue))
     }
@@ -318,6 +322,7 @@ struct KanbanCardView: View {
             entries.append(.init(title: "Remove Column \u{201C}\(name)\u{201D}", isDestructive: true,
                                  action: { change { $0.removeColumn(column) } }))
         }
+        entries.append(.init(title: "Save as Template\u{2026}", action: onSaveAsTemplate))
         return entries
     }
 

@@ -46,8 +46,6 @@ extension Notification.Name {
     static let setCardTag = Notification.Name("SetCardTag")
     /// TagPopoverView — privacyMode переключился ИМЕННО в .spoiler (не обратно в .none).
     static let cardDidBecomeSpoiler = Notification.Name("CardDidBecomeSpoiler")
-    /// Правый клик по карточке → «Save as Template…». object — UUID карточки.
-    static let saveCardAsTemplate = Notification.Name("SaveCardAsTemplate")
     /// Settings → Plugins → «Customize Toolbar…»: капсула Space переходит в режим правки.
     static let customizeToolbar = Notification.Name("CustomizeToolbar")
 }

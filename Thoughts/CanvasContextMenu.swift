@@ -58,6 +58,22 @@ struct CanvasContextMenu: NSViewRepresentable {
             parent.submenu = submenu
             let menu = NSMenu()
             menu.addItem(parent)
+
+            // Свои шаблоны (Save as Template…, импорт) — отдельным подменю.
+            let own = UserTemplateStore.shared.templates.map { CardTemplate($0) }
+            if !own.isEmpty {
+                let ownMenu = NSMenu()
+                for template in own {
+                    let item = NSMenuItem(title: template.name, action: #selector(pick(_:)), keyEquivalent: "")
+                    item.target = self
+                    item.toolTip = template.note.isEmpty ? nil : template.note
+                    item.representedObject = Pick(template, point)
+                    ownMenu.addItem(item)
+                }
+                let ownParent = NSMenuItem(title: "My Templates", action: nil, keyEquivalent: "")
+                ownParent.submenu = ownMenu
+                menu.addItem(ownParent)
+            }
             NSMenu.popUpContextMenu(menu, with: event, for: self)
         }
 
