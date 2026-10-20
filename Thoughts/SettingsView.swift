@@ -61,29 +61,6 @@ struct SettingsView: View {
                 .navigationTitle("Settings")
                 .fullHeightToolbar()
         }
-        .toolbar { navigationButtons }
-    }
-
-    /// ‹ › в панели окна — по разделам подряд, как у Thaw.
-    @ToolbarContentBuilder
-    private var navigationButtons: some ToolbarContent {
-        ToolbarItemGroup(placement: .navigation) {
-            Button {
-                step(-1)
-            } label: {
-                Image(systemName: "chevron.left")
-            }
-            .disabled(currentIndex == 0)
-            .help("Back")
-
-            Button {
-                step(1)
-            } label: {
-                Image(systemName: "chevron.right")
-            }
-            .disabled(currentIndex == SettingsNavigation.Tab.allCases.count - 1)
-            .help("Forward")
-        }
     }
 
     private static let windowSize = CGSize(width: 900, height: 640)
@@ -108,18 +85,6 @@ struct SettingsView: View {
             }
         }
         .listStyle(.sidebar)
-    }
-
-    private var currentIndex: Int {
-        SettingsNavigation.Tab.allCases.firstIndex(of: SettingsNavigation.shared.selectedTab) ?? 0
-    }
-
-    /// ‹ › в панели окна — по разделам подряд, как у Thaw.
-    private func step(_ delta: Int) {
-        let tabs = SettingsNavigation.Tab.allCases
-        let index = currentIndex + delta
-        guard tabs.indices.contains(index) else { return }
-        SettingsNavigation.shared.selectedTab = tabs[index]
     }
 
     @ViewBuilder
