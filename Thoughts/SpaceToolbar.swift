@@ -125,7 +125,8 @@ struct SpaceToolbar: View {
                     .overlay(Capsule().fill(Color.black.opacity(colorScheme == .dark ? 0.1 : 0.18)))
             )
             .onHover { inside in setPillHover(inside) }
-            .overlay(alignment: .trailing) { gearButton }
+            // За капсулой (background), а не поверх: кружок выезжает из-под неё.
+            .background(alignment: .trailing) { gearButton }
 
             if isAskingSpaceAI {
                 askAIPanel
@@ -249,7 +250,7 @@ struct SpaceToolbar: View {
         } label: {
             Image(systemName: isEditingToolbar ? "checkmark" : "gearshape.fill")
                 .font(.system(size: 12, weight: .semibold))
-                .foregroundStyle(Color.white.opacity(0.9))
+                .foregroundStyle(Color.white.opacity(isEditingToolbar ? 0.95 : 0.6))
                 .frame(width: 26, height: 26)
                 .background(
                     Circle()
@@ -262,25 +263,22 @@ struct SpaceToolbar: View {
         .buttonStyle(.plain)
         .help(isEditingToolbar ? "Done" : "Customize toolbar")
         .onHover { inside in setGearHover(inside) }
-        .scaleEffect(isGearShown ? 1 : 0.4, anchor: .leading)
-        .opacity(isGearShown ? 1 : 0)
+        // Полупрозрачный в покое; едет из-под капсулы вправо, без масштабирования.
+        .opacity(isGearShown ? (isEditingToolbar ? 1 : 0.7) : 0)
         .allowsHitTesting(isGearShown)
-        .offset(x: isGearShown ? 26 + 12 : 4)
-        .animation(.spring(response: 0.35, dampingFraction: 0.72), value: isGearShown)
+        .offset(x: isGearShown ? 26 + 12 : 0)
+        .animation(.spring(response: 0.4, dampingFraction: 0.8), value: isGearShown)
     }
 
     /// У капсулы и у кружка — каждому свой таймер скрытия: общий отменял бы чужой,
     /// и флаг наведения на капсулу «застревал» бы включённым.
+    /// Кружок появляется не сразу (450 мс наведения), а пропадает чуть быстрее.
     private func setPillHover(_ inside: Bool) {
         pillHideTask?.cancel()
-        if inside {
-            isHoveringPill = true
-        } else {
-            pillHideTask = Task {
-                try? await Task.sleep(for: .milliseconds(220))
-                guard !Task.isCancelled else { return }
-                isHoveringPill = false
-            }
+        pillHideTask = Task {
+            try? await Task.sleep(for: .milliseconds(inside ? 450 : 220))
+            guard !Task.isCancelled else { return }
+            isHoveringPill = inside
         }
     }
 

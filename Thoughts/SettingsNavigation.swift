@@ -12,7 +12,7 @@ import SwiftUI
 final class SettingsNavigation {
     static let shared = SettingsNavigation()
 
-    enum Tab: Hashable {
+    enum Tab: Hashable, CaseIterable {
         case general, appearance, security, shortcuts, ai, plugins, about
     }
 

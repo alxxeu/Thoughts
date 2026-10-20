@@ -11,25 +11,6 @@ struct SettingsRowButton: View {
     let action: () -> Void
 
     var body: some View {
-        Button(action: action) {
-            HStack {
-                Text(title)
-                Spacer()
-            }
-            .contentShape(Rectangle())
-        }
-        .buttonStyle(.plain)
-    }
-}
-
-struct SettingsView: View {
-    var viewModel: BoardViewModel
-
-    // Проверяем текущий статус автозапуска в системе при загрузке
-    @State private var launchAtLogin: Bool = (SMAppService.mainApp.status == .enabled)
-    @State private var isShowingReleaseNotes = false
-
-    var body: some View {
         Group {
             if viewModel.isActiveSpaceLocked {
                 // Основной барьер против побега из заблокированного Space
@@ -39,137 +20,159 @@ struct SettingsView: View {
                 // не существует, пока активный Space заблокирован — так же,
                 // как карточки не существуют под SpaceLockOverlayView.
                 lockedPlaceholder
-                    .frame(width: 460, height: 480)
+                    .frame(width: Self.windowSize.width, height: Self.windowSize.height)
             } else {
-                TabView(selection: Binding(
-                    get: { SettingsNavigation.shared.selectedTab },
-                    set: { SettingsNavigation.shared.selectedTab = $0 }
-                )) {
-                    Form {
-                        Section {
-                            Toggle("Launch at Login", isOn: $launchAtLogin)
-                                .toggleStyle(.switch)
-                                .onChange(of: launchAtLogin) { _, newValue in
-                                    updateLaunchAtLogin(enabled: newValue)
-                                }
-                        }
-
-                        Section {
-                            Toggle("Desktop Overlay", isOn: Binding(
-                                get: { viewModel.desktopOverlay.isEnabled },
-                                set: { viewModel.desktopOverlay.isEnabled = $0 }
-                            ))
-                            .toggleStyle(.switch)
-                        } footer: {
-                            VStack(alignment: .leading, spacing: 6) {
-                                Label("Runs best on macOS 26 or later.", systemImage: "checkmark.seal.fill")
-                                    .font(.caption)
-                                    .foregroundStyle(.green)
-                                Text("Keeps Thoughts sitting just above your Desktop icons instead of a normal window. Press \u{2325}D in any app to show the Desktop; switch to any Space (\u{2325}1\u{2013}9) to come back. From any other app, use \u{2303}\u{2325}1\u{2013}9.")
-                            }
-                        }
-
-                        ICloudSyncSection(viewModel: viewModel)
-
-                        BackupSection(viewModel: viewModel)
-
-                        Section {
-                            SettingsRowButton(title: "Replay Onboarding") {
-                                NotificationCenter.default.post(name: .replayOnboarding, object: nil)
-                            }
-                        } footer: {
-                            Text("Show the first-launch tour of Thoughts again.")
-                        }
-                    }
-                    .formStyle(.grouped)
-                    .tabItem {
-                        Label("General", systemImage: "gearshape.fill")
-                    }
-                    .tag(SettingsNavigation.Tab.general)
-
-                    AppearanceSettingsTab(settings: viewModel.appearanceSettings)
-                        .tabItem {
-                            Label("Appearance", systemImage: "paintbrush.fill")
-                        }
-                        .tag(SettingsNavigation.Tab.appearance)
-
-                    SecuritySettingsTab(viewModel: viewModel)
-                        .tabItem {
-                            Label("Security", systemImage: "shield.lefthalf.filled")
-                        }
-                        .tag(SettingsNavigation.Tab.security)
-
-                    ShortcutsSettingsTab()
-                        .tabItem {
-                            Label("Shortcuts", systemImage: "command.square.fill")
-                        }
-                        .tag(SettingsNavigation.Tab.shortcuts)
-
-                    AISettingsTab()
-                        .tabItem {
-                            Label("AI", systemImage: Self.symbol("sparkles.2", fallback: "sparkles"))
-                        }
-                        .tag(SettingsNavigation.Tab.ai)
-
-                    PluginsSettingsTab()
-                        .tabItem {
-                            Label("Plugins", systemImage: "puzzlepiece.extension.fill")
-                        }
-                        .tag(SettingsNavigation.Tab.plugins)
-
-                    Form {
-                        Section {
-                            LabeledContent("Version", value: appVersion)
-                            LabeledContent("Author", value: "Aleksei Trofimov")
-                            SettingsRowButton(title: "Release Notes\u{2026}") {
-                                isShowingReleaseNotes = true
-                            }
-                            CheckForUpdatesRow()
-                        }
-
-                        Section {
-                            Link(destination: URL(string: "https://github.com/alxxeu/Thoughts")!) {
-                                HStack {
-                                    Text("GitHub")
-                                    Spacer()
-                                    Image(systemName: "arrow.up.right")
-                                        .foregroundStyle(.secondary)
-                                }
-                            }
-                            Link(destination: URL(string: "https://t.me/thoughtsapp")!) {
-                                HStack {
-                                    Text("Telegram Channel")
-                                    Spacer()
-                                    Image(systemName: "arrow.up.right")
-                                        .foregroundStyle(.secondary)
-                                }
-                            }
-                            Link(destination: URL(string: "mailto:alxxeu.dev@proton.me")!) {
-                                HStack {
-                                    Text("Email")
-                                    Spacer()
-                                    Text("alxxeu.dev@proton.me")
-                                        .foregroundStyle(.secondary)
-                                    Image(systemName: "arrow.up.right")
-                                        .foregroundStyle(.secondary)
-                                }
-                            }
-                        } footer: {
-                            Text("Follow for updates and release notes.")
-                        }
-                    }
-                    .formStyle(.grouped)
-                    .sheet(isPresented: $isShowingReleaseNotes) {
-                        ReleaseNotesView()
-                    }
-                    .tabItem {
-                        Label("About", systemImage: Self.symbol("info.app.fill", fallback: "info.circle.fill"))
-                    }
-                    .tag(SettingsNavigation.Tab.about)
+                // Вертикальные вкладки — боковая панель слева, как в системных настройках.
+                HStack(spacing: 0) {
+                    sidebar
+                        .frame(width: 190)
+                    Divider()
+                    detail
+                        .frame(maxWidth: .infinity, maxHeight: .infinity)
                 }
-                .frame(width: 460, height: 480)
+                .frame(width: Self.windowSize.width, height: Self.windowSize.height)
             }
         }
+    }
+
+    private static let windowSize = CGSize(width: 720, height: 520)
+
+    private var sidebar: some View {
+        List(selection: Binding<SettingsNavigation.Tab?>(
+            get: { SettingsNavigation.shared.selectedTab },
+            set: { if let tab = $0 { SettingsNavigation.shared.selectedTab = tab } }
+        )) {
+            ForEach(SettingsNavigation.Tab.allCases, id: \.self) { tab in
+                Label(Self.title(for: tab), systemImage: Self.symbol(for: tab))
+                    .tag(tab)
+            }
+        }
+        .listStyle(.sidebar)
+    }
+
+    @ViewBuilder
+    private var detail: some View {
+        switch SettingsNavigation.shared.selectedTab {
+        case .general: generalTab
+        case .appearance: AppearanceSettingsTab(settings: viewModel.appearanceSettings)
+        case .security: SecuritySettingsTab(viewModel: viewModel)
+        case .shortcuts: ShortcutsSettingsTab()
+        case .ai: AISettingsTab()
+        case .plugins: PluginsSettingsTab()
+        case .about: aboutTab
+        }
+    }
+
+    private static func title(for tab: SettingsNavigation.Tab) -> String {
+        switch tab {
+        case .general: return "General"
+        case .appearance: return "Appearance"
+        case .security: return "Security"
+        case .shortcuts: return "Shortcuts"
+        case .ai: return "AI"
+        case .plugins: return "Plugins"
+        case .about: return "About"
+        }
+    }
+
+    private static func symbol(for tab: SettingsNavigation.Tab) -> String {
+        switch tab {
+        case .general: return "gearshape.fill"
+        case .appearance: return "paintbrush.fill"
+        case .security: return "shield.lefthalf.filled"
+        case .shortcuts: return "command.square.fill"
+        case .ai: return symbol("sparkles.2", fallback: "sparkles")
+        case .plugins: return "puzzlepiece.extension.fill"
+        case .about: return symbol("info.app.fill", fallback: "info.circle.fill")
+        }
+    }
+
+    private var generalTab: some View {
+            Form {
+                Section {
+                    Toggle("Launch at Login", isOn: $launchAtLogin)
+                        .toggleStyle(.switch)
+                        .onChange(of: launchAtLogin) { _, newValue in
+                            updateLaunchAtLogin(enabled: newValue)
+                        }
+                }
+
+                Section {
+                    Toggle("Desktop Overlay", isOn: Binding(
+                        get: { viewModel.desktopOverlay.isEnabled },
+                        set: { viewModel.desktopOverlay.isEnabled = $0 }
+                    ))
+                    .toggleStyle(.switch)
+                } footer: {
+                    VStack(alignment: .leading, spacing: 6) {
+                        Label("Runs best on macOS 26 or later.", systemImage: "checkmark.seal.fill")
+                            .font(.caption)
+                            .foregroundStyle(.green)
+                        Text("Keeps Thoughts sitting just above your Desktop icons instead of a normal window. Press \u{2325}D in any app to show the Desktop; switch to any Space (\u{2325}1\u{2013}9) to come back. From any other app, use \u{2303}\u{2325}1\u{2013}9.")
+                    }
+                }
+
+                ICloudSyncSection(viewModel: viewModel)
+
+                BackupSection(viewModel: viewModel)
+
+                Section {
+                    SettingsRowButton(title: "Replay Onboarding") {
+                        NotificationCenter.default.post(name: .replayOnboarding, object: nil)
+                    }
+                } footer: {
+                    Text("Show the first-launch tour of Thoughts again.")
+                }
+            }
+            .formStyle(.grouped)
+    }
+
+    private var aboutTab: some View {
+            Form {
+                Section {
+                    LabeledContent("Version", value: appVersion)
+                    LabeledContent("Author", value: "Aleksei Trofimov")
+                    SettingsRowButton(title: "Release Notes\u{2026}") {
+                        isShowingReleaseNotes = true
+                    }
+                    CheckForUpdatesRow()
+                }
+
+                Section {
+                    Link(destination: URL(string: "https://github.com/alxxeu/Thoughts")!) {
+                        HStack {
+                            Text("GitHub")
+                            Spacer()
+                            Image(systemName: "arrow.up.right")
+                                .foregroundStyle(.secondary)
+                        }
+                    }
+                    Link(destination: URL(string: "https://t.me/thoughtsapp")!) {
+                        HStack {
+                            Text("Telegram Channel")
+                            Spacer()
+                            Image(systemName: "arrow.up.right")
+                                .foregroundStyle(.secondary)
+                        }
+                    }
+                    Link(destination: URL(string: "mailto:alxxeu.dev@proton.me")!) {
+                        HStack {
+                            Text("Email")
+                            Spacer()
+                            Text("alxxeu.dev@proton.me")
+                                .foregroundStyle(.secondary)
+                            Image(systemName: "arrow.up.right")
+                                .foregroundStyle(.secondary)
+                        }
+                    }
+                } footer: {
+                    Text("Follow for updates and release notes.")
+                }
+            }
+            .formStyle(.grouped)
+            .sheet(isPresented: $isShowingReleaseNotes) {
+                ReleaseNotesView()
+            }
     }
 
     private var appVersion: String {
