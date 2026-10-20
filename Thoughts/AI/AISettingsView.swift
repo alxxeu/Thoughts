@@ -16,7 +16,6 @@ struct AISettingsTab: View {
     @State private var isShowingAPIKeysSheet = false
 
     var body: some View {
-        VStack(spacing: 0) {
             Form {
                 Section {
                     Picker("", selection: Binding(
@@ -57,31 +56,16 @@ struct AISettingsTab: View {
                 } footer: {
                     Text(settings.sendKeyBinding.description)
                 }
-            }
-            .formStyle(.grouped)
-            // Иначе Form сам растягивается на всю доступную высоту таба
-            // (окно Settings фиксированного размера), и кнопка ниже
-            // добавляется уже ПОСЛЕ этого растяжения — вылезает за
-            // пределы видимой области вместо того, чтобы просто идти
-            // сразу под последней секцией.
-            .fixedSize(horizontal: false, vertical: true)
 
-            // ChatGPT/Claude API-ключи убраны в отдельный лист (тот же
-            // паттерн, что "Add Printer, Scanner, or Fax…" в системных
-            // Settings). Вынесено ЗА ПРЕДЕЛЫ Form целиком — .formStyle(.grouped)
-            // сам оборачивает в рамку любой топ-level контент внутри Form,
-            // даже без явного Section, так что иначе от рамки не избавиться.
-            HStack {
-                Spacer()
-                Button("Add API Key…") {
-                    isShowingAPIKeysSheet = true
+                // ChatGPT/Claude API-ключи — в отдельном листе (как "Add
+                // Printer, Scanner, or Fax…" в системных Settings).
+                Section {
+                    SettingsRowButton(title: "Add API Key\u{2026}") {
+                        isShowingAPIKeysSheet = true
+                    }
                 }
             }
-            .padding(.horizontal)
-            .padding(.top, 8)
-
-            Spacer(minLength: 0)
-        }
+            .formStyle(.grouped)
         .sheet(isPresented: $isShowingAPIKeysSheet) {
             apiKeysSheet
         }
