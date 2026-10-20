@@ -23,7 +23,7 @@ struct CardTemplate: Identifiable {
     /// настоящей, когда в колонку добавляют пункт или вписывают своё имя.
     static let kanban = CardTemplate(
         id: "kanban", name: "New Kanban Card",
-        text: "::: board\n# Plan\n- \n||\n||",
+        text: "::: board\n## Plan\n- \n||\n||",
         columns: 12, rows: 6
     )
 }

@@ -3,7 +3,7 @@ import Testing
 @testable import Thoughts
 
 struct KanbanBoardTests {
-    private let sample = "::: board\n# Plan\n- Book tram tour\n- Offline maps\n||\n# To go\n- Pack\n||\n# Ready"
+    private let sample = "::: board\n## Plan\n- Book tram tour\n- Offline maps\n||\n## To go\n- Pack\n||\n## Ready"
 
     @Test func parsesColumnsTitlesAndItems() throws {
         let board = try #require(KanbanBoard.parse(sample))
@@ -26,6 +26,12 @@ struct KanbanBoardTests {
         #expect(board.serialized() == CardTemplate.kanban.text)
     }
 
+    @Test func readsTitlesOfAnyLevelAndWritesLevelTwo() throws {
+        let board = try #require(KanbanBoard.parse("::: board\n# One\n||\n### Three\n- x"))
+        #expect(board.columns.map(\.title) == ["One", "Three"])
+        #expect(board.serialized() == "::: board\n## One\n||\n## Three\n- x")
+    }
+
     @Test func needsTheMarker() {
         #expect(KanbanBoard.parse("# Plan\n- a") == nil)
         #expect(!KanbanBoard.isBoard("text\n::: board"))
@@ -34,7 +40,7 @@ struct KanbanBoardTests {
     }
 
     @Test func multilineItemsKeepTheirLines() throws {
-        let text = "::: board\n# A\n- first\n  second line\n- next"
+        let text = "::: board\n## A\n- first\n  second line\n- next"
         let board = try #require(KanbanBoard.parse(text))
         #expect(board.columns[0].items.map(\.text) == ["first\nsecond line", "next"])
         #expect(board.serialized() == text)
@@ -49,7 +55,7 @@ struct KanbanBoardTests {
     @Test func emptyBoardAndEmptyColumns() throws {
         let empty = try #require(KanbanBoard.parse("::: board"))
         #expect(empty.columns.count == 1)
-        let board = try #require(KanbanBoard.parse("::: board\n||\n||\n# C"))
+        let board = try #require(KanbanBoard.parse("::: board\n||\n||\n## C"))
         #expect(board.columns.map(\.title) == ["", "", "C"])
         #expect(KanbanBoard.parse(board.serialized())?.columns.map(\.title) == ["", "", "C"])
     }
@@ -63,7 +69,7 @@ struct KanbanBoardTests {
         board.removeItem(id)
         #expect(board.columns[2].items.isEmpty)
         board.setTitle("Later", ofColumn: 2)
-        #expect(board.serialized().hasSuffix("# Later"))
+        #expect(board.serialized().hasSuffix("## Later"))
     }
 
     @Test func movingBetweenAndWithinColumns() throws {
@@ -88,7 +94,7 @@ struct KanbanBoardTests {
     }
 
     @Test func lastColumnIsNeverRemoved() throws {
-        var board = try #require(KanbanBoard.parse("::: board\n# A\n||\n# B"))
+        var board = try #require(KanbanBoard.parse("::: board\n## A\n||\n## B"))
         board.removeColumn(0)
         board.removeColumn(0)
         #expect(board.columns.map(\.title) == ["B"])

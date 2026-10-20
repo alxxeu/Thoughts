@@ -2,7 +2,7 @@ import Foundation
 
 /// Карточка-виджет «канбан»: колонки с плитками-пунктами. Хранится обычным
 /// текстом карточки — первая строка-метка `::: board`, колонки разделяет
-/// строка `||`, заголовок колонки — `# …`, пункт — `- …` (продолжение
+/// строка `||`, заголовок колонки — `## …` (читаются и `#`, `###`), пункт — `- …` (продолжение
 /// пункта — строки с отступом в два пробела). Так синк, бэкапы, импорт,
 /// Spotlight и Ask AI работают с карточкой как с любым другим текстом.
 struct KanbanBoard: Equatable {
@@ -47,8 +47,8 @@ struct KanbanBoard: Equatable {
             if line.trimmingCharacters(in: .whitespaces).isEmpty { continue }
             let last = columns.count - 1
 
-            if titleAllowed, line.hasPrefix("# ") {
-                columns[last].title = String(line.dropFirst(2))
+            if titleAllowed, let prefix = line.range(of: #"^#{1,3} "#, options: .regularExpression) {
+                columns[last].title = String(line[prefix.upperBound...])
             } else if line.hasPrefix("- ") || line == "-" {
                 columns[last].items.append(Item(text: String(line.dropFirst(2))))
             } else if line.hasPrefix("  "), !columns[last].items.isEmpty {
@@ -67,7 +67,7 @@ struct KanbanBoard: Equatable {
         for (index, column) in columns.enumerated() {
             if index > 0 { lines.append(Self.columnBreak) }
             let title = column.title.replacingOccurrences(of: "\n", with: " ")
-            if !title.isEmpty { lines.append("# " + title) }
+            if !title.isEmpty { lines.append("## " + title) }
             for item in column.items {
                 let parts = item.text.components(separatedBy: "\n")
                 lines.append("- " + parts[0])
