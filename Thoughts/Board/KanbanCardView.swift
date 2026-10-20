@@ -61,7 +61,7 @@ struct KanbanCardView: View {
         _board = State(initialValue: KanbanBoard.parse(text.wrappedValue) ?? KanbanBoard(columns: [.init(title: "", items: [])]))
     }
 
-    private static let sidePadding: CGFloat = 14
+    private static let sidePadding: CGFloat = 10
     /// Подсказки имён первых колонок — «намёк», что их можно переименовать.
     private static let titleHints = ["Plan", "To go", "Ready"]
     private static func titleHint(_ column: Int) -> String? {
@@ -92,9 +92,10 @@ struct KanbanCardView: View {
             .coordinateSpace(name: "kanban")
             .onPreferenceChange(TileFramesKey.self) { tileFrames = $0 }
             .overlay(alignment: .topLeading) { dragGhost }
-            .frame(minHeight: max(cardSize.height - 70, 60), alignment: .top)
+            .frame(minHeight: max(cardSize.height - 44, 60), alignment: .top)
             .padding(.horizontal, Self.sidePadding)
-            .padding(.top, 38)
+            // Как у текстовой карточки (отступ 20 pt) — заголовок на той же высоте.
+            .padding(.top, 20)
             .padding(.bottom, 24)
         }
         .scrollIndicators(.hidden)
@@ -138,7 +139,7 @@ struct KanbanCardView: View {
                 .lineLimit(1...2)
                 .focused($focus, equals: .title(column.id))
                 .onSubmit { addItem(toColumn: index, at: 0) }
-                .padding(.horizontal, 10)
+                .padding(.horizontal, 4)
 
             ForEach(Array(column.items.enumerated()), id: \.element.id) { position, item in
                 tile(item, column: index, position: position, isLast: position == column.items.count - 1)
