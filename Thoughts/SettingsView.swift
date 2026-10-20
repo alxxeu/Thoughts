@@ -61,23 +61,14 @@ struct SettingsView: View {
         .navigationTitle(Self.title(for: SettingsNavigation.shared.selectedTab))
     }
 
-    /// Группы разделов в боковой панели (между группами — стандартный отступ списка).
-    private static let tabGroups: [[SettingsNavigation.Tab]] = [
-        [.general, .appearance], [.security, .shortcuts], [.ai, .plugins], [.about]
-    ]
-
     private var sidebar: some View {
         List(selection: Binding<SettingsNavigation.Tab?>(
             get: { SettingsNavigation.shared.selectedTab },
             set: { if let tab = $0 { SettingsNavigation.shared.selectedTab = tab } }
         )) {
-            ForEach(Array(Self.tabGroups.enumerated()), id: \.offset) { _, group in
-                Section {
-                    ForEach(group, id: \.self) { tab in
-                        Label(Self.title(for: tab), systemImage: Self.symbol(for: tab))
-                            .tag(tab)
-                    }
-                }
+            ForEach(SettingsNavigation.Tab.allCases, id: \.self) { tab in
+                Label(Self.title(for: tab), systemImage: Self.symbol(for: tab))
+                    .tag(tab)
             }
         }
         .listStyle(.sidebar)
