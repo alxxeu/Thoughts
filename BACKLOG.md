@@ -11,45 +11,25 @@ Backlog / Идеи → В работе (план согласован) → Го�
 
 ## В работе
 
-### Карточки-шаблоны: колонки (канбан) с чек-листами (план согласован 2026-10-20)
+### Карточки-шаблоны: виджет-канбан (план v2 согласован 2026-10-20)
 
-Только Mac (iPhone пока не учитываем). Колонки — в тексте карточки, строка
-`||` разделяет колонки; рисуются системной таблицей (NSTextTable). Шаблоны:
-Kanban «Plan / To go / Ready», To-Do «Today / This week», Meeting «Yesterday /
-Today / Blockers» — правый клик по пустому месту доски → «New from Template».
+Только Mac (iPhone не учитываем). Карточка-виджет: колонки с плитками-пунктами
+(текст, ×, ≡, «+», перенос между колонками). Хранится текстом карточки: первая
+строка `::: board`, колонки разделяет `||`, заголовок `# …`, пункт `- …`
+(продолжение — с отступом в 2 пробела). Текстовые колонки `||` (NSTextTable) в
+обычных карточках остаются. Шаблоны: Kanban «Plan / To go / Ready», To-Do
+«Today / This week», Meeting «Yesterday / Today / Blockers» — правый клик по
+пустому месту доски → «New from Template».
 
-- [x] 0–2. Разбор `||` (`MarkdownStyler`), скрытие и курсор (`LiveMarkdown`),
-  отрисовка в NSTextTable (`MarkdownRenderer`, `MarkdownBlockDecorator`) —
-  спайк, **ждёт проверки автором в Xcode** (поведение NSTextTable в
-  редактируемом поле: Return/Backspace/стрелки/выделение, квадратики и линии).
-- [ ] 3. Перенос пунктов между колонками: ⌥⌘←/→, затем перетаскивание мышью
-  (+ Settings → Shortcuts).
-- [ ] 4. `CardTemplates.swift` и меню «New from Template ▸»; `docs/plugins.md`.
-- [ ] 5. README.
-
-### Format: все Markdown-элементы в меню и в правом клике (план согласован 2026-10-19)
-
-Меню Format и подменю «Format» в правом клике по карточке: Bold, Italic,
-Underline, Strikethrough, Highlight, Code, Link…; Heading 1/2/3, Bullet List,
-Numbered List, Task, Quote, Code Block, Divider. Шорткаты — только
-существующие (новых нет, Settings → Shortcuts не трогаем). Блочные команды —
-чистые функции в `MarkdownFormatting` (+ тесты), общий список команд
-`FormatCommand`; `toggleCodeBlock` — как на iOS (`feature/ios`).
-
-- [ ] Реализация; проверка автором в Xcode (⌘U, ручная проверка в Spaces 2–9).
-
-### Живой Markdown на Mac — модель из iPhone (план согласован 2026-10-19)
-
-Служебные символы Markdown скрыты всегда (не показываются у курсора), курсор
-не встаёт внутрь маркеров, Backspace/Return — по-блочному. Берём чистый слой
-`LiveMarkdown` с iOS (`feature/ios`, `Shared/Markdown/LiveMarkdown.swift`),
-парсер `MarkdownStyler` уже общий; рисование блоков не трогаем.
-
-- [x] 1. `Thoughts/Markdown/LiveMarkdown.swift` — файл с iOS как есть.
-- [x] 2. `MarkdownRenderer.style` — без `selection`: скрытое по `LiveMarkdown.hiddenRanges`.
-- [x] 3. `CardTextView`: курсор — `LiveMarkdown.snap`, Backspace/Return — `backspaceRange`/`newline`; убрать перекраску по курсору.
-- [x] 4. Тесты (`MarkdownRendererTests`, `LiveMarkdownTests`), README.
-- [ ] 5. Проверка автором: сборка и тесты в Xcode (в облаке Xcode нет — код не компилировался), ручная проверка в Debug на Spaces 2–9: стрелки ←/→ сквозь `**` и `# `, Backspace, Return, ⌘Z.
+- [x] Текстовые колонки `||` для обычных карточек (спайк проверен автором).
+- [x] 1. Модель `KanbanBoard` (текст ↔ колонки/пункты, правки) + тесты.
+- [x] 2–3. Виджет `KanbanCardView`: плитки, ×, «+», Return/Backspace, ≡ и
+  перенос между колонками/внутри колонки, ⌘Z; «Edit as Text» ↔ «Show as Board»;
+  меню «Add/Remove Column». **Ждёт проверки автором в Xcode** (код не собирался).
+- [x] 4. `CardTemplates.swift` и «New from Template» в правом клике по доске.
+- [ ] 5. Проверка автором (⌘U, Spaces 2–9): шаблоны, правки, перенос, ⌘Z,
+  синк/бэкап, Spoiler/Lock, Focus Mode; затем `docs/plugins.md` (пример
+  `cardTemplates` под этот формат) и README; перенести в «Готово».
 
 ## Backlog / Идеи
 
