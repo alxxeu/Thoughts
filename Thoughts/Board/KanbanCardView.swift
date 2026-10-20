@@ -362,19 +362,26 @@ private struct KanbanTile: View {
                 onBackspaceWhenEmpty()
                 return .handled
             }
-            // Справа — место под галочку, чтобы текст не прыгал по наведению.
+            // Отступы симметричны; плитку переносят за любое место подложки вне поля ввода
+            // (то есть за поля вокруг текста) — как карточку за её кромку.
+            // Справа шире — место под галочку, чтобы текст не прыгал по наведению.
             .padding(.leading, 14)
             .padding(.trailing, 24)
-            // Сверху отступ больше — это зона переноса (dragStrip), поле ввода под ней не перекрыто.
-            .padding(.top, 18)
-            .padding(.bottom, 9)
-            .frame(maxWidth: .infinity, minHeight: 46, alignment: .topLeading)
+            .padding(.vertical, 13)
+            .frame(maxWidth: .infinity, minHeight: 44, alignment: .topLeading)
             .background(
                 RoundedRectangle(cornerRadius: 13, style: .continuous)
                     .fill(ink.opacity(0.18))
                     .contextMenu { Button("Delete", role: .destructive, action: onDelete) }
+                    .onHover { inside in
+                        if inside { NSCursor.arrow.set() }
+                    }
+                    .gesture(
+                        DragGesture(minimumDistance: 2, coordinateSpace: .named("kanban"))
+                            .onChanged { onDragChanged($0.location) }
+                            .onEnded { onDragEnded($0.location) }
+                    )
             )
-            .overlay(alignment: .top) { dragStrip }
             .overlay(alignment: .bottomTrailing) { doneButton.padding(3) }
             .opacity(isBeingDragged ? 0.35 : 1)
             .onHover { isHovering = $0 }
@@ -388,23 +395,6 @@ private struct KanbanTile: View {
     }
 
     private var controlsVisible: Bool { isHovering || isBeingDragged }
-
-    /// Невидимая полоса по верху плитки — за неё плитку и переносят, как карточку
-    /// за верхнюю кромку. Высота равна верхнему отступу текста (18 pt): поле ввода под
-    /// ней остаётся целиком кликабельным.
-    private var dragStrip: some View {
-        Color.clear
-            .frame(height: 18)
-            .contentShape(Rectangle())
-            .onHover { inside in
-                if inside { NSCursor.arrow.set() }
-            }
-            .gesture(
-                DragGesture(minimumDistance: 2, coordinateSpace: .named("kanban"))
-                    .onChanged { onDragChanged($0.location) }
-                    .onEnded { onDragEnded($0.location) }
-            )
-    }
 
     private var doneButton: some View {
         Button(action: onDelete) {
