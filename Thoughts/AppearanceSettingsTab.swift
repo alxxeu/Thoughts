@@ -1,5 +1,6 @@
 import SwiftUI
 import AppKit
+import ImageIO
 
 /// Таб Appearance в Settings: тема, шрифт и цвет текста карточек, паттерн
 /// фона канвы. Сами варианты описаны данными в Customization.swift.
@@ -9,6 +10,8 @@ struct AppearanceSettingsTab: View {
     /// Список установленных семейств — один раз на открытие таба, а не на
     /// каждый body (NSFontManager отдаёт несколько сотен строк).
     @State private var installedFamilies: [String] = []
+    /// Текущие обои рабочего стола — фон превью, как под окном Thoughts.
+    @State private var wallpaper: NSImage?
 
     var body: some View {
         Form {
@@ -115,6 +118,15 @@ struct AppearanceSettingsTab: View {
 
         return ZStack {
             Color(nsColor: .underPageBackgroundColor)
+            if let wallpaper {
+                // Окно Thoughts — размытие .hudWindow поверх обоев; здесь то же
+                // приближённо: размытая картинка с лёгкой подложкой окна.
+                Image(nsImage: wallpaper)
+                    .resizable()
+                    .scaledToFill()
+                    .blur(radius: 24, opaque: true)
+                    .overlay(Color(nsColor: .windowBackgroundColor).opacity(0.35))
+            }
             CanvasPatternView(pattern: settings.canvasPattern, opacity: settings.patternOpacity)
 
             VStack(alignment: .leading, spacing: 6) {
@@ -129,7 +141,25 @@ struct AppearanceSettingsTab: View {
             .background(CardSurfaceBackground())
         }
         .frame(height: 170)
+        .frame(maxWidth: .infinity)
         .clipped()
+        .task { wallpaper = await Self.loadWallpaper() }
+    }
+
+    /// Обои главного экрана, уменьшенные до размера превью: оригинал бывает
+    /// 6K HEIC, декодировать его в каждом кадре незачем.
+    private static func loadWallpaper() async -> NSImage? {
+        guard let screen = NSScreen.main,
+              let url = NSWorkspace.shared.desktopImageURL(for: screen) else { return nil }
+        let image = await Task.detached(priority: .utility) { () -> CGImage? in
+            guard let source = CGImageSourceCreateWithURL(url as CFURL, nil) else { return nil }
+            return CGImageSourceCreateThumbnailAtIndex(source, 0, [
+                kCGImageSourceCreateThumbnailFromImageAlways: true,
+                kCGImageSourceThumbnailMaxPixelSize: 1200
+            ] as CFDictionary)
+        }.value
+        guard let image else { return nil }
+        return NSImage(cgImage: image, size: NSSize(width: image.width, height: image.height))
     }
 
     // MARK: - Text color

@@ -31,13 +31,20 @@ protocol AITextService {
 enum AITextServiceFactory {
     static func makeActiveService() throws -> AITextService {
         let settings = AISettings.shared
+        guard settings.isEnabled else {
+            throw AITextServiceError.apiError("AI is turned off. Choose a provider in Settings \u{2192} AI.")
+        }
         let provider = settings.selectedProvider
         switch provider {
-        case .openAI:
-            guard let apiKey = settings.apiKey(for: provider), !apiKey.isEmpty else {
+        case .openAI, .gemini, .openRouter, .groq, .mistral:
+            guard let apiKey = settings.apiKey(for: provider), !apiKey.isEmpty,
+                  let endpoint = provider.chatCompletionsURL else {
                 throw AITextServiceError.missingAPIKey
             }
-            return OpenAITextService(apiKey: apiKey, model: settings.model(for: provider))
+            return OpenAITextService(endpoint: endpoint, apiKey: apiKey, model: settings.model(for: provider))
+        case .ollama:
+            guard let endpoint = provider.chatCompletionsURL else { throw AITextServiceError.invalidResponse }
+            return OpenAITextService(endpoint: endpoint, apiKey: nil, model: settings.model(for: provider))
         case .anthropic:
             guard let apiKey = settings.apiKey(for: provider), !apiKey.isEmpty else {
                 throw AITextServiceError.missingAPIKey

@@ -333,6 +333,8 @@ private final class CardNSTextView: NSTextView {
             if let saveTemplate { menu.insertItem(saveTemplate, at: 2) }
             menu.insertItem(.separator(), at: saveTemplate == nil ? 2 : 3)
         }
+        // AI выключен в Settings → AI — пункта нет.
+        if !AISettings.shared.isEnabled { menu.removeItem(item) }
         return menu
     }
 

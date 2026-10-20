@@ -390,7 +390,7 @@ struct CardView: View {
         // футера, которая скачет между кнопкой и раскрытой панелью
         // (alignmentGuide внутри overlay это не решает).
         .overlay(alignment: .top) {
-            if isFocusFooterVisible {
+            if isFocusFooterVisible, viewModel.aiSettings.isEnabled {
                 CardAskAIPanel(
                     card: card,
                     viewModel: viewModel,

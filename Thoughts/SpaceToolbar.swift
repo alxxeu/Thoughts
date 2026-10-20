@@ -98,7 +98,10 @@ struct SpaceToolbar: View {
                 // функция была ещё одной иконкой в этом же ряду, а не
                 // ещё одной строкой вниз.
                 if !isEditingWorkspaceName {
-                    let items = ToolbarItem.allCases.filter { isEditingToolbar || !toolbarSettings.isHidden($0) }
+                    let items = ToolbarItem.allCases.filter {
+                        ($0 != .askAI || viewModel.aiSettings.isEnabled)
+                            && (isEditingToolbar || !toolbarSettings.isHidden($0))
+                    }
                     if !items.isEmpty {
                         Rectangle()
                             .fill(Color.white.opacity(0.15))
