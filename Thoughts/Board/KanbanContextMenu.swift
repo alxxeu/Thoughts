@@ -61,7 +61,7 @@ struct KanbanContextMenu: NSViewRepresentable {
             let menu = NSMenu()
             menu.autoenablesItems = false
             for entry in entries {
-                let item = NSMenuItem(title: entry.title, action: #selector(perform(_:)), keyEquivalent: "")
+                let item = NSMenuItem(title: entry.title, action: #selector(runEntry(_:)), keyEquivalent: "")
                 item.target = self
                 item.isEnabled = entry.isEnabled
                 item.representedObject = Action(entry.action)
@@ -70,7 +70,7 @@ struct KanbanContextMenu: NSViewRepresentable {
             NSMenu.popUpContextMenu(menu, with: event, for: self)
         }
 
-        @objc private func perform(_ sender: NSMenuItem) {
+        @objc private func runEntry(_ sender: NSMenuItem) {
             (sender.representedObject as? Action)?.run()
         }
     }
