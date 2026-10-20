@@ -89,6 +89,13 @@ struct KanbanCardView: View {
             .coordinateSpace(name: "kanban")
             .onPreferenceChange(TileFramesKey.self) { tileFrames = $0 }
             .overlay(alignment: .topLeading) { dragGhost }
+            // Правый клик в пустом месте колонки/под ней — «Add / Remove Column» (под курсором — своя колонка).
+            .overlay {
+                KanbanContextMenu(
+                    passesThrough: { point in tileFrames.values.contains { $0.contains(point) } },
+                    entries: { menuEntries(at: $0) }
+                )
+            }
             .frame(minHeight: max(cardSize.height - 44, 60), alignment: .top)
             .padding(.horizontal, Self.sidePadding)
             // Как у текстовой карточки (отступ 20 pt) — заголовок на той же высоте.
@@ -97,19 +104,6 @@ struct KanbanCardView: View {
         }
         .scrollIndicators(.hidden)
         .onHover { isCardHovered = $0 }
-        .contextMenu {
-            Button("Add Column") { addColumn() }
-                .disabled(board.columns.count >= KanbanBoard.maxColumns)
-            // Тот же пункт, что в меню самой колонки, — и для пустого места под колонками.
-            if board.columns.count > 1 {
-                Menu("Remove Column") {
-                    ForEach(Array(board.columns.enumerated()), id: \.element.id) { index, column in
-                        Button(column.title.isEmpty ? (Self.titleHint(index) ?? "Column \(index + 1)") : column.title,
-                               role: .destructive) { change { $0.removeColumn(index) } }
-                    }
-                }
-            }
-        }
         .onChange(of: text) { _, newText in
             // Текст поменяли снаружи (синк, Ask AI, импорт) — перечитать.
             guard newText != board.serialized(), let parsed = KanbanBoard.parse(newText) else { return }
@@ -146,6 +140,10 @@ struct KanbanCardView: View {
                 .focused($focus, equals: .title(column.id))
                 .onSubmit { addItem(toColumn: index, at: 0) }
                 .padding(.horizontal, 4)
+                // Рамка заголовка — как плитки: правый клик по ней оставляем полю ввода.
+                .background(GeometryReader { proxy in
+                    Color.clear.preference(key: TileFramesKey.self, value: [column.id: proxy.frame(in: .named("kanban"))])
+                })
 
             ForEach(Array(column.items.enumerated()), id: \.element.id) { position, item in
                 tile(item, column: index, position: position, isLast: position == column.items.count - 1)
@@ -164,13 +162,6 @@ struct KanbanCardView: View {
         .padding(.horizontal, 12)
         .frame(maxHeight: .infinity, alignment: .top)
         .contentShape(Rectangle())
-        .contextMenu {
-            Button("Add Column") { addColumn() }
-                .disabled(board.columns.count >= KanbanBoard.maxColumns)
-            if board.columns.count > 1 {
-                Button("Remove Column", role: .destructive) { change { $0.removeColumn(index) } }
-            }
-        }
     }
 
     // MARK: - Плитка
@@ -253,6 +244,25 @@ struct KanbanCardView: View {
         let previous: FocusTarget = i > 0 ? .item(board.columns[c].items[i - 1].id) : .title(board.columns[c].id)
         change { $0.removeItem(id) }
         DispatchQueue.main.async { focus = previous }
+    }
+
+    // MARK: - Меню колонок
+
+    private func menuEntries(at point: CGPoint) -> [KanbanContextMenu.Entry] {
+        let count = board.columns.count
+        let width = max((cardSize.width - Self.sidePadding * 2) / CGFloat(count), 80)
+        let column = min(max(Int((point.x / width).rounded(.down)), 0), count - 1)
+        let title = board.columns[column].title
+        let name = title.isEmpty ? (Self.titleHint(column) ?? "Column \(column + 1)") : title
+
+        var entries = [KanbanContextMenu.Entry(
+            title: "Add Column", isEnabled: count < KanbanBoard.maxColumns, action: { addColumn() }
+        )]
+        if count > 1 {
+            entries.append(.init(title: "Remove Column \u{201C}\(name)\u{201D}", isDestructive: true,
+                                 action: { change { $0.removeColumn(column) } }))
+        }
+        return entries
     }
 
     // MARK: - Перенос плитки
