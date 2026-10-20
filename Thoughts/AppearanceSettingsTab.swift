@@ -135,7 +135,7 @@ struct AppearanceSettingsTab: View {
         .frame(height: 170)
         .frame(maxWidth: .infinity)
         .clipped()
-
+    }
 
     // MARK: - Text color
 
