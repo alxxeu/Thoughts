@@ -46,9 +46,7 @@ struct SpaceToolbar: View {
     @State private var isShowingPluginsPanel = false
     /// Иконка, которую тащат в режиме правки, и её сдвиг от своего места.
     @State private var draggingItem: ToolbarItem?
-    @State private var dragOffset: CGFloat = 0
-    /// Сколько уже «съели» переставлениями: перевод жеста минус это = сдвиг от места.
-    @State private var dragStart: CGFloat = 0
+    @State private var dragTranslation: CGFloat = 0
 
     /// Заметка для плашки What’s new; nil — плашки нет.
     @State private var whatsNewNote = WhatsNew.pendingNote()
@@ -224,6 +222,31 @@ struct SpaceToolbar: View {
     private static let editIconWidth: CGFloat = 20
     private static let editStep: CGFloat = editIconWidth + 10
 
+    /// Иконки в режиме правки, в текущем порядке.
+    private var editRow: [ToolbarItem] {
+        toolbarSettings.order.filter {
+            ToolbarItem.available.contains($0) && ($0 != .askAI || viewModel.aiSettings.isEnabled)
+        }
+    }
+
+    /// Куда встанет перетаскиваемая иконка, если отпустить сейчас.
+    private var dropIndex: Int? {
+        guard let draggingItem, let start = editRow.firstIndex(of: draggingItem) else { return nil }
+        let steps = Int((dragTranslation / Self.editStep).rounded())
+        return min(max(start + steps, 0), editRow.count - 1)
+    }
+
+    /// Как в iOS: пока тащат, порядок не меняется — соседи только раздвигаются,
+    /// освобождая место; порядок меняется, когда отпустили.
+    private func shift(for item: ToolbarItem) -> CGFloat {
+        guard let draggingItem, item != draggingItem, let drop = dropIndex,
+              let start = editRow.firstIndex(of: draggingItem),
+              let index = editRow.firstIndex(of: item) else { return 0 }
+        if start < drop, index > start, index <= drop { return -Self.editStep }
+        if drop < start, index >= drop, index < start { return Self.editStep }
+        return 0
+    }
+
     /// Иконка в режиме правки: дрожит; «−» — скрыть, у скрытой (приглушена) «+» —
     /// вернуть (кликом по бейджу или по самой иконке); перетаскивание меняет порядок.
     private func editableIcon(_ item: ToolbarItem, phase: Int) -> some View {
@@ -235,7 +258,6 @@ struct SpaceToolbar: View {
             .frame(width: Self.editIconWidth)
             .contentShape(Rectangle())
             .onTapGesture { toggleHidden(item, isHidden: isHidden) }
-            .modifier(WobbleEffect(phase: phase, isEnabled: !isDragging))
             .overlay(alignment: .topLeading) {
                 Image(systemName: isHidden ? "plus" : "minus")
                     .font(.system(size: 7, weight: .heavy))
@@ -248,18 +270,19 @@ struct SpaceToolbar: View {
                     .onTapGesture { toggleHidden(item, isHidden: isHidden) }
                     .offset(x: -9, y: -9)
             }
+            .modifier(WobbleEffect(phase: phase, isEnabled: !isDragging))
             .scaleEffect(isDragging ? 1.15 : 1)
-            .offset(x: isDragging ? dragOffset : 0)
+            // Перетаскиваемая — ровно за курсором; соседи — с пружиной.
+            .offset(x: isDragging ? dragTranslation : shift(for: item))
+            .animation(isDragging ? nil : .spring(response: 0.3, dampingFraction: 0.8), value: dropIndex)
             .zIndex(isDragging ? 1 : 0)
             .gesture(
                 DragGesture(minimumDistance: 3)
-                    .onChanged { value in dragIcon(item, by: value.translation.width) }
-                    .onEnded { _ in
-                        withAnimation(.spring(response: 0.3, dampingFraction: 0.8)) {
-                            draggingItem = nil
-                            dragOffset = 0
-                        }
+                    .onChanged { value in
+                        if draggingItem != item { draggingItem = item }
+                        dragTranslation = value.translation.width
                     }
+                    .onEnded { _ in dropDraggedIcon() }
             )
     }
 
@@ -271,37 +294,20 @@ struct SpaceToolbar: View {
         }
     }
 
-    /// Иконка едет за курсором; ушла дальше чем на полшага — меняется местами с
-    /// соседом, а сдвиг отсчитывается уже от нового места.
-    private func dragIcon(_ item: ToolbarItem, by translation: CGFloat) {
-        // Ряд берём из настроек, а не из замыкания жеста: он меняется на ходу.
-        let row = toolbarSettings.order.filter {
-            ToolbarItem.available.contains($0) && ($0 != .askAI || viewModel.aiSettings.isEnabled)
+    /// Отпустили: порядок меняется без анимации — иконки уже стоят на новых
+    /// местах (соседи сдвинуты, перетаскиваемая под курсором), прыжка нет.
+    private func dropDraggedIcon() {
+        guard let item = draggingItem, let drop = dropIndex else { return }
+        let rest = dragTranslation - CGFloat(drop - (editRow.firstIndex(of: item) ?? drop)) * Self.editStep
+        var transaction = Transaction()
+        transaction.disablesAnimations = true
+        withTransaction(transaction) {
+            toolbarSettings.move(item, to: drop, within: editRow)
+            draggingItem = nil
+            dragTranslation = rest
         }
-        if draggingItem != item {
-            draggingItem = item
-            dragStart = 0
-        }
-        var offset = translation - dragStart
-        guard var index = row.firstIndex(of: item) else { return }
-        var current = row
-        while offset > Self.editStep / 2, index < current.count - 1 {
-            let neighbour = current[index + 1]
-            withAnimation(.spring(response: 0.3, dampingFraction: 0.8)) { toolbarSettings.swap(item, with: neighbour) }
-            current.swapAt(index, index + 1)
-            index += 1
-            dragStart += Self.editStep
-            offset -= Self.editStep
-        }
-        while offset < -Self.editStep / 2, index > 0 {
-            let neighbour = current[index - 1]
-            withAnimation(.spring(response: 0.3, dampingFraction: 0.8)) { toolbarSettings.swap(item, with: neighbour) }
-            current.swapAt(index, index - 1)
-            index -= 1
-            dragStart -= Self.editStep
-            offset += Self.editStep
-        }
-        dragOffset = offset
+        // Остаток (курсор не точно на месте) — доезжает пружиной.
+        withAnimation(.spring(response: 0.3, dampingFraction: 0.8)) { dragTranslation = 0 }
     }
 
     // MARK: - Шестерёнка
@@ -716,15 +722,15 @@ private struct WobbleEffect: ViewModifier {
     let phase: Int
     /// Перетаскиваемая иконка не дрожит.
     var isEnabled = true
-    @State private var isOn = false
 
+    /// От часов, а не repeatForever-анимацией: ту обрывала любая другая анимация
+    /// (перестановка, скрытие иконки), и дрожание останавливалось насовсем.
     func body(content: Content) -> some View {
-        content
-            .rotationEffect(.degrees(isEnabled ? (isOn ? 2.2 : -2.2) : 0))
-            .animation(
-                .easeInOut(duration: 0.12 + Double(phase % 3) * 0.015).repeatForever(autoreverses: true),
-                value: isOn
-            )
-            .onAppear { isOn = true }
+        TimelineView(.animation(paused: !isEnabled)) { context in
+            let t = context.date.timeIntervalSinceReferenceDate
+            let period = 0.24 + Double(phase % 3) * 0.03
+            let angle = isEnabled ? sin(t * 2 * .pi / period + Double(phase)) * 2.2 : 0
+            content.rotationEffect(.degrees(angle))
+        }
     }
 }

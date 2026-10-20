@@ -40,8 +40,10 @@ struct SpaceToolbarSettingsTests {
         let defaults = makeDefaults()
         let settings = SpaceToolbarSettings(defaults: defaults)
         #expect(settings.order == ToolbarItem.allCases)
-        settings.swap(.clearSpace, with: .askAI)
-        #expect(SpaceToolbarSettings(defaults: defaults).order == [.clearSpace, .tidyCards, .askAI, .plugins])
+        settings.move(.clearSpace, to: 0, within: [.askAI, .tidyCards, .clearSpace])
+        #expect(SpaceToolbarSettings(defaults: defaults).order == [.clearSpace, .askAI, .tidyCards, .plugins])
+        settings.move(.clearSpace, to: 2, within: [.clearSpace, .askAI, .tidyCards])
+        #expect(settings.order == [.askAI, .tidyCards, .clearSpace, .plugins])
         settings.reset()
         #expect(SpaceToolbarSettings(defaults: defaults).order == ToolbarItem.allCases)
     }

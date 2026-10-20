@@ -65,10 +65,14 @@ final class SpaceToolbarSettings {
         return result + ToolbarItem.allCases.filter { !result.contains($0) }
     }
 
-    /// Поменять местами две иконки (перетаскивание идёт шаг за шагом к соседу).
-    func swap(_ item: ToolbarItem, with other: ToolbarItem) {
-        guard let a = order.firstIndex(of: item), let b = order.firstIndex(of: other), a != b else { return }
-        order.swapAt(a, b)
+    /// Поставить иконку на место `index` в видимом ряду `row` (перетаскивание).
+    /// Иконки вне ряда (Plugins без флага, Ask AI при выключенном AI) — в конце.
+    func move(_ item: ToolbarItem, to index: Int, within row: [ToolbarItem]) {
+        guard let from = row.firstIndex(of: item) else { return }
+        var newRow = row
+        newRow.remove(at: from)
+        newRow.insert(item, at: min(max(index, 0), newRow.count))
+        order = newRow + order.filter { !newRow.contains($0) }
         defaults.set(order.map(\.rawValue), forKey: Self.orderKey)
     }
 
