@@ -11,10 +11,11 @@ struct OnboardingView: View {
     var body: some View {
         ZStack {
             if onboardingViewModel.isWaitingOnCanvas {
+                // Внизу: сверху плашка Space и обычно первые карточки.
                 canvasHint
-                    .frame(maxHeight: .infinity, alignment: .top)
-                    .padding(.top, 70)
-                    .transition(.move(edge: .top).combined(with: .opacity))
+                    .frame(maxHeight: .infinity, alignment: .bottom)
+                    .padding(.bottom, 40)
+                    .transition(.move(edge: .bottom).combined(with: .opacity))
             } else {
                 // Затемнение — доска под панелью не трогается, пока идёт рассказ.
                 Color.black.opacity(0.45)
@@ -61,7 +62,7 @@ struct OnboardingView: View {
             heading("Where should Thoughts live?", "You can change this anytime in Settings \u{2192} General.")
             HStack(spacing: 14) {
                 homeOption(.window, title: "In a window", subtitle: "A regular window, like any app.") { WindowHomeScene() }
-                homeOption(.desktop, title: "On your desktop", subtitle: "Cards sit right on your wallpaper.") { DesktopHomeScene() }
+                homeOption(.desktop, title: "On your desktop", subtitle: "Cards sit right on your wallpaper.", isRecommended: true) { DesktopHomeScene() }
             }
         case .firstCard:
             EmptyView() // этот экран — подсказка над канвой (canvasHint)
@@ -96,6 +97,7 @@ struct OnboardingView: View {
     }
 
     private func homeOption<Scene: View>(_ home: OnboardingHome, title: String, subtitle: String,
+                                          isRecommended: Bool = false,
                                           @ViewBuilder scene: () -> Scene) -> some View {
         let selected = onboardingViewModel.home == home
         return Button {
@@ -107,6 +109,11 @@ struct OnboardingView: View {
                     Image(systemName: selected ? "checkmark.circle.fill" : "circle")
                         .foregroundStyle(selected ? Color.accentColor : .secondary)
                     Text(title).font(.system(size: 13, weight: .semibold))
+                    if isRecommended {
+                        Text("Recommended")
+                            .font(.system(size: 10, weight: .semibold))
+                            .foregroundStyle(.green)
+                    }
                 }
                 Text(subtitle)
                     .font(.system(size: 11))
