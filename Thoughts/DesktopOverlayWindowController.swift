@@ -144,6 +144,7 @@ final class DesktopOverlayWindowController {
         }
 
         window.ignoresMouseEvents = isEnabled && isDesktopModeActive
+        DesktopSpaceBarPanel.shared.update()
     }
 
     /// ⌥D и запасной ⌃⌥D как глобальные хоткеи (см. GlobalHotKeyManager) —

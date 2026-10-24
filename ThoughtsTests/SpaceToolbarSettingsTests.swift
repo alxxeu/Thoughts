@@ -41,9 +41,9 @@ struct SpaceToolbarSettingsTests {
         let settings = SpaceToolbarSettings(defaults: defaults)
         #expect(settings.order == ToolbarItem.allCases)
         settings.move(.clearSpace, to: 0, within: [.askAI, .tidyCards, .clearSpace])
-        #expect(SpaceToolbarSettings(defaults: defaults).order == [.clearSpace, .askAI, .tidyCards, .plugins])
+        #expect(SpaceToolbarSettings(defaults: defaults).order == [.clearSpace, .askAI, .tidyCards, .lockSpace, .plugins])
         settings.move(.clearSpace, to: 2, within: [.clearSpace, .askAI, .tidyCards])
-        #expect(settings.order == [.askAI, .tidyCards, .clearSpace, .plugins])
+        #expect(settings.order == [.askAI, .tidyCards, .clearSpace, .lockSpace, .plugins])
         settings.reset()
         #expect(SpaceToolbarSettings(defaults: defaults).order == ToolbarItem.allCases)
     }
@@ -51,6 +51,6 @@ struct SpaceToolbarSettingsTests {
     @Test func storedOrderIgnoresUnknownAndAppendsNew() {
         let defaults = makeDefaults()
         defaults.set(["trashOld", "clearSpace", "askAI", "clearSpace"], forKey: "spaceToolbar.order")
-        #expect(SpaceToolbarSettings(defaults: defaults).order == [.clearSpace, .askAI, .tidyCards, .plugins])
+        #expect(SpaceToolbarSettings(defaults: defaults).order == [.clearSpace, .askAI, .tidyCards, .lockSpace, .plugins])
     }
 }

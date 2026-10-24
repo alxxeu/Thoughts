@@ -277,6 +277,13 @@ extension NSColor {
         self.init(rgb: value)
     }
 
+    /// Светлый ли цвет (относительная яркость sRGB > 0.5): по нему выбирают
+    /// тёмную или светлую подложку под текст такого цвета.
+    var isLight: Bool {
+        let c = usingColorSpace(.sRGB) ?? self
+        return 0.2126 * c.redComponent + 0.7152 * c.greenComponent + 0.0722 * c.blueComponent > 0.5
+    }
+
     var hexString: String {
         let srgb = usingColorSpace(.sRGB) ?? self
         let r = Int((srgb.redComponent * 255).rounded())

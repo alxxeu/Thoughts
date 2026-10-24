@@ -36,7 +36,7 @@ struct TipToastView: View {
         case .spaceSwitch:
             return "Switch Spaces with \u{2325}1\u{2013}9 or \u{2325}\u{2190} \u{2325}\u{2192}. Hold \u{2325} and press Tab to see all of them."
         case .spaceBar:
-            return "The bar at the top is your Space: click its name to rename it. The icons next to it ask AI about the Space, tidy the cards, or clear the Space \u{2014} hover the bar and click the gear to hide icons or change their order."
+            return "The bar at the top is your Space: click its name to rename it. The icons next to it ask AI about the Space, tidy the cards, clear the Space, or lock it with a passcode \u{2014} hover the bar and click the gear to hide icons or change their order."
         case .spaceLock:
             return "Keep a Space private: turn on a passcode in Settings \u{2192} Security, then press \u{2318}L to lock the whole Space."
         case .focusMode:

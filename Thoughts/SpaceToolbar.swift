@@ -40,12 +40,18 @@ struct SpaceToolbar: View {
     private let toolbarSettings = SpaceToolbarSettings.shared
     @State private var isEditingToolbar = false
     @State private var isHoveringPill = false
-    @State private var isHoveringGear = false
     @State private var pillHideTask: Task<Void, Never>?
-    @State private var gearHideTask: Task<Void, Never>?
     @State private var isShowingPluginsPanel = false
     /// Иконка, которую тащат в режиме правки, и её сдвиг от своего места.
     @State private var draggingItem: ToolbarItem?
+    /// Сырой сдвиг свайпа по панели (панель едет на `SpaceBarSwipe.resisted` от него).
+    @State private var swipeRaw: CGFloat = 0
+    /// Оттяжка точки (−1…1); после смены Space сбрасывается без анимации.
+    @State private var dotPull: CGFloat = 0
+    @State private var isShowingLockHint = false
+    @State private var lockHintIconHover = false
+    @State private var lockHintPopoverHover = false
+    @State private var lockHintTask: Task<Void, Never>?
     @State private var dragTranslation: CGFloat = 0
 
     /// Заметка для плашки What’s new; nil — плашки нет.
@@ -55,6 +61,44 @@ struct SpaceToolbar: View {
 
     private var isEditingWorkspaceName: Bool { renamingSlot != nil }
 
+    /// Точки всех Spaces: текущий ярче; видны, пока курсор на панели или идёт свайп.
+    private var spaceDots: some View {
+        SpaceBarDots(activeSlot: viewModel.activeSlot, hasDesktop: viewModel.desktopOverlay.isEnabled, ink: ink, pull: dotPull)
+        .opacity(isHoveringPill || swipeRaw != 0 ? 1 : 0)
+        .animation(.easeOut(duration: 0.15), value: isHoveringPill || swipeRaw != 0)
+        .allowsHitTesting(false)
+    }
+
+    /// Свайп: пока идёт — панель тянется; закончился за порогом — Space меняется на соседний.
+    private func updateSwipe(_ raw: CGFloat, ended: Bool) {
+        guard !isEditingToolbar, !isEditingWorkspaceName else { return }
+        if !ended {
+            swipeRaw = raw
+            dotPull = SpaceBarSwipe.dotPull(forRaw: raw)
+            return
+        }
+        let step = SpaceBarSwipe.step(forRaw: raw)
+        withAnimation(SpaceBarSwipe.returnAnimation) { swipeRaw = 0 }
+        if step != 0 {
+            var transaction = Transaction(); transaction.disablesAnimations = true
+            withTransaction(transaction) { dotPull = 0 }
+        } else {
+            withAnimation(SpaceBarSwipe.returnAnimation) { dotPull = 0 }
+        }
+        guard step != 0 else { return }
+        switch SpaceBarSwipe.destination(current: viewModel.activeSlot, step: step, hasDesktop: viewModel.desktopOverlay.isEnabled) {
+        case .desktop: viewModel.desktopOverlay.isDesktopModeActive = true
+        case .space(let slot): NotificationCenter.default.post(name: .switchWorkspace, object: slot)
+        }
+    }
+
+    /// Цвет текста и иконок — как цвет текста карточек (Settings → Appearance).
+    private var inkNSColor: NSColor { viewModel.appearanceSettings.cardTypography.color.withAlphaComponent(1) }
+    private var ink: Color { Color(nsColor: inkNSColor) }
+    /// Подложка под ним: светлый текст — тёмная, тёмный — светлая, чтобы капсула читалась
+    /// на любом фоне (в светлой теме материал сам светлый).
+    private var pillTint: Color { SpaceBarStyle.tint(ink: inkNSColor, isDark: colorScheme == .dark) }
+
     var body: some View {
         VStack(spacing: 6) {
             HStack(spacing: 10) {
@@ -63,7 +107,7 @@ struct SpaceToolbar: View {
                         TextField("Space name", text: $workspaceNameDraft)
                             .textFieldStyle(.plain)
                             .font(.system(size: 11, weight: .semibold))
-                            .foregroundStyle(Color.white.opacity(0.85))
+                            .foregroundStyle(ink.opacity(0.85))
                             .multilineTextAlignment(.center)
                             .frame(width: 100)
                             .focused($isWorkspaceNameFieldFocused)
@@ -79,8 +123,9 @@ struct SpaceToolbar: View {
                             }
                     } else {
                         Text(viewModel.activeWorkspaceName)
+                            .contentTransition(.identity)
                             .font(.system(size: 11, weight: .semibold))
-                            .foregroundStyle(Color.white.opacity(0.9))
+                            .foregroundStyle(ink.opacity(0.9))
                     }
                 }
                 .contentShape(Rectangle())
@@ -107,7 +152,7 @@ struct SpaceToolbar: View {
                     }
                     if !items.isEmpty {
                         Rectangle()
-                            .fill(Color.white.opacity(0.15))
+                            .fill(ink.opacity(0.15))
                             .frame(width: 1, height: 14)
                     }
                     ForEach(Array(items.enumerated()), id: \.element) { index, item in
@@ -121,18 +166,38 @@ struct SpaceToolbar: View {
             }
             .padding(.horizontal, 14)
             .padding(.vertical, 5)
-            // Название/иконки — фиксированно белые в обеих темах. Материал
-            // даёт настоящее размытие (плоский чёрный тон на цветных обоях
-            // в Desktop Overlay грязно гасит фон), тон сверху — только чтобы
-            // белый текст оставался читаемым; в Light Mode он легче.
+            // Смена Space: имя и ширина капсулы меняются сразу, без общей анимации —
+            // иначе старое имя «въезжает» в иконки и растворяется поверх нового.
+            .transaction(value: viewModel.activeSlot) { $0.animation = nil }
+            // Название/иконки — цвета текста карточек. Материал даёт настоящее
+            // размытие (плоский тон на цветных обоях в Desktop Overlay грязно гасит
+            // фон), тон сверху (`pillTint`) — только чтобы текст читался.
             .background(
                 Capsule()
                     .fill(.ultraThinMaterial)
-                    .overlay(Capsule().fill(Color.black.opacity(colorScheme == .dark ? 0.1 : 0.18)))
+                    .overlay(Capsule().fill(pillTint))
             )
-            .onHover { inside in setPillHover(inside) }
-            // За капсулой (background), а не поверх: кружок выезжает из-под неё.
-            .background(alignment: .trailing) { gearButton }
+            // Настройка капсулы — правым кликом (раньше была шестерёнка сбоку).
+            .contextMenu {
+                Button(isEditingToolbar ? "Done" : "Customize Space Bar\u{2026}") {
+                    withAnimation(.spring(response: 0.35, dampingFraction: 0.75)) { isEditingToolbar.toggle() }
+                }
+            }
+            .overlay {
+                // Наведение — по области шире капсулы (с точками под ней) и независимо от вложенных
+                // кнопок: у SwiftUI `.onHover` оно «мигало» и точки гасли, пока курсор на панели.
+                SpaceBarScrollCatcher(onScroll: { total, ended in updateSwipe(total, ended: ended) },
+                                      onHover: { setPillHover($0) })
+                    .padding(-24)
+            }
+            .simultaneousGesture(
+                DragGesture(minimumDistance: 8)
+                    .onChanged { value in updateSwipe(value.translation.width, ended: false) }
+                    .onEnded { value in updateSwipe(value.translation.width, ended: true) }
+            )
+            // Точки Spaces — под панелью, не сдвигая разметку.
+            .overlay(alignment: .bottom) { spaceDots.offset(y: 12) }
+            .offset(x: SpaceBarSwipe.resisted(swipeRaw))
 
             if isAskingSpaceAI {
                 askAIPanel
@@ -212,6 +277,15 @@ struct SpaceToolbar: View {
                 NotificationCenter.default.post(name: .requestClearSpace, object: nil)
             }
             .disabled(viewModel.cards.isEmpty)
+        case .lockSpace:
+            // Как ⌘L. Пока пароля нет — иконка неактивна, по наведению — подсказка и кнопка в Settings.
+            if viewModel.securitySettings.isPasscodeEnabled {
+                toolbarButton("Lock Space", icon: item.symbol) {
+                    NotificationCenter.default.post(name: .lockCurrentSpace, object: nil)
+                }
+            } else {
+                lockSetupIcon(item)
+            }
         case .plugins:
             toolbarButton("Plugins", icon: item.symbol, isActive: isShowingPluginsPanel) {
                 NSApp.keyWindow?.makeFirstResponder(nil)
@@ -220,6 +294,41 @@ struct SpaceToolbar: View {
                     isShowingPluginsPanel.toggle()
                 }
             }
+        }
+    }
+
+    /// Замок без пароля: приглушён, по наведению — окошко «настройте пароль» с кнопкой.
+    /// Окошко остаётся, пока курсор на иконке или в нём самом.
+    private func lockSetupIcon(_ item: ToolbarItem) -> some View {
+        Image(systemName: item.symbol)
+            .font(.system(size: 15))
+            .foregroundStyle(ink.opacity(0.35))
+            .contentShape(Rectangle())
+            .onHover { lockHintIconHover = $0; updateLockHint() }
+            .popover(isPresented: $isShowingLockHint, arrowEdge: .bottom) {
+                VStack(alignment: .leading, spacing: 8) {
+                    Text("Set up a passcode in Settings to lock Spaces.")
+                        .font(.system(size: 11))
+                        .fixedSize(horizontal: false, vertical: true)
+                    Button("Open Security") {
+                        isShowingLockHint = false
+                        SettingsNavigation.shared.open(.security)
+                    }
+                    .controlSize(.small)
+                }
+                .frame(width: 180)
+                .padding(10)
+                .onHover { lockHintPopoverHover = $0; updateLockHint() }
+            }
+    }
+
+    private func updateLockHint() {
+        lockHintTask?.cancel()
+        let want = lockHintIconHover || lockHintPopoverHover
+        lockHintTask = Task { @MainActor in
+            try? await Task.sleep(for: .seconds(want ? 0.3 : 0.25))
+            guard !Task.isCancelled else { return }
+            isShowingLockHint = want
         }
     }
 
@@ -259,7 +368,7 @@ struct SpaceToolbar: View {
         let isDragging = draggingItem == item
         return Image(systemName: item.symbol)
             .font(.system(size: 15))
-            .foregroundStyle(Color.white.opacity(isHidden ? 0.35 : 0.9))
+            .foregroundStyle(ink.opacity(isHidden ? 0.35 : 0.9))
             .frame(width: Self.editIconWidth)
             .contentShape(Rectangle())
             .onTapGesture { toggleHidden(item, isHidden: isHidden) }
@@ -315,61 +424,13 @@ struct SpaceToolbar: View {
         withAnimation(.spring(response: 0.3, dampingFraction: 0.8)) { dragTranslation = 0 }
     }
 
-    // MARK: - Шестерёнка
-
-    private var isGearShown: Bool { isHoveringPill || isHoveringGear || isEditingToolbar }
-
-    /// Отдельный кружок справа от капсулы: выплывает из неё по наведению. Левый
-    /// отступ внутри области нажатия закрывает зазор между капсулой и кружком —
-    /// иначе при переходе мыши он успевал бы исчезнуть.
-    private var gearButton: some View {
-        Button {
-            withAnimation(.spring(response: 0.35, dampingFraction: 0.75)) { isEditingToolbar.toggle() }
-        } label: {
-            Image(systemName: isEditingToolbar ? "checkmark" : "gearshape.fill")
-                .font(.system(size: 12, weight: .semibold))
-                .foregroundStyle(Color.white.opacity(isEditingToolbar ? 0.95 : 0.6))
-                .frame(width: 26, height: 26)
-                .background(
-                    Circle()
-                        .fill(.ultraThinMaterial)
-                        .overlay(Circle().fill(isEditingToolbar ? Color.accentColor.opacity(0.6) : Color.black.opacity(colorScheme == .dark ? 0.1 : 0.18)))
-                )
-                .padding(.leading, 12)
-                .contentShape(Rectangle())
-        }
-        .buttonStyle(.plain)
-        .help(isEditingToolbar ? "Done" : "Customize toolbar")
-        .onHover { inside in setGearHover(inside) }
-        // Полупрозрачный в покое; едет из-под капсулы вправо, без масштабирования.
-        .opacity(isGearShown ? (isEditingToolbar ? 1 : 0.7) : 0)
-        .allowsHitTesting(isGearShown)
-        .offset(x: isGearShown ? 26 + 12 : 0)
-        .animation(.spring(response: 0.4, dampingFraction: 0.8), value: isGearShown)
-    }
-
-    /// У капсулы и у кружка — каждому свой таймер скрытия: общий отменял бы чужой,
-    /// и флаг наведения на капсулу «застревал» бы включённым.
-    /// Кружок появляется не сразу (450 мс наведения), а пропадает чуть быстрее.
+    /// Точки Spaces появляются после короткого наведения (120 мс) и пропадают чуть позже.
     private func setPillHover(_ inside: Bool) {
         pillHideTask?.cancel()
         pillHideTask = Task {
-            try? await Task.sleep(for: .milliseconds(inside ? 450 : 220))
+            try? await Task.sleep(for: .milliseconds(inside ? 120 : 220))
             guard !Task.isCancelled else { return }
             isHoveringPill = inside
-        }
-    }
-
-    private func setGearHover(_ inside: Bool) {
-        gearHideTask?.cancel()
-        if inside {
-            isHoveringGear = true
-        } else {
-            gearHideTask = Task {
-                try? await Task.sleep(for: .milliseconds(220))
-                guard !Task.isCancelled else { return }
-                isHoveringGear = false
-            }
         }
     }
 
@@ -661,7 +722,7 @@ struct SpaceToolbar: View {
                 .rotationEffect(.degrees(rotation))
         }
         .buttonStyle(.plain)
-        .foregroundStyle(Color.white.opacity(isActive || hoveredToolbarLabel == label ? 1 : 0.85))
+        .foregroundStyle(ink.opacity(isActive || hoveredToolbarLabel == label ? 1 : 0.85))
         .font(.system(size: 15))
         .onHover { setToolbarHover($0, label) }
         .overlay(alignment: .top) { toolbarTooltip(label) }

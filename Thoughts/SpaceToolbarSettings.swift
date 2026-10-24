@@ -4,7 +4,7 @@ import Observation
 /// Иконки капсулы Space, которые можно скрыть. Имя Space и шестерёнка настройки
 /// скрыть нельзя.
 enum ToolbarItem: String, CaseIterable, Identifiable {
-    case askAI, tidyCards, clearSpace, plugins
+    case askAI, tidyCards, lockSpace, clearSpace, plugins
 
     /// Пазл Plugins — только в сборке с флагом PLUGINS (плагины отложены).
     static var available: [ToolbarItem] {
@@ -22,6 +22,7 @@ enum ToolbarItem: String, CaseIterable, Identifiable {
         case .askAI: return "Ask AI"
         case .tidyCards: return "Tidy Cards"
         case .clearSpace: return "Clear Space"
+        case .lockSpace: return "Lock Space"
         case .plugins: return "Plugins"
         }
     }
@@ -31,6 +32,7 @@ enum ToolbarItem: String, CaseIterable, Identifiable {
         case .askAI: return "sparkle"
         case .tidyCards: return "square.grid.2x2.fill"
         case .clearSpace: return "trash.fill"
+        case .lockSpace: return "lock.fill"
         case .plugins: return "puzzlepiece.extension.fill"
         }
     }

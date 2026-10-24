@@ -31,3 +31,42 @@ struct SpaceSwitcherTests {
         #expect(selection.slot == 8)
     }
 }
+
+struct SpaceBarSwipeTests {
+    @Test func pullIsDampedAndSymmetric() {
+        #expect(SpaceBarSwipe.resisted(0) == 0)
+        #expect(SpaceBarSwipe.resisted(-50) == -SpaceBarSwipe.resisted(50))
+        #expect(SpaceBarSwipe.resisted(40) < 40)
+        #expect(SpaceBarSwipe.resisted(10_000) < SpaceBarSwipe.maxPull)
+        #expect(SpaceBarSwipe.resisted(200) > SpaceBarSwipe.resisted(100))
+    }
+
+    @Test func stepNeedsTheThreshold() {
+        #expect(SpaceBarSwipe.step(forRaw: -30) == 0)
+        #expect(SpaceBarSwipe.step(forRaw: -SpaceBarSwipe.threshold) == 1)
+        #expect(SpaceBarSwipe.step(forRaw: SpaceBarSwipe.threshold + 10) == -1)
+    }
+}
+
+struct SpaceBarDestinationTests {
+    @Test func ringWithDesktop() {
+        #expect(SpaceBarSwipe.destination(current: 1, step: -1, hasDesktop: true) == .desktop)
+        #expect(SpaceBarSwipe.destination(current: nil, step: 1, hasDesktop: true) == .space(1))
+        #expect(SpaceBarSwipe.destination(current: nil, step: -1, hasDesktop: true) == .space(9))
+        #expect(SpaceBarSwipe.destination(current: 9, step: 1, hasDesktop: true) == .desktop)
+        #expect(SpaceBarSwipe.destination(current: 4, step: 1, hasDesktop: true) == .space(5))
+    }
+
+    @Test func ringWithoutDesktopWrapsAtNine() {
+        #expect(SpaceBarSwipe.destination(current: 1, step: -1, hasDesktop: false) == .space(9))
+        #expect(SpaceBarSwipe.destination(current: 9, step: 1, hasDesktop: false) == .space(1))
+    }
+}
+
+struct SpaceBarDotPullTests {
+    @Test func pullFollowsSwipeAndIsClamped() {
+        #expect(SpaceBarSwipe.dotPull(forRaw: 0) == 0)
+        #expect(SpaceBarSwipe.dotPull(forRaw: -SpaceBarSwipe.threshold / 2) == -0.5)
+        #expect(SpaceBarSwipe.dotPull(forRaw: SpaceBarSwipe.threshold * 3) == 1)
+    }
+}

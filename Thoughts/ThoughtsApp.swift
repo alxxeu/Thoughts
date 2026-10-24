@@ -247,6 +247,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         PluginsModel.shared.reload()
         #endif
         if let viewModel {
+            DesktopSpaceBarPanel.shared.attach(viewModel: viewModel)
             QuickCaptureController.shared.start(viewModel: viewModel)
             CloudSyncEngine.shared.start(viewModel: viewModel)
             registerSpaceHotKeys(viewModel)
