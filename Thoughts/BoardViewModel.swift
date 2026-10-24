@@ -847,26 +847,26 @@ final class BoardViewModel {
 }
 
 extension BoardViewModel {
-    /// Единый размер карточки в Focus Mode — один и тот же для любой
-    /// карточки, независимо от её реального `card.size` (см. ContentView:
-    /// сам `card.size` при этом не меняется, фокус только переопределяет
-    /// отображение).
-    static let focusCardSize = CGSize(width: 640, height: 480)
+    /// Размер карточки в Focus Mode: от размера канвы (крупнее прежней фиксированной 640×480),
+    /// один и тот же для любой карточки — `card.size` не меняется, фокус только переопределяет
+    /// отображение.
+    static func focusSize(canvasSize: CGSize, topInset: CGFloat = topCreationLimit) -> CGSize {
+        let maxWidth = max(canvasSize.width - canvasSidePadding * 2, 1)
+        let maxHeight = max(canvasSize.height - topInset - canvasSidePadding, 1)
+        return CGSize(
+            width: min(max(canvasSize.width * 0.62, 640), 900, maxWidth),
+            height: min(max(canvasSize.height * 0.70, 480), 700, maxHeight)
+        )
+    }
 
-    /// Под сфокусированной карточкой всегда висит кнопка "Ask AI…" — без
-    /// этого резерва композиция "карточка + кнопка" читалась бы смещённой
-    /// вниз, хотя сама карточка строго по центру.
-    static let focusFooterReserve: CGFloat = 44
-
-    /// Верхний левый угол сфокусированной карточки. При канве меньше
-    /// самой карточки центрирование дало бы отрицательный origin и увело
-    /// бы её верх/левый край за экран — поэтому зажимаем по тем же
-    /// границам, что и обычные карточки.
+    /// Верхний левый угол сфокусированной карточки: по центру области под плашкой.
+    /// При канве меньше самой карточки зажимаем по тем же границам, что и обычные карточки.
     static func focusOrigin(canvasSize: CGSize, topInset: CGFloat = topCreationLimit) -> CGPoint {
-        let availableHeight = canvasSize.height - topInset - focusFooterReserve
+        let size = focusSize(canvasSize: canvasSize, topInset: topInset)
+        let availableHeight = canvasSize.height - topInset
         return CGPoint(
-            x: max(canvasSidePadding, (canvasSize.width - focusCardSize.width) / 2),
-            y: max(topInset, topInset + (availableHeight - focusCardSize.height) / 2)
+            x: max(canvasSidePadding, (canvasSize.width - size.width) / 2),
+            y: max(topInset, topInset + (availableHeight - size.height) / 2)
         )
     }
 

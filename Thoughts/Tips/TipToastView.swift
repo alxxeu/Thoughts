@@ -40,7 +40,7 @@ struct TipToastView: View {
         case .spaceLock:
             return "Keep a Space private: turn on a passcode in Settings \u{2192} Security, then press \u{2318}L to lock the whole Space."
         case .focusMode:
-            return "Long card? Press \u{2318}F to focus on it: everything else fades away so you can write without distractions. Ask AI appears below the card to summarize it, rewrite it or ask about it. Esc, \u{2318}F again or a click outside brings the board back."
+            return "Long card? Press \u{2318}F or pinch out on it to focus: everything else fades away so you can write without distractions. Esc, \u{2318}F again, the arrow in the corner or a click outside brings the board back."
         case .askAI:
             return "Ask anything about this Space \u{2014} the answer arrives as a new card. Choose the AI provider in Settings \u{2192} AI."
         case .tagColors:

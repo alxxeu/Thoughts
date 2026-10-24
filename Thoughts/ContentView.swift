@@ -106,6 +106,7 @@ struct ContentView: View {
     var viewModel: BoardViewModel
     /// Отдаётся в SettingsNavigation — см. комментарий там.
     @Environment(\.openWindow) private var openWindow
+    @Environment(\.colorScheme) private var colorScheme
     @State private var creationStart: CGPoint?
     @State private var draftFrame: CGRect?
     @State private var placementPreview: CGRect?
@@ -257,13 +258,10 @@ struct ContentView: View {
             TipsState.shared.noteAction(for: .spaceLock)
         }
         .onReceive(NotificationCenter.default.publisher(for: .toggleFocusCard)) { _ in
-            guard !viewModel.isActiveSpaceLocked,
-                  !viewModel.desktopOverlay.isDesktopModeActive,
-                  !onboardingViewModel.isActive else { return }
             if focusedCardID != nil {
                 setFocusedCard(nil)
             } else if let textFocusedCardID {
-                setFocusedCard(textFocusedCardID)
+                requestFocus(on: textFocusedCardID)
             }
         }
         .onReceive(NotificationCenter.default.publisher(for: .cardWasMoved)) { _ in
@@ -336,7 +334,8 @@ struct ContentView: View {
 
                 ForEach(viewModel.cards) { card in
                     let isFocused = card.id == focusedCardID
-                    let displaySize = isFocused ? BoardViewModel.focusCardSize : card.size
+                    let focusSize = BoardViewModel.focusSize(canvasSize: proxy.size, topInset: effectiveTopInset)
+                    let displaySize = isFocused ? focusSize : card.size
                     let displayPosition = isFocused
                         ? BoardViewModel.focusOrigin(canvasSize: proxy.size, topInset: effectiveTopInset)
                         : BoardViewModel.clampedPosition(card.position, size: card.size, canvasSize: proxy.size, topInset: effectiveTopInset)
@@ -346,6 +345,8 @@ struct ContentView: View {
                         viewModel: viewModel,
                         canvasSize: proxy.size,
                         isInFocusMode: isFocused,
+                        focusSize: focusSize,
+                        onRequestEnterFocus: { requestFocus(on: card.id) },
                         onTextFocusChange: { focused in
                             // "Чистим только если это всё ещё наше" — при
                             // переходе фокуса с карточки на карточку blur
@@ -441,7 +442,7 @@ struct ContentView: View {
                 // саму карточку (1000). Клик по нему — один из трёх способов
                 // выйти из Focus Mode, см. подпись под карточкой.
                 if focusedCardID != nil {
-                    Color.black.opacity(0.45)
+                    focusBackdrop
                         .contentShape(Rectangle())
                         .onTapGesture { setFocusedCard(nil) }
                         .zIndex(500)
@@ -561,6 +562,11 @@ struct ContentView: View {
         .onChange(of: viewModel.activeSlot) { _, _ in
             updateEmptyHintState()
         }
+        // Сфокусированную карточку удалили (или Space сменился) — выйти из фокуса, а не оставить пустое затемнение.
+        .onChange(of: viewModel.cards.map(\.id)) { _, ids in
+            if let focusedCardID, !ids.contains(focusedCardID) { setFocusedCard(nil) }
+            if let textFocusedCardID, !ids.contains(textFocusedCardID) { self.textFocusedCardID = nil }
+        }
         .onChange(of: viewModel.cards.isEmpty) { _, _ in
             updateEmptyHintState()
         }
@@ -679,6 +685,30 @@ struct ContentView: View {
                 newlyCreatedCardID = card.id
                 onboardingViewModel.cardCreated(card.id)
             }
+    }
+
+    /// Подложка под сфокусированной карточкой: в тёмной теме затемнение, в светлой — без него.
+    @ViewBuilder
+    private var focusBackdrop: some View {
+        if colorScheme == .dark {
+            Color.black.opacity(0.45)
+        } else {
+            Color.clear
+        }
+    }
+
+    /// Войти в фокус на карточке (⌘F, щипок).
+    private func requestFocus(on id: UUID) {
+        guard !viewModel.isActiveSpaceLocked,
+              !viewModel.desktopOverlay.isDesktopModeActive,
+              !onboardingViewModel.isActive else { return }
+        // Карточки может уже не быть (удалили, пока в ней был курсор) — тогда фокусировать нечего,
+        // иначе откроется пустое затемнение.
+        guard viewModel.cards.contains(where: { $0.id == id }) else {
+            if textFocusedCardID == id { textFocusedCardID = nil }
+            return
+        }
+        setFocusedCard(id)
     }
 
     /// Единственная точка смены фокуса. Флаг перехода обязан меняться в

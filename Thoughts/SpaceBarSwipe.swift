@@ -83,16 +83,26 @@ struct SpaceBarScrollCatcher: NSViewRepresentable {
         }
 
         private var monitor: Any?
+        private var totalY: CGFloat = 0
 
         override func scrollWheel(with event: NSEvent) {
-            // Колесо мыши (без фаз) и инерцию после жеста не считаем; вертикальная прокрутка — не наша.
-            guard !event.phase.isEmpty, event.momentumPhase.isEmpty,
-                  abs(event.scrollingDeltaX) > abs(event.scrollingDeltaY) || monitor != nil else {
+            // Колесо мыши (без фаз) и инерцию после жеста не считаем.
+            guard !event.phase.isEmpty, event.momentumPhase.isEmpty else {
                 nextResponder?.scrollWheel(with: event)
                 return
             }
             if monitor == nil {
+                // Жест берём с самого начала (began/mayBegin приходят почти без сдвига, по ним
+                // направление не понять): иначе событие уходит дальше по цепочке, система
+                // привязывает жест к другому view и остальные события сюда не приходят.
+                // Вертикальный жест отсеем уже в `handle`.
+                guard event.phase.contains(.began) || event.phase.contains(.mayBegin)
+                        || abs(event.scrollingDeltaX) > abs(event.scrollingDeltaY) else {
+                    nextResponder?.scrollWheel(with: event)
+                    return
+                }
                 total = 0
+                totalY = 0
                 // Дальше жест ведём сами, где бы ни был курсор: панель едет из-под него, и без
                 // этого события ушли бы в другое view, а жест оборвался.
                 monitor = NSEvent.addLocalMonitorForEvents(matching: .scrollWheel) { [weak self] event in
@@ -103,16 +113,38 @@ struct SpaceBarScrollCatcher: NSViewRepresentable {
             handle(event)
         }
 
+        private var idleFinish: DispatchWorkItem?
+
         private func handle(_ event: NSEvent) {
             guard event.momentumPhase.isEmpty else { return }
             total += event.scrollingDeltaX
+            totalY += event.scrollingDeltaY
             let ended = event.phase == .ended || event.phase == .cancelled
-            onScroll(total, ended)
+            idleFinish?.cancel()
+            // Жест пошёл вверх-вниз — это не наш свайп: отпускаем без переключения.
+            if abs(totalY) > abs(total) + 20 { total = 0 }
             if ended {
-                total = 0
-                if let monitor { NSEvent.removeMonitor(monitor) }
-                monitor = nil
+                finish()
+            } else {
+                onScroll(total, false)
+                // Конец жеста может не прийти (системный жест, меню-бар в fullscreen забрал
+                // события): тогда по тишине в 0.3 с считаем жест законченным, иначе панель
+                // остаётся сдвинутой, а Space не меняется.
+                let work = DispatchWorkItem { [weak self] in self?.finish() }
+                idleFinish = work
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.3, execute: work)
             }
+        }
+
+        private func finish() {
+            guard monitor != nil else { return }
+            onScroll(total, true)
+            total = 0
+            totalY = 0
+            idleFinish?.cancel()
+            idleFinish = nil
+            if let monitor { NSEvent.removeMonitor(monitor) }
+            monitor = nil
         }
 
         deinit { if let monitor { NSEvent.removeMonitor(monitor) } }

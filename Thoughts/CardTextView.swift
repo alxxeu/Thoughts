@@ -641,9 +641,11 @@ struct CardTextView: NSViewRepresentable {
         if context.coordinator.lastTypography != typography {
             let selectedRanges = textView.selectedRanges
             context.coordinator.lastTypography = typography
+            // Сначала цвет по умолчанию (`textColor` красит ВЕСЬ текст), потом разметка: иначе
+            // она не успевает убрать цвет у «--» разделителя и ``` блока кода, и они проступают.
+            Self.applyChrome(typography, to: textView)
             Self.restyle(textView, typography: typography)
             textView.selectedRanges = selectedRanges
-            Self.applyChrome(typography, to: textView)
             textView.needsDisplay = true
         }
 

@@ -11,7 +11,7 @@ enum CheatSheetCard {
     - **\u{2325}1\u{2013}9**, **\u{2325}\u{2190} \u{2325}\u{2192}** \u{2014} switch Spaces
     - **\u{2325}Tab** \u{2014} all Spaces
     - **\u{2303}1\u{2013}7** \u{2014} color tag
-    - **\u{2318}F** \u{2014} focus on a card
+    - **\u{2318}F** or **pinch out** \u{2014} focus on a card
     - **\u{2318}L** \u{2014} lock the Space
     - **\u{2325}D** \u{2014} show the desktop
     - **\u{2303}\u{2325}N** \u{2014} Quick Capture from any app

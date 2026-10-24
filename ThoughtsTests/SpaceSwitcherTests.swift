@@ -70,3 +70,24 @@ struct SpaceBarDotPullTests {
         #expect(SpaceBarSwipe.dotPull(forRaw: SpaceBarSwipe.threshold * 3) == 1)
     }
 }
+
+@MainActor
+struct FocusSizeTests {
+    private let canvas = CGSize(width: 1600, height: 1000)
+
+    @Test func focusCardIsBiggerThanBeforeAndFitsTheCanvas() {
+        let top = BoardViewModel.topCreationLimit
+        let size = BoardViewModel.focusSize(canvasSize: canvas, topInset: top)
+        let origin = BoardViewModel.focusOrigin(canvasSize: canvas, topInset: top)
+        #expect(size.width > 640 && size.height > 480)
+        #expect(origin.x >= 0 && origin.y >= top)
+        #expect(origin.x + size.width <= canvas.width)
+        #expect(origin.y + size.height <= canvas.height)
+    }
+
+    @Test func smallCanvasNeverOverflows() {
+        let small = CGSize(width: 700, height: 500)
+        let size = BoardViewModel.focusSize(canvasSize: small, topInset: 60)
+        #expect(size.width <= small.width && size.height <= small.height - 60)
+    }
+}
