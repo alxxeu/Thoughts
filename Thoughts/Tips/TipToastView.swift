@@ -35,10 +35,12 @@ struct TipToastView: View {
         switch tip {
         case .spaceSwitch:
             return "Switch Spaces with \u{2325}1\u{2013}9 or \u{2325}\u{2190} \u{2325}\u{2192}. Hold \u{2325} and press Tab to see all of them."
+        case .spaceBar:
+            return "The bar at the top is your Space: click its name to rename it. The icons next to it ask AI about the Space, tidy the cards, or clear the Space \u{2014} hover the bar and click the gear to hide icons or change their order."
         case .spaceLock:
             return "Keep a Space private: turn on a passcode in Settings \u{2192} Security, then press \u{2318}L to lock the whole Space."
         case .focusMode:
-            return "Focus Mode hides everything else \u{2014} Esc brings it back. Ask AI below the card asks about this card."
+            return "Long card? Press \u{2318}F to focus on it: everything else fades away so you can write without distractions. Ask AI appears below the card to summarize it, rewrite it or ask about it. Esc, \u{2318}F again or a click outside brings the board back."
         case .askAI:
             return "Ask anything about this Space \u{2014} the answer arrives as a new card. Choose the AI provider in Settings \u{2192} AI."
         case .tagColors:
@@ -49,6 +51,7 @@ struct TipToastView: View {
     static func symbol(_ tip: Tip) -> String {
         switch tip {
         case .spaceSwitch: return "square.stack.3d.up"
+        case .spaceBar: return "capsule"
         case .spaceLock: return "lock.shield"
         case .focusMode: return "scope"
         case .askAI: return "sparkle"

@@ -43,7 +43,6 @@ struct CardView: View {
     // card.text) ниже. hasShownFocusTipHint не даёт показать её больше
     // одного раза за время жизни этой CardView (новый релонч приложения
     // или новая карточка — снова доступно).
-    @State private var focusTipHint = HintTimer()
     @State private var hasShownFocusTipHint = false
     /// Подсказка про колонки — один раз, сразу после создания карточки из шаблона.
     @State private var boardTipHint = HintTimer()
@@ -237,7 +236,8 @@ struct CardView: View {
                 if inside { NSCursor.arrow.set() }
             }
             .popover(isPresented: $isShowingTagPopover, arrowEdge: .bottom) {
-                TagPopoverView(selectedColor: $card.tagColor, privacyMode: $card.privacyMode) {
+                TagPopoverView(selectedColor: $card.tagColor, privacyMode: $card.privacyMode,
+                               captionOnTrailing: card.position.x + card.size.width / 2 < viewModel.lastCanvasSize.width / 2) {
                     isShowingTagPopover = false
                     viewModel.saveImmediately()
                 }
@@ -412,18 +412,6 @@ struct CardView: View {
         // самой карточкой, мелким полупрозрачным текстом, не мешает
         // печатать (allowsHitTesting(false), не блокирующий элемент).
         .overlay(alignment: .top) {
-            if focusTipHint.isVisible {
-                // .primary, а не дефолтный белый у HintLabel — этот хинт
-                // висит прямо над обычной карточкой на фоне канвы, не
-                // поверх затемнения (в отличие от подсказки выхода из
-                // Focus Mode), так что фиксированный белый в светлой теме
-                // был бы нечитаем — та же причина, что у подсказки
-                // пустого Space.
-                HintLabel(text: "Try \u{2318}F to focus this card", fontSize: 10, color: AnyShapeStyle(.primary), opacity: 0.5)
-                    .offset(y: -22)
-            }
-        }
-        .overlay(alignment: .top) {
             if deleteHoldHint.isVisible {
                 HintLabel(text: "Hold \u{00D7} to delete", fontSize: 10, color: AnyShapeStyle(.primary), opacity: 0.5)
                     .offset(y: -22)
@@ -464,11 +452,8 @@ struct CardView: View {
             // Футер гаснет тем же fade, что и появлялся, только быстрее —
             // он привязан к карточке, а она в этот момент уже уезжает.
             withAnimation(.easeOut(duration: 0.12)) { isFocusFooterVisible = false }
-            if active {
-                // Подсказка про Cmd+F теряет смысл ровно в момент, когда
-                // Cmd+F уже нажали — не даём ей доиграть поверх входа в фокус.
-                focusTipHint.cancel()
-            }
+            // Подсказка про Cmd+F выполнена, когда в фокус вошли.
+            if active { TipsState.shared.noteAction(for: .focusMode) }
         }
         // Срабатывает только на реальный переход через порог во время
         // печати в этой сессии — .onChange не триггерится на начальное
@@ -478,7 +463,7 @@ struct CardView: View {
             guard !isInFocusMode, !hasShownFocusTipHint,
                   oldValue.count < Self.focusTipThreshold, newValue.count >= Self.focusTipThreshold else { return }
             hasShownFocusTipHint = true
-            focusTipHint.show(holdFor: Self.focusTipHoldDuration)
+            TipsState.shared.offer(.focusMode)
         }
         // Переход закончился — карточка встала на место. Только теперь
         // возвращаем то, что прятали на время движения.
@@ -551,8 +536,6 @@ struct CardView: View {
     // MARK: - Подсказка "Try Cmd+F"
 
     private static let focusTipThreshold = 60
-    /// Достаточно долго, чтобы подсказку успели прочитать.
-    private static let focusTipHoldDuration: Double = 4.5
     private static let boardTipHoldDuration: Double = 6
 
     // MARK: - Helper Methods & Gestures

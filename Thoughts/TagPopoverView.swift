@@ -4,18 +4,29 @@ struct TagPopoverView: View {
     @Binding var selectedColor: CardTagColor?
     @Binding var privacyMode: CardPrivacyMode
     var onSelect: () -> Void
+    /// Подсказка при первом открытии стоит сбоку от меню — в сторону, где больше места:
+    /// у карточки в левой половине экрана справа, иначе слева.
+    var captionOnTrailing = true
     
     private let columns = Array(repeating: GridItem(.fixed(14), spacing: 8), count: 4)
     /// Подсказка при первом открытии (слой 2): 1 — цвета, 2 — Spoiler/Lock, 0 — нет.
     @State private var coachStep = 0
     
     var body: some View {
-        VStack(spacing: 6) {
+        HStack(alignment: .top, spacing: 10) {
+            if coachStep > 0, !captionOnTrailing { coachCaption }
             colorsAndPrivacy
-            if coachStep > 0 { coachCaption }
+            if coachStep > 0, captionOnTrailing { coachCaption }
         }
         .padding(10)
+        // Размер по содержимому: после подсказки меню сужается до палитры.
+        .fixedSize()
+        .animation(.easeInOut(duration: 0.25), value: coachStep)
         .onAppear {
+            #if DEBUG
+            // Для проверки: запуск с `-alwaysTagTip YES` — подсказка при каждом открытии.
+            if UserDefaults.standard.bool(forKey: "alwaysTagTip") { coachStep = 1; return }
+            #endif
             guard TipsState.shared.shouldShow(.tagColors) else { return }
             TipsState.shared.markSeen(.tagColors)
             coachStep = 1
@@ -36,21 +47,24 @@ struct TagPopoverView: View {
     private var coachCaption: some View {
         VStack(alignment: .leading, spacing: 8) {
             Text(coachStep == 1
-                 ? "Pick a color to tag this card \u{2014} or press \u{2303}1\u{2013}7 while typing."
+                 ? "Pick a color to tag this card \u{2014} or press \u{2303}1\u{2013}7 while typing (\u{2303}0 removes the tag)."
                  : "Spoiler blurs this card until you click it. Lock hides it until Touch ID. Both are for this card only.")
                 .font(.system(size: 11))
                 .fixedSize(horizontal: false, vertical: true)
+            Spacer(minLength: 0)
+            // Кнопка — у внешнего края подсказки: подсказка слева — кнопка слева, справа — справа.
             HStack {
-                Spacer()
+                if captionOnTrailing { Spacer() }
                 Button(coachStep == 1 ? "Next" : "Done") {
                     withAnimation(.easeInOut(duration: 0.25)) { coachStep = coachStep == 1 ? 2 : 0 }
                 }
                 .keyboardShortcut(.defaultAction)
                 .controlSize(.small)
+                if !captionOnTrailing { Spacer() }
             }
         }
-        .frame(width: 190)
-        .padding(.top, 6)
+        .frame(width: 170)
+        .frame(maxHeight: .infinity, alignment: .top)
         .transition(.opacity)
     }
 

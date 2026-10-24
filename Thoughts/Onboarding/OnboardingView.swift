@@ -127,40 +127,17 @@ struct OnboardingView: View {
                 }
                 .allowsHitTesting(false)
         case .finish:
-            FinishScene()
+            HotkeysScene(showsDesktop: onboardingViewModel.home == .desktop)
         }
     }
 
     private func homeOption<Scene: View>(_ home: OnboardingHome, title: String, subtitle: String,
                                           isRecommended: Bool = false,
-                                          @ViewBuilder scene: () -> Scene) -> some View {
-        let selected = onboardingViewModel.home == home
-        return Button {
+                                          @ViewBuilder scene: @escaping () -> Scene) -> some View {
+        HomeOptionCard(selected: onboardingViewModel.home == home, title: title, subtitle: subtitle,
+                       isRecommended: isRecommended, scene: scene) {
             withAnimation(.spring(response: 0.3, dampingFraction: 0.8)) { onboardingViewModel.choose(home) }
-        } label: {
-            VStack(alignment: .leading, spacing: 8) {
-                scene().frame(maxHeight: .infinity)
-                HStack(spacing: 6) {
-                    Image(systemName: selected ? "checkmark.circle.fill" : "circle")
-                        .foregroundStyle(selected ? Color.accentColor : .secondary)
-                    Text(title).font(.system(size: 13, weight: .semibold))
-                }
-                Text(isRecommended ? "Recommended" : " ")
-                    .font(.system(size: 10, weight: .semibold))
-                    .foregroundStyle(.green)
-                Text(subtitle)
-                    .font(.system(size: 11))
-                    .foregroundStyle(.secondary)
-            }
-            .padding(10)
-            .frame(maxHeight: .infinity, alignment: .top)
-            .background(RoundedRectangle(cornerRadius: 14, style: .continuous)
-                .fill(Color.primary.opacity(selected ? 0.08 : 0.03)))
-            .overlay(RoundedRectangle(cornerRadius: 14, style: .continuous)
-                .strokeBorder(selected ? Color.accentColor : Color.primary.opacity(0.1), lineWidth: selected ? 2 : 1))
-            .contentShape(Rectangle())
         }
-        .buttonStyle(.plain)
     }
 
     // MARK: - Справа
@@ -260,8 +237,10 @@ struct OnboardingView: View {
     private var controls: some View {
         HStack {
             if onboardingViewModel.canGoBack {
-                Button("Back") { onboardingViewModel.back() }
-                    .keyboardShortcut(onboardingViewModel.step == .home ? nil : KeyboardShortcut(.leftArrow, modifiers: []))
+                Button("Back") { goBack() }
+                    // ← — назад, но не на экране выбора (там ←/→ меняют вариант) и не на
+                    // экране 3 (там печатают в карточке).
+                    .keyboardShortcut(onboardingViewModel.step == .home || isSandbox ? nil : KeyboardShortcut(.leftArrow, modifiers: []))
             }
             Spacer()
             dots
@@ -291,6 +270,15 @@ struct OnboardingView: View {
         }
     }
 
+    /// Назад с экрана 3: карточку курса убираем с доски, задания начинаются заново.
+    private func goBack() {
+        if isSandbox, let id = onboardingViewModel.sandboxCardID,
+           let card = board.cards.first(where: { $0.id == id }) {
+            board.deleteCard(card)
+        }
+        onboardingViewModel.back()
+    }
+
     private var dots: some View {
         HStack(spacing: 6) {
             ForEach(OnboardingStep.allCases, id: \.self) { step in
@@ -313,5 +301,43 @@ struct DimShape: Shape {
             path.addRoundedRect(in: hole, cornerSize: CGSize(width: cornerRadius, height: cornerRadius), style: .continuous)
         }
         return path
+    }
+}
+
+/// Карточка выбора «где живёт Thoughts»: сцена, кружок выбора, подпись. Общая для
+/// онбординга и Settings → General.
+struct HomeOptionCard<Scene: View>: View {
+    var selected: Bool
+    var title: String
+    var subtitle: String
+    var isRecommended = false
+    @ViewBuilder var scene: () -> Scene
+    var action: () -> Void
+
+    var body: some View {
+        Button(action: action) {
+            VStack(alignment: .leading, spacing: 8) {
+                scene().frame(maxHeight: .infinity)
+                HStack(spacing: 6) {
+                    Image(systemName: selected ? "checkmark.circle.fill" : "circle")
+                        .foregroundStyle(selected ? Color.accentColor : .secondary)
+                    Text(title).font(.system(size: 13, weight: .semibold))
+                }
+                Text(isRecommended ? "Recommended" : " ")
+                    .font(.system(size: 10, weight: .semibold))
+                    .foregroundStyle(.green)
+                Text(subtitle)
+                    .font(.system(size: 11))
+                    .foregroundStyle(.secondary)
+            }
+            .padding(10)
+            .frame(maxHeight: .infinity, alignment: .top)
+            .background(RoundedRectangle(cornerRadius: 14, style: .continuous)
+                .fill(Color.primary.opacity(selected ? 0.08 : 0.03)))
+            .overlay(RoundedRectangle(cornerRadius: 14, style: .continuous)
+                .strokeBorder(selected ? Color.accentColor : Color.primary.opacity(0.1), lineWidth: selected ? 2 : 1))
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
     }
 }

@@ -262,10 +262,8 @@ struct ContentView: View {
                   !onboardingViewModel.isActive else { return }
             if focusedCardID != nil {
                 setFocusedCard(nil)
-                TipsState.shared.noteAction(for: .focusMode)
             } else if let textFocusedCardID {
                 setFocusedCard(textFocusedCardID)
-                TipsState.shared.offer(.focusMode)
             }
         }
         .onReceive(NotificationCenter.default.publisher(for: .cardWasMoved)) { _ in
@@ -594,13 +592,13 @@ struct ContentView: View {
     /// chrome окна), так что отступ под неё можно менять независимо от
     /// самого окна/frame — без компромисса с покрытием экрана, в отличие
     /// от системных элементов.
-    /// Обучение по ходу работы при смене Space: карточка-совет в пустом Space
-    /// (слой 3) и подсказки про Spaces / Space Lock (слой 2).
+    /// Обучение по ходу работы при смене Space: подсказки про Spaces / Space Lock.
     private func didSwitchSpace(to slot: Int) {
-        SpaceTipCards.addIfNeeded(slot: slot, viewModel: viewModel)
         // Сначала — «сделал то, о чём была плашка», потом — новые.
         TipsState.shared.noteAction(for: .spaceSwitch)
         TipsState.shared.offer(.spaceSwitch)
+        // Про панель Space — после подсказки про Spaces, при следующей смене Space.
+        if TipsState.shared.seen.contains(.spaceSwitch) { TipsState.shared.offer(.spaceBar) }
         if !viewModel.securitySettings.isPasscodeEnabled { TipsState.shared.offer(.spaceLock) }
     }
 

@@ -2,21 +2,20 @@ import SwiftUI
 
 // Анимации онбординга — код, а не видео: чёткие в любом разрешении, в обеих темах,
 // без файлов. Каждая сцена — функция времени `t` внутри цикла длиной `period`
-// (TimelineView), так что её не сбивают другие анимации. При «Reduce Motion» —
-// один статичный кадр (`still`).
+// (TimelineView), так что её не сбивают другие анимации. «Reduce Motion» их не
+// останавливает: это обучающие демонстрации в рамке (курсор, набор текста), без
+// параллакса и крупных движений, и без анимации они ничего не объясняют.
 
 /// Часы сцены: `t` от 0 до `period`, по кругу.
 struct SceneClock<Content: View>: View {
     var period: Double
-    /// Кадр для Reduce Motion — момент, где видно всё главное.
+    /// Кадр, где видно всё главное (для превью и тестов).
     var still: Double
     @ViewBuilder var content: (Double) -> Content
-    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     var body: some View {
-        TimelineView(.animation(paused: reduceMotion)) { context in
-            let t = reduceMotion ? still : context.date.timeIntervalSinceReferenceDate.truncatingRemainder(dividingBy: period)
-            content(t)
+        TimelineView(.animation) { context in
+            content(context.date.timeIntervalSinceReferenceDate.truncatingRemainder(dividingBy: period))
         }
     }
 }
@@ -48,6 +47,18 @@ struct CursorPath {
 }
 
 // MARK: - Детали
+
+/// Стеклянная подложка Desktop Overlay: лежит поверх обоев и папок (они видны
+/// сквозь неё размытыми), на ней — карточки.
+struct FakeGlassPanel: View {
+    var body: some View {
+        RoundedRectangle(cornerRadius: 12, style: .continuous)
+            .fill(.ultraThinMaterial)
+            .overlay(RoundedRectangle(cornerRadius: 12, style: .continuous).fill(Color.white.opacity(0.06)))
+            .overlay(RoundedRectangle(cornerRadius: 12, style: .continuous).strokeBorder(Color.white.opacity(0.25), lineWidth: 0.7))
+            .shadow(color: .black.opacity(0.18), radius: 6, y: 3)
+    }
+}
 
 /// Строки карточки с живым Markdown, как в приложении: `# ` — заголовок,
 /// `- [ ] ` / `- [x] ` — чек-лист, `**…**` — жирный. `typed` — сколько символов
@@ -323,28 +334,48 @@ struct WindowHomeScene: View {
     }
 }
 
-/// Вариант «рабочий стол»: карточки лежат прямо на обоях, рядом с папками.
+/// Вариант «рабочий стол»: по ⌥1 на обоях появляется стеклянная подложка с
+/// карточками (папки видны сквозь неё), потом всё уходит и цикл повторяется.
 struct DesktopHomeScene: View {
     private let cards: [(lines: [String], tag: Color?, x: CGFloat, y: CGFloat, aspect: CGFloat)] = [
         (["# idea", "ship it"], nil, 0.07, 0.22, 0.78),
         (["- [ ] todo", "- [x] done"], .orange, 0.42, 0.42, 0.62),
         (["**plan**", "May"], nil, 0.12, 0.62, 0.55)
     ]
+    private static let period = 6.0
 
     var body: some View {
-        SceneClock(period: 4, still: 0) { t in
+        SceneClock(period: Self.period, still: 3) { t in
             GeometryReader { proxy in
                 let size = proxy.size
                 let cardWidth = size.width * 0.34
+                let glass = sceneProgress(t, from: 0.7, to: 1.3) - sceneProgress(t, from: 5.2, to: 5.7)
+                let pressed = (t > 0.25 && t < 1.0) || t > 5.0 && t < 5.6
                 ZStack(alignment: .topLeading) {
                     FakeDesktop()
+                    FakeGlassPanel()
+                        .frame(width: size.width * 0.94, height: size.height * 0.94)
+                        .offset(x: size.width * 0.03, y: size.height * 0.03)
+                        .opacity(glass)
+                        .scaleEffect(0.94 + 0.06 * glass)
                     ForEach(cards.indices, id: \.self) { index in
                         let card = cards[index]
-                        let bob = sin((t / 4 + Double(index) * 0.3) * 2 * .pi) * 2
+                        let appear = sceneProgress(t, from: 1.1 + Double(index) * 0.25, to: 1.6 + Double(index) * 0.25)
+                            - sceneProgress(t, from: 5.2, to: 5.7)
+                        let bob = sin((t / Self.period + Double(index) * 0.3) * 2 * .pi) * 2
                         FakeCard(lines: card.lines, tag: card.tag, fontSize: 7)
                             .frame(width: cardWidth, height: cardWidth * card.aspect)
+                            .scaleEffect(0.9 + 0.1 * appear)
+                            .opacity(appear)
                             .offset(x: size.width * card.x, y: size.height * card.y + bob)
                     }
+                    HStack(spacing: 4) {
+                        KeyCap(label: "\u{2325}", pressed: pressed)
+                        KeyCap(label: t < 3 ? "1" : "D", pressed: pressed)
+                    }
+                    .scaleEffect(0.62)
+                    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottom)
+                    .padding(.bottom, 2)
                 }
             }
         }
@@ -475,19 +506,169 @@ struct DeleteCursorScene: View {
     }
 }
 
-// MARK: - Финал
+// MARK: - Финал: горячие клавиши
 
-/// Галочка с мягким свечением.
-struct FinishScene: View {
+/// Клавиши и что они делают: ⌥Tab — обзор Spaces (выбор идёт по плиткам), ⌥1–9 —
+/// прыжок в Space, ⌥D — карточки уходят, остаются обои, и ⌥1–9 возвращает их
+/// (последнее — только для рабочего стола).
+struct HotkeysScene: View {
+    var showsDesktop: Bool
+    /// Длительности сегментов: ⌥Tab, ⌥1–9, ⌥D + возврат.
+    private static let segments: [Double] = [2.4, 2.6, 5.2]
+
+    private var durations: [Double] { showsDesktop ? Self.segments : Array(Self.segments.prefix(2)) }
+
     var body: some View {
-        SceneClock(period: 3, still: 2) { t in
-            let glow = 0.5 + 0.5 * sin(t / 3 * 2 * .pi)
+        SceneClock(period: durations.reduce(0, +), still: 1) { t in
+            let (index, local) = segment(at: t)
             ZStack {
-                FakeCanvas()
-                Image(systemName: "checkmark.circle.fill")
-                    .font(.system(size: 64))
-                    .foregroundStyle(Color.accentColor)
-                    .shadow(color: Color.accentColor.opacity(0.35 + 0.35 * glow), radius: 18)
+                if index < 2 {
+                    SpaceGridBackdrop()
+                    GeometryReader { proxy in
+                        SpaceGrid(selection: selection(index, local))
+                            .frame(width: proxy.size.width * 0.78, height: proxy.size.height * 0.62)
+                            .position(x: proxy.size.width / 2, y: proxy.size.height * 0.4)
+                    }
+                } else {
+                    DesktopHideScene(hidden: hidden(local))
+                }
+                VStack {
+                    Spacer()
+                    keys(index, local)
+                        .padding(.bottom, 22)
+                }
+            }
+            .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
+        }
+    }
+
+    private func segment(at t: Double) -> (Int, Double) {
+        var start = 0.0
+        for (index, length) in durations.enumerated() {
+            if t < start + length || index == durations.count - 1 { return (index, t - start) }
+            start += length
+        }
+        return (0, t)
+    }
+
+    /// Карточки уходят по ⌥D и возвращаются по ⌥1–9.
+    private func hidden(_ local: Double) -> Double {
+        sceneProgress(local, from: 0.8, to: 1.2) - sceneProgress(local, from: 3.6, to: 4.0)
+    }
+
+    /// Выбранная плитка: ⌥Tab — идёт по плиткам, ⌥1–9 — прыгает.
+    private func selection(_ index: Int, _ local: Double) -> Int {
+        if index == 0 { return local < 0.8 ? 0 : (local < 1.2 ? 1 : (local < 1.6 ? 2 : 3)) }
+        return local < 0.9 ? 3 : (local < 1.8 ? 7 : 5)
+    }
+
+    private func keys(_ index: Int, _ local: Double) -> some View {
+        let label: String
+        let pressed: Bool
+        switch index {
+        case 0:
+            label = "Tab"
+            pressed = local > 0.15 && local < 2.0
+        case 1:
+            label = local < 0.9 ? "4" : (local < 1.8 ? "8" : "6")
+            pressed = local > 0.15 && local < 2.2
+        default:
+            // ⌥D, пауза, затем ⌥2 — возврат карточек.
+            label = local < 2.6 ? "D" : "2"
+            pressed = (local > 0.3 && local < 1.6) || (local > 3.4 && local < 4.6)
+        }
+        return HStack(spacing: 8) {
+            KeyCap(label: "\u{2325}", pressed: pressed)
+            Text("+").foregroundStyle(.white.opacity(0.4))
+            KeyCap(label: label, pressed: pressed)
+        }
+    }
+}
+
+/// Цветной фон обзора ⌥Tab — как обои, но темнее.
+private struct SpaceGridBackdrop: View {
+    var body: some View {
+        RoundedRectangle(cornerRadius: 14, style: .continuous)
+            .fill(LinearGradient(colors: [Color(red: 0.20, green: 0.15, blue: 0.32), Color(red: 0.46, green: 0.24, blue: 0.22)],
+                                 startPoint: .topLeading, endPoint: .bottomTrailing))
+    }
+}
+
+/// Клавиша: приподнятая, при нажатии темнеет и «вдавливается».
+struct KeyCap: View {
+    var label: String
+    var pressed: Bool
+
+    var body: some View {
+        Text(label)
+            .font(.system(size: 15, weight: .semibold, design: .rounded))
+            .foregroundStyle(.white.opacity(pressed ? 1 : 0.8))
+            .frame(minWidth: 40, minHeight: 34)
+            .padding(.horizontal, 6)
+            .background(RoundedRectangle(cornerRadius: 8, style: .continuous).fill(Color.white.opacity(pressed ? 0.28 : 0.14)))
+            .overlay(RoundedRectangle(cornerRadius: 8, style: .continuous).strokeBorder(Color.white.opacity(0.2), lineWidth: 0.5))
+            .offset(y: pressed ? 1.5 : 0)
+    }
+}
+
+/// Девять миниатюр Spaces, как в обзоре ⌥Tab; выбранная — с рамкой.
+private struct SpaceGrid: View {
+    var selection: Int
+    private let cards: [[(CGFloat, CGFloat, CGFloat, CGFloat)]] = [
+        [(0.1, 0.15, 0.4, 0.35), (0.5, 0.5, 0.4, 0.35)], [(0.15, 0.2, 0.7, 0.3)], [(0.1, 0.1, 0.35, 0.5), (0.55, 0.3, 0.35, 0.5)]
+    ]
+
+    var body: some View {
+        GeometryReader { proxy in
+            let gap: CGFloat = 8
+            let w = (proxy.size.width - gap * 2) / 3, h = (proxy.size.height - gap * 2) / 3
+            ForEach(0..<9, id: \.self) { slot in
+                let selected = slot == selection
+                RoundedRectangle(cornerRadius: 6, style: .continuous)
+                    .fill(Color.white.opacity(0.06))
+                    .overlay {
+                        ZStack(alignment: .topLeading) {
+                            ForEach(Array(cards[slot % 3].enumerated()), id: \.offset) { _, c in
+                                RoundedRectangle(cornerRadius: 2, style: .continuous)
+                                    .fill(Color.white.opacity(0.25))
+                                    .frame(width: w * c.2, height: h * c.3)
+                                    .offset(x: w * c.0, y: h * c.1)
+                            }
+                        }
+                        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+                    }
+                    .overlay(RoundedRectangle(cornerRadius: 6, style: .continuous)
+                        .strokeBorder(selected ? Color.accentColor : Color.white.opacity(0.12), lineWidth: selected ? 2.5 : 0.5))
+                    .frame(width: w, height: h)
+                    .offset(x: CGFloat(slot % 3) * (w + gap), y: CGFloat(slot / 3) * (h + gap))
+            }
+        }
+    }
+}
+
+/// Рабочий стол с карточками; `hidden` 0…1 — карточки уходят (⌥D), остаются обои.
+private struct DesktopHideScene: View {
+    var hidden: Double
+
+    var body: some View {
+        GeometryReader { proxy in
+            let size = proxy.size
+            ZStack(alignment: .topLeading) {
+                FakeDesktop()
+                FakeGlassPanel()
+                    .frame(width: size.width * 0.94, height: size.height * 0.94)
+                    .offset(x: size.width * 0.03, y: size.height * 0.03)
+                    .opacity(1 - hidden)
+                Group {
+                    FakeCard(lines: ["# idea", "ship it"], fontSize: 7)
+                        .frame(width: size.width * 0.3, height: size.width * 0.23)
+                        .offset(x: size.width * 0.08, y: size.height * 0.2)
+                    FakeCard(lines: ["- [ ] todo", "- [x] done"], tag: .orange, fontSize: 7)
+                        .frame(width: size.width * 0.3, height: size.width * 0.19)
+                        .offset(x: size.width * 0.4, y: size.height * 0.4)
+                }
+                .opacity(1 - hidden)
+                .scaleEffect(1 - 0.06 * hidden)
             }
         }
     }

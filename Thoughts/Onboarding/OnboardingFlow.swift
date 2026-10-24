@@ -100,7 +100,7 @@ final class OnboardingViewModel {
         didDelete = false
     }
 
-    var canGoBack: Bool { step != .hook && step != .firstCard }
+    var canGoBack: Bool { step != .hook }
 
     func choose(_ home: OnboardingHome) {
         self.home = home
@@ -128,6 +128,9 @@ final class OnboardingViewModel {
         guard isActive, canGoBack else { return }
         switch step {
         case .home: step = .hook
+        case .firstCard:
+            resetSandbox()
+            step = .home
         case .finish: step = .firstCard
         default: break
         }

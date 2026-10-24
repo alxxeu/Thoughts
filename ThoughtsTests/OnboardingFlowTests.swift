@@ -77,6 +77,9 @@ struct OnboardingFlowTests {
         model.back()
         #expect(model.step == .hook)
         model.next(); model.next()
+        model.back() // с экрана 3 можно вернуться к выбору
+        #expect(model.step == .home)
+        model.next()
         passSandbox(model)
         model.next(); model.next()
         #expect(box.finished?.0 == OnboardingHome.window)

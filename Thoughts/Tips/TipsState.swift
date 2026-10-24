@@ -7,7 +7,7 @@ enum Tip: String, CaseIterable {
     /// Цепочка в меню тега: цвета → Spoiler/Lock карточки.
     case tagColors
     /// Перенос/ресайз и создание карточки учит онбординг — отдельной подсказки нет.
-    case spaceSwitch, spaceLock, focusMode, askAI
+    case spaceSwitch, spaceBar, spaceLock, focusMode, askAI
 }
 
 /// Что из обучения уже показано — UserDefaults (у каждого Mac своё).
@@ -17,12 +17,16 @@ final class TipsState {
 
     private static let enabledKey = "tips.enabled"
     private static let seenKey = "tips.seen"
-    private static let spaceCardsKey = "tips.spaceCards"
     private static let pendingKey = "tips.pending"
     private static let cooldownStartKey = "tips.cooldownStart"
     /// Следующая плашка — не раньше чем через 3 минуты после того, как
     /// выполнили действие из прошлой (или закрыли её «Got it»).
+    #if DEBUG
+    /// Debug: запуск с `-fastTips YES` — пауза 30 с вместо 3 минут, чтобы быстро пройти все подсказки.
+    static let cooldown: TimeInterval = UserDefaults.standard.bool(forKey: "fastTips") ? 30 : 180
+    #else
     static let cooldown: TimeInterval = 180
+    #endif
 
     @ObservationIgnored private let defaults: UserDefaults
 
@@ -31,10 +35,8 @@ final class TipsState {
         didSet { defaults.set(isEnabled, forKey: Self.enabledKey) }
     }
     private(set) var seen: Set<Tip>
-    /// Слоты, в которых уже появлялась карточка-совет (слой 3).
-    private(set) var spaceCardSlots: Set<Int>
 
-    /// Идёт онбординг (в т.ч. Replay) — подсказок и карточек-советов нет.
+    /// Идёт онбординг (в т.ч. Replay) — подсказок нет.
     @ObservationIgnored var isPaused = false
 
     /// Подсказка-плашка внизу доски, которая сейчас на экране.
@@ -54,7 +56,6 @@ final class TipsState {
         self.defaults = defaults
         isEnabled = defaults.object(forKey: Self.enabledKey) as? Bool ?? true
         seen = Set((defaults.stringArray(forKey: Self.seenKey) ?? []).compactMap(Tip.init(rawValue:)))
-        spaceCardSlots = Set((defaults.array(forKey: Self.spaceCardsKey) as? [Int]) ?? [])
         pending = defaults.string(forKey: Self.pendingKey).flatMap(Tip.init(rawValue:))
         cooldownStart = defaults.object(forKey: Self.cooldownStartKey) as? Date
     }
@@ -102,20 +103,14 @@ final class TipsState {
         defaults.set(cooldownStart, forKey: Self.cooldownStartKey)
     }
 
-    func markSpaceCard(_ slot: Int) {
-        spaceCardSlots.insert(slot)
-        defaults.set(spaceCardSlots.sorted(), forKey: Self.spaceCardsKey)
-    }
-
-    /// Settings → General → Reset Tips: подсказки и карточки-советы — заново.
+    /// Settings → General → Reset Tips: подсказки — заново.
     func reset() {
         seen = []
-        spaceCardSlots = []
         currentToast = nil
         pending = nil
         cooldownStart = nil
         defaults.removeObject(forKey: Self.seenKey)
-        defaults.removeObject(forKey: Self.spaceCardsKey)
+        defaults.removeObject(forKey: "tips.spaceCards") // осталось от карточек-советов
         defaults.removeObject(forKey: Self.pendingKey)
         defaults.removeObject(forKey: Self.cooldownStartKey)
     }

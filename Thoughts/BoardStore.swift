@@ -7,12 +7,16 @@ private struct BoardData: Codable {
 
 /// Только в Debug: запуск с `-demoBoard YES` — отдельная доска
 /// demo-board.json для скриншотов и видео App Store, без iCloud и Spotlight,
-/// чтобы демо-карточки не смешались с настоящими.
+/// чтобы демо-карточки не смешались с настоящими. `-demoProfile имя` — своя
+/// доска demo-имя.json (нет файла — пустая), например для проверки онбординга.
 enum DemoMode {
     #if DEBUG
-    static let isActive = UserDefaults.standard.bool(forKey: "demoBoard")
+    static let profile = UserDefaults.standard.string(forKey: "demoProfile")
+    static let isActive = UserDefaults.standard.bool(forKey: "demoBoard") || profile != nil
+    static let fileName = profile.map { "demo-\($0).json" } ?? "demo-board.json"
     #else
     static let isActive = false
+    static let fileName = ""
     #endif
 }
 
@@ -42,7 +46,7 @@ final class BoardStore {
         let folder = Self.dataFolder
         try? FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
 
-        self.init(fileURL: folder.appendingPathComponent(DemoMode.isActive ? "demo-board.json" : "board.json"))
+        self.init(fileURL: folder.appendingPathComponent(DemoMode.isActive ? DemoMode.fileName : "board.json"))
     }
 
     init(fileURL: URL) {

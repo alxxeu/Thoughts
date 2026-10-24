@@ -126,11 +126,22 @@ struct SettingsView: View {
                 }
 
                 Section {
-                    Toggle("Desktop Overlay", isOn: Binding(
-                        get: { viewModel.desktopOverlay.isEnabled },
-                        set: { viewModel.desktopOverlay.isEnabled = $0 }
-                    ))
-                    .toggleStyle(.switch)
+                    HStack(spacing: 12) {
+                        HomeOptionCard(selected: !viewModel.desktopOverlay.isEnabled, title: "In a window",
+                                       subtitle: "A regular window, like any app.",
+                                       scene: { WindowHomeScene() }) {
+                            viewModel.desktopOverlay.isEnabled = false
+                        }
+                        HomeOptionCard(selected: viewModel.desktopOverlay.isEnabled, title: "On your desktop",
+                                       subtitle: "Cards sit right on your wallpaper.", isRecommended: true,
+                                       scene: { DesktopHomeScene() }) {
+                            viewModel.desktopOverlay.isEnabled = true
+                        }
+                    }
+                    .frame(height: 250)
+                    .padding(.vertical, 4)
+                } header: {
+                    Text("Where should Thoughts live?")
                 } footer: {
                     VStack(alignment: .leading, spacing: 6) {
                         Label("Runs best on macOS 26 or later.", systemImage: "checkmark.seal.fill")
@@ -152,7 +163,7 @@ struct SettingsView: View {
                     .toggleStyle(.switch)
                     SettingsRowButton(title: "Reset Tips") { TipsState.shared.reset() }
                 } footer: {
-                    Text("Tips appear once, the first time you use something; tip cards appear once in empty Spaces 2\u{2013}9. Reset shows them again.")
+                    Text("Tips appear once, the first time you use something. Reset shows them again.")
                 }
             }
             .formStyle(.grouped)
