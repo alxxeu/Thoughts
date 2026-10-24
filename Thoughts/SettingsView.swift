@@ -145,9 +145,6 @@ struct SettingsView: View {
                 BackupSection(viewModel: viewModel)
 
                 Section {
-                    SettingsRowButton(title: "Replay Onboarding") {
-                        NotificationCenter.default.post(name: .replayOnboarding, object: nil)
-                    }
                     Toggle("Show Tips", isOn: Binding(
                         get: { TipsState.shared.isEnabled },
                         set: { TipsState.shared.isEnabled = $0 }
@@ -155,7 +152,7 @@ struct SettingsView: View {
                     .toggleStyle(.switch)
                     SettingsRowButton(title: "Reset Tips") { TipsState.shared.reset() }
                 } footer: {
-                    Text("Replay the first-launch tour. Tips appear once, the first time you use something; tip cards appear once in empty Spaces 2\u{2013}9. Reset shows them again.")
+                    Text("Tips appear once, the first time you use something; tip cards appear once in empty Spaces 2\u{2013}9. Reset shows them again.")
                 }
             }
             .formStyle(.grouped)

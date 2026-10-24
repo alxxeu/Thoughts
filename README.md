@@ -19,7 +19,7 @@ open canvas, exactly where they make sense to you.
 - **Ask AI** — ask about a card, a selection or a whole Space: right-click any text and choose Ask AI, then replace, insert or copy the answer. Works with Apple Intelligence on-device, or ChatGPT and Claude with your own API key
 - **Customization** — pick the card font, text size and color, and add a subtle background pattern to the canvas
 - **iCloud sync** — optional, end-to-end encrypted sync of your Spaces and cards between your Macs
-- **Backup & export** — full backups (optionally password-protected) and a readable Markdown export
+- **Backup & export** — full backups, optionally password-protected
 - **Liquid Glass** on macOS 26, with a graceful fallback look on macOS 14–25
 
 ## Install

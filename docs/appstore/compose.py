@@ -135,7 +135,7 @@ FEATURES = [
     ("sparkles.square.filled.on.square", (88, 86, 214), "Spoiler", "Blur a card until you’re ready to look."),
     ("lock.square.fill", (52, 120, 246), "Locked cards", "Hide a card behind your passcode or Touch ID."),
     ("icloud.fill", (10, 132, 255), "iCloud sync", "Your Spaces on every Mac, end-to-end encrypted."),
-    ("externaldrive.fill", (52, 199, 89), "Backups", "Password-protected backups and Markdown export."),
+    ("externaldrive.fill", (52, 199, 89), "Backups", "Password-protected backups."),
     ("bolt.fill", (255, 179, 0), "Quick Capture", "Jot down a card from any app with one shortcut."),
     ("magnifyingglass", (142, 142, 147), "Spotlight", "Find any card from anywhere on your Mac."),
 ]

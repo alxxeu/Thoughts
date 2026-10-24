@@ -12,6 +12,8 @@ struct KanbanBoard: Equatable {
     struct Item: Identifiable, Equatable {
         var id = UUID()
         var text: String
+        /// Выполнено: в тексте карточки — `- [x] …`.
+        var isDone = false
     }
 
     struct Column: Identifiable, Equatable {
@@ -49,6 +51,8 @@ struct KanbanBoard: Equatable {
 
             if titleAllowed, let prefix = line.range(of: #"^#{1,3} "#, options: .regularExpression) {
                 columns[last].title = String(line[prefix.upperBound...])
+            } else if line.hasPrefix("- [x] ") {
+                columns[last].items.append(Item(text: String(line.dropFirst(6)), isDone: true))
             } else if line.hasPrefix("- ") || line == "-" {
                 columns[last].items.append(Item(text: String(line.dropFirst(2))))
             } else if line.hasPrefix("  "), !columns[last].items.isEmpty {
@@ -70,7 +74,7 @@ struct KanbanBoard: Equatable {
             if !title.isEmpty { lines.append("## " + title) }
             for item in column.items {
                 let parts = item.text.components(separatedBy: "\n")
-                lines.append("- " + parts[0])
+                lines.append((item.isDone ? "- [x] " : "- ") + parts[0])
                 lines += parts.dropFirst().map { "  " + $0 }
             }
         }
@@ -110,6 +114,17 @@ struct KanbanBoard: Equatable {
         if c == column, position > i { position -= 1 }
         position = min(position, columns[column].items.count)
         columns[column].items.insert(item, at: position)
+    }
+
+    /// Выполнено/снято. Выполненный пункт уходит в конец колонки, снятый — в конец
+    /// невыполненных (над выполненными).
+    mutating func toggleDone(_ id: Item.ID) {
+        guard let (c, i) = location(of: id) else { return }
+        var item = columns[c].items.remove(at: i)
+        item.isDone.toggle()
+        let items = columns[c].items
+        let position = item.isDone ? items.count : (items.firstIndex { $0.isDone } ?? items.count)
+        columns[c].items.insert(item, at: position)
     }
 
     mutating func setText(_ text: String, of id: Item.ID) {

@@ -1,7 +1,7 @@
 import AppKit
 import UniformTypeIdentifiers
 
-/// Сценарии Export Backup / Import Backup / Export as Markdown — одни и те
+/// Сценарии Export Backup / Import Backup — одни и те
 /// же из Settings → General и из меню File. Диалоги — обычные NSAlert и
 /// NSSavePanel/NSOpenPanel: работают одинаково из любого окна.
 ///
@@ -193,66 +193,6 @@ enum BackupCoordinator {
             return confirm.runModal() == .alertFirstButtonReturn ? true : nil
         default:
             return nil
-        }
-    }
-
-    // MARK: - Export as Markdown
-
-    static func exportMarkdown(viewModel: BoardViewModel) {
-        guard !viewModel.isActiveSpaceLocked else { return }
-        let snapshot = viewModel.makeSnapshot()
-        let passcodeEnabled = viewModel.isSpaceLockEnforced
-        let locked = snapshot.lockedSummary(passcodeEnabled: passcodeEnabled)
-
-        guard !locked.isEmpty else {
-            saveMarkdown(snapshot, includeLocked: false, passcodeEnabled: passcodeEnabled)
-            return
-        }
-
-        let alert = NSAlert()
-        alert.messageText = "Include locked content?"
-        alert.informativeText = describe(locked)
-            + "\n\nMarkdown files aren\u{2019}t encrypted \u{2014} anyone who opens the file can read everything in it."
-        alert.addButton(withTitle: "Exclude Locked")
-        alert.addButton(withTitle: "Include Locked")
-        alert.addButton(withTitle: "Cancel")
-
-        switch alert.runModal() {
-        case .alertFirstButtonReturn:
-            saveMarkdown(snapshot, includeLocked: false, passcodeEnabled: passcodeEnabled)
-        case .alertSecondButtonReturn:
-            authenticateOwner(viewModel, reason: "export locked Spaces and cards") { success in
-                guard success else { return }
-                saveMarkdown(snapshot, includeLocked: true, passcodeEnabled: passcodeEnabled)
-            }
-        default:
-            return
-        }
-    }
-
-    private static func saveMarkdown(_ snapshot: BoardSnapshot, includeLocked: Bool, passcodeEnabled: Bool) {
-        let markdown = MarkdownExporter.export(snapshot, includeLocked: includeLocked, passcodeEnabled: passcodeEnabled)
-        guard !markdown.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
-            let alert = NSAlert()
-            alert.messageText = "Nothing to export"
-            alert.informativeText = includeLocked
-                ? "There are no cards with text yet."
-                : "All cards with text are locked. Choose \u{201C}Include Locked\u{201D} to export them."
-            alert.addButton(withTitle: "OK")
-            alert.runModal()
-            return
-        }
-
-        let panel = NSSavePanel()
-        panel.allowedContentTypes = [UTType(filenameExtension: "md") ?? .plainText]
-        panel.nameFieldStringValue = "Thoughts \(dayStamp()).md"
-        panel.canCreateDirectories = true
-        guard panel.runModal() == .OK, let url = panel.url else { return }
-
-        do {
-            try Data(markdown.utf8).write(to: url, options: .atomic)
-        } catch {
-            showError("Couldn\u{2019}t save the file", error)
         }
     }
 

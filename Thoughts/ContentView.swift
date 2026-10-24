@@ -268,9 +268,6 @@ struct ContentView: View {
                 TipsState.shared.offer(.focusMode)
             }
         }
-        .onReceive(NotificationCenter.default.publisher(for: .replayOnboarding)) { _ in
-            onboardingViewModel.start(currentHome: viewModel.desktopOverlay.isEnabled ? .desktop : .window)
-        }
         .onReceive(NotificationCenter.default.publisher(for: .cardWasMoved)) { _ in
             onboardingViewModel.handle(.cardMoved)
         }

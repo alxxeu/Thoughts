@@ -22,4 +22,12 @@ struct SpaceSwitcherTests {
         selection.move(-2)
         #expect(selection.slot == 8)
     }
+
+    @Test func verticalStepMovesByARowAndWraps() {
+        var selection = SpaceSwitcherSelection(slot: 2)
+        selection.move(SpaceSwitcherView.columns)
+        #expect(selection.slot == 5)
+        selection.move(-SpaceSwitcherView.columns * 2)
+        #expect(selection.slot == 8)
+    }
 }

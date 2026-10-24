@@ -62,7 +62,8 @@ struct KanbanBoardTests {
 
     @Test func editsAddRemoveSetText() throws {
         var board = try #require(KanbanBoard.parse(sample))
-        let id = try #require(board.addItem(toColumn: 2, text: "done"))
+        let added = board.addItem(toColumn: 2, text: "done")
+        let id = try #require(added)
         #expect(board.columns[2].items.map(\.text) == ["done"])
         board.setText("finished", of: id)
         #expect(board.columns[2].items[0].text == "finished")
@@ -104,6 +105,21 @@ struct KanbanBoardTests {
         var board = try #require(KanbanBoard.parse("::: board"))
         for _ in 0..<20 { board.addColumn() }
         #expect(board.columns.count == KanbanBoard.maxColumns)
-        #expect(board.addColumn() == nil)
+        let extra = board.addColumn()
+        #expect(extra == nil)
+    }
+}
+
+struct KanbanDoneTests {
+    @Test func doneRoundTripsAndMovesDown() throws {
+        var board = try #require(KanbanBoard.parse("::: board\n- a\n- b\n- c"))
+        let a = board.columns[0].items[0].id
+        board.toggleDone(a)
+        #expect(board.columns[0].items.map(\.text) == ["b", "c", "a"])
+        #expect(board.serialized() == "::: board\n- b\n- c\n- [x] a")
+        #expect(KanbanBoard.parse(board.serialized())?.columns[0].items.map(\.isDone) == [false, false, true])
+        board.toggleDone(a)
+        #expect(board.columns[0].items.map(\.text) == ["b", "c", "a"])
+        #expect(board.columns[0].items.allSatisfy { !$0.isDone })
     }
 }

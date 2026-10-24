@@ -183,17 +183,22 @@ struct KanbanCardView: View {
 
     /// Заголовок колонки — в закреплённой шапке.
     private func headerView(_ column: KanbanBoard.Column, index: Int) -> some View {
-        TextField("", text: titleBinding(column.id),
-                  prompt: Text(Self.titleHint(index) ?? "Title").foregroundStyle(ink.opacity(0.32)),
-                  axis: .vertical)
-            .textFieldStyle(.plain)
-            .font(titleFont)
-            .foregroundStyle(ink)
-            .lineLimit(1...2)
-            .focused($focus, equals: .title(column.id))
-            .onSubmit { addItem(toColumn: index, at: 0) }
-            .padding(.horizontal, 4)
-            .padding(.horizontal, 12)
+        HStack(alignment: .top, spacing: 0) {
+            TextField("", text: titleBinding(column.id),
+                      prompt: Text(Self.titleHint(index) ?? "Title").foregroundStyle(ink.opacity(0.32)))
+                .textFieldStyle(.plain)
+                .font(titleFont)
+                .foregroundStyle(ink)
+                .lineLimit(1)
+                .truncationMode(.tail)
+                .focused($focus, equals: .title(column.id))
+                .onSubmit { addItem(toColumn: index, at: 0) }
+                .padding(.leading, 4)
+            KanbanPlusButton(ink: ink, isVisible: isCardHovered || isFocused || dragging != nil, size: 26) {
+                addItem(toColumn: index, at: 0)
+            }
+        }
+        .padding(.horizontal, 12)
     }
 
     private func columnView(_ column: KanbanBoard.Column, index: Int, dropSlot: (column: Int, index: Int)?) -> some View {
@@ -202,18 +207,13 @@ struct KanbanCardView: View {
                 tile(item, column: index, position: position, isLast: position == column.items.count - 1, dropSlot: dropSlot)
             }
 
-            KanbanPlusButton(ink: ink, isVisible: isCardHovered || isFocused || dragging != nil) {
-                addItem(toColumn: index)
-            }
-            .frame(maxWidth: .infinity)
-            .padding(.top, 2)
-            // Пустая колонка: линия вставки — над «+».
-            .overlay(alignment: .top) {
-                if column.items.isEmpty { dropIndicator(column: index, position: 0, slot: dropSlot).offset(y: -6) }
-            }
         }
         .padding(.horizontal, 12)
         .frame(maxHeight: .infinity, alignment: .top)
+        // Пустая колонка: линия вставки — вверху.
+        .overlay(alignment: .top) {
+            if column.items.isEmpty { dropIndicator(column: index, position: 0, slot: dropSlot) }
+        }
         .contentShape(Rectangle())
     }
 
@@ -223,10 +223,12 @@ struct KanbanCardView: View {
                       dropSlot: (column: Int, index: Int)?) -> some View {
         KanbanTile(
             text: textBinding(item.id), id: item.id, ink: ink, font: itemFont,
+            isDone: item.isDone,
             focus: $focus,
+            onToggleDone: { change { $0.toggleDone(item.id) } },
             onDelete: { change { $0.removeItem(item.id) } },
             onSubmit: {
-                if let (c, i) = board.location(of: item.id) { addItem(toColumn: c, at: i + 1) }
+                if let (c, i) = board.location(of: item.id) { addItem(toColumn: c, at: i) }
             },
             onBackspaceWhenEmpty: { deleteEmptyItem(item.id) },
             isBeingDragged: dragging?.itemID == item.id,
@@ -415,7 +417,9 @@ private struct KanbanTile: View {
     let id: KanbanBoard.Item.ID
     let ink: Color
     let font: Font
+    let isDone: Bool
     var focus: FocusState<KanbanCardView.FocusTarget?>.Binding
+    var onToggleDone: () -> Void
     var onDelete: () -> Void
     var onSubmit: () -> Void
     var onBackspaceWhenEmpty: () -> Void
@@ -426,12 +430,16 @@ private struct KanbanTile: View {
     @State private var isHovering = false
     @State private var isPressingDone = false
     @State private var doneProgress: CGFloat = 0
+    @State private var doneHeld = false
+    @State private var failedTaps = FailedTapCounter()
+    @State private var holdHint = HintTimer()
 
     var body: some View {
         TextField("", text: $text, axis: .vertical)
             .textFieldStyle(.plain)
             .font(font)
             .foregroundStyle(ink)
+            .opacity(isDone ? 0.5 : 1)
             .focused(focus, equals: .item(id))
             .onSubmit(onSubmit)
             .onKeyPress(.delete) {
@@ -455,7 +463,7 @@ private struct KanbanTile: View {
             .frame(maxWidth: .infinity, minHeight: 44, alignment: .topLeading)
             .background(
                 RoundedRectangle(cornerRadius: 13, style: .continuous)
-                    .fill(ink.opacity(0.10))
+                    .fill(ink.opacity(isDone ? 0.05 : 0.10))
                     .contextMenu { Button("Delete", role: .destructive, action: onDelete) }
                     .onHover { inside in
                         if inside { NSCursor.arrow.set() }
@@ -466,6 +474,17 @@ private struct KanbanTile: View {
                             .onEnded { onDragEnded($0.location) }
                     )
             )
+            .overlay(alignment: .topTrailing) {
+                HStack(spacing: 2) {
+                    if holdHint.isVisible {
+                        HintLabel(text: "Hold to delete", fontSize: 10, color: AnyShapeStyle(ink), opacity: 0.8)
+                            .padding(.horizontal, 7).padding(.vertical, 3)
+                            .background(Capsule().fill(.regularMaterial))
+                    }
+                    deleteButton
+                }
+                .padding(3)
+            }
             .overlay(alignment: .bottomTrailing) { doneButton.padding(3) }
             .opacity(isBeingDragged ? 0.35 : 1)
             .onHover { isHovering = $0 }
@@ -480,24 +499,26 @@ private struct KanbanTile: View {
 
     private var controlsVisible: Bool { isHovering || isBeingDragged }
 
-    /// Галочка «готово»: удаляет только при удержании — пока держат, она
-    /// плавно заливается зелёным (как кружок у крестика карточки), отпустили
-    /// раньше — откатывается. Мягкая защита от случайного удаления.
-    private var doneButton: some View {
+    /// Крестик: удаляет только при удержании — пока держат, кольцо заливается
+    /// красным, отпустили раньше — откатывается. Мягкая защита от случайного удаления.
+    private var deleteButton: some View {
         ZStack {
-            KanbanCheckmark()
-                .stroke(ink.opacity(isPressingDone ? 0.45 : 0.7), style: StrokeStyle(lineWidth: 1.5, lineCap: .round, lineJoin: .round))
-            KanbanCheckmark()
+            Circle()
                 .trim(from: 0, to: doneProgress)
-                .stroke(Self.doneGreen, style: StrokeStyle(lineWidth: 1.9, lineCap: .round, lineJoin: .round))
+                .stroke(Self.deleteRed, style: StrokeStyle(lineWidth: 1.5, lineCap: .round))
+                .rotationEffect(.degrees(-90))
+                .frame(width: 18, height: 18)
+            Image(systemName: "xmark")
+                .font(.system(size: 9, weight: .bold))
+                .foregroundStyle(isPressingDone ? Self.deleteRed : ink.opacity(0.7))
         }
-        .frame(width: 9, height: 7)
         .frame(width: 22, height: 22)
         .contentShape(Rectangle())
         .onHover { inside in
             if inside { NSCursor.arrow.set() }
         }
         .onLongPressGesture(minimumDuration: Self.doneHoldDuration, maximumDistance: 10, perform: {
+            doneHeld = true
             Task { @MainActor in
                 onDelete()
                 resetDone()
@@ -507,15 +528,36 @@ private struct KanbanTile: View {
                 isPressingDone = true
                 withAnimation(.linear(duration: Self.doneHoldDuration)) { doneProgress = 1 }
             } else {
+                // Отпустили, не дождавшись конца удержания: три раза подряд — подсказать.
+                if doneHeld { failedTaps.reset() } else if failedTaps.fail() { holdHint.show(holdFor: 3) }
+                doneHeld = false
                 resetDone()
             }
         })
-        .help("Hold to mark as done")
+        .help("Hold to delete")
         .opacity(controlsVisible ? 1 : 0)
         .allowsHitTesting(controlsVisible)
     }
 
+    /// Галочка: клик зачёркивает плитку (она уходит вниз колонки), повторный клик снимает.
+    private var doneButton: some View {
+        KanbanCheckmark()
+            .stroke(isDone ? Self.doneGreen : ink.opacity(0.7),
+                    style: StrokeStyle(lineWidth: isDone ? 1.9 : 1.5, lineCap: .round, lineJoin: .round))
+            .frame(width: 9, height: 7)
+            .frame(width: 22, height: 22)
+            .contentShape(Rectangle())
+            .onHover { inside in
+                if inside { NSCursor.arrow.set() }
+            }
+            .onTapGesture(perform: onToggleDone)
+            .help(isDone ? "Mark as not done" : "Mark as done")
+            .opacity(controlsVisible || isDone ? 1 : 0)
+            .allowsHitTesting(controlsVisible || isDone)
+    }
+
     private static let doneGreen = Color(red: 0.32, green: 0.84, blue: 0.47)
+    private static let deleteRed = Color(red: 0.95, green: 0.32, blue: 0.32)
     private static let doneHoldDuration: Double = 0.3
 
     private func resetDone() {
@@ -537,7 +579,7 @@ private struct KanbanCheckmark: Shape {
 
 extension KanbanTile: Equatable {
     static func == (lhs: KanbanTile, rhs: KanbanTile) -> Bool {
-        lhs.id == rhs.id && lhs.text == rhs.text && lhs.ink == rhs.ink && lhs.font == rhs.font
+        lhs.id == rhs.id && lhs.text == rhs.text && lhs.isDone == rhs.isDone && lhs.ink == rhs.ink && lhs.font == rhs.font
             && lhs.isBeingDragged == rhs.isBeingDragged
     }
 }
@@ -558,6 +600,7 @@ extension KanbanCardView: Equatable {
 private struct KanbanPlusButton: View {
     let ink: Color
     let isVisible: Bool
+    var size: CGFloat = 34
     let action: () -> Void
     @State private var isHovering = false
 
@@ -566,7 +609,7 @@ private struct KanbanPlusButton: View {
             Image(systemName: "plus")
                 .font(.system(size: 14, weight: .medium))
                 .foregroundStyle(ink.opacity(0.7))
-                .frame(width: 34, height: 34)
+                .frame(width: size, height: size)
                 .background(Circle().fill(ink.opacity(isHovering ? 0.14 : 0)))
                 .contentShape(Circle())
         }

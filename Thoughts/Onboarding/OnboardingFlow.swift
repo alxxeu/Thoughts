@@ -70,7 +70,7 @@ final class OnboardingViewModel {
         isFirstRun = isActive
     }
 
-    /// Replay из Help / Settings — с начала, текущий режим предвыбран.
+    /// Тур с начала, текущий режим предвыбран.
     func start(currentHome: OnboardingHome) {
         step = .hook
         home = currentHome

@@ -115,6 +115,8 @@ final class SpaceSwitcher {
         case 48: move(shift ? -1 : 1)                 // Tab
         case 123: move(-1)                            // ←
         case 124: move(1)                             // →
+        case 126: move(-SpaceSwitcherView.columns)                 // ↑
+        case 125: move(SpaceSwitcherView.columns)                  // ↓
         case 53: finish(commit: false)                // Esc
         case 36, 76: finish(commit: true)             // Return
         default:
@@ -159,8 +161,13 @@ final class SpaceSwitcher {
         let mouse = NSEvent.mouseLocation
         let screen = NSScreen.screens.first { NSMouseInRect(mouse, $0.frame, false) } ?? NSScreen.main
         guard let visible = screen?.visibleFrame else { return }
-        let tileWidth = min(120, (visible.width - 80) / 9 - 10)
-        let size = CGSize(width: tileWidth * 9 + 10 * 8 + 32, height: tileWidth * 0.62 + 64 + 32)
+        let rows = (SpaceSwitcherView.slotCount + SpaceSwitcherView.columns - 1) / SpaceSwitcherView.columns
+        let gap = SpaceSwitcherView.gap, labels = SpaceSwitcherView.labelsHeight
+        let byWidth = (visible.width - 80 - 32 - gap * CGFloat(SpaceSwitcherView.columns - 1)) / CGFloat(SpaceSwitcherView.columns)
+        let byHeight = ((visible.height - 80 - 32 - gap * CGFloat(rows - 1)) / CGFloat(rows) - labels) / 0.62
+        let tileWidth = min(180, byWidth, byHeight)
+        let size = CGSize(width: tileWidth * CGFloat(SpaceSwitcherView.columns) + gap * CGFloat(SpaceSwitcherView.columns - 1) + 32,
+                          height: (tileWidth * 0.62 + labels) * CGFloat(rows) + gap * CGFloat(rows - 1) + 32)
         hosting?.rootView = view(tileWidth: tileWidth)
         presentedMouse = mouse
         panel.setFrame(CGRect(x: visible.midX - size.width / 2, y: visible.midY - size.height / 2,
@@ -202,7 +209,7 @@ final class SpaceSwitcher {
         blur.layer?.cornerRadius = 16
         blur.layer?.masksToBounds = true
 
-        let hosting = NSHostingView(rootView: view(tileWidth: 110))
+        let hosting = NSHostingView(rootView: view(tileWidth: 160))
         self.hosting = hosting
         hosting.translatesAutoresizingMaskIntoConstraints = false
         blur.addSubview(hosting)
@@ -231,12 +238,23 @@ struct SpaceSwitcherView: View {
     var onHover: (Int) -> Void
     var onPick: (Int) -> Void
 
+    static let gap: CGFloat = 14
+    /// Подписи под мини-картой: имя и счётчик со спейсингом.
+    static let labelsHeight: CGFloat = 46
+    static let slotCount = 9
+    static let columns = 3
+
     var body: some View {
-        HStack(spacing: 10) {
-            ForEach(model.tiles) { tile in
-                tileView(tile)
-                    .onHover { if $0 { onHover(tile.slot) } }
-                    .onTapGesture { onPick(tile.slot) }
+        let tiles = model.tiles
+        VStack(spacing: Self.gap) {
+            ForEach(Array(stride(from: 0, to: tiles.count, by: Self.columns)), id: \.self) { start in
+                HStack(spacing: Self.gap) {
+                    ForEach(tiles[start..<min(start + Self.columns, tiles.count)]) { tile in
+                        tileView(tile)
+                            .onHover { if $0 { onHover(tile.slot) } }
+                            .onTapGesture { onPick(tile.slot) }
+                    }
+                }
             }
         }
         .padding(16)

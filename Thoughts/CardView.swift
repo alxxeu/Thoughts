@@ -25,6 +25,9 @@ struct CardView: View {
     @State private var isHoveringDeleteButton = false
     @State private var deleteProgress: CGFloat = 0.0
     @State private var isPressingDelete = false
+    @State private var deleteHeld = false
+    @State private var failedDeleteTaps = FailedTapCounter()
+    @State private var deleteHoldHint = HintTimer()
     @State private var isShowingTagPopover = false
     @State private var isHoveringTagButton = false
     @State private var isRevealed = false
@@ -340,6 +343,7 @@ struct CardView: View {
                     if inside { NSCursor.arrow.set() }
                 }
                 .onLongPressGesture(minimumDuration: 0.5, maximumDistance: 10, perform: {
+                    deleteHeld = true
                     Task { @MainActor in
                         viewModel.deleteCard(card)
                         resetDeleteState()
@@ -351,6 +355,9 @@ struct CardView: View {
                             deleteProgress = 1.0
                         }
                     } else {
+                        // Отпустили, не дождавшись конца удержания: три раза подряд — подсказать.
+                        if deleteHeld { failedDeleteTaps.reset() } else if failedDeleteTaps.fail() { deleteHoldHint.show(holdFor: 3) }
+                        deleteHeld = false
                         resetDeleteState()
                     }
                 })
@@ -413,6 +420,12 @@ struct CardView: View {
                 // был бы нечитаем — та же причина, что у подсказки
                 // пустого Space.
                 HintLabel(text: "Try \u{2318}F to focus this card", fontSize: 10, color: AnyShapeStyle(.primary), opacity: 0.5)
+                    .offset(y: -22)
+            }
+        }
+        .overlay(alignment: .top) {
+            if deleteHoldHint.isVisible {
+                HintLabel(text: "Hold \u{00D7} to delete", fontSize: 10, color: AnyShapeStyle(.primary), opacity: 0.5)
                     .offset(y: -22)
             }
         }

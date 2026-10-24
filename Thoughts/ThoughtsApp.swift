@@ -118,10 +118,6 @@ struct ThoughtsApp: App {
                     BackupCoordinator.importBackup(viewModel: viewModel)
                 }
                 .disabled(viewModel.isActiveSpaceLocked)
-                Button("Export as Markdown…") {
-                    BackupCoordinator.exportMarkdown(viewModel: viewModel)
-                }
-                .disabled(viewModel.isActiveSpaceLocked)
                 Divider()
                 Button("Clear Space…") {
                     NotificationCenter.default.post(name: .requestClearSpace, object: nil)
@@ -143,6 +139,13 @@ struct ThoughtsApp: App {
                 }
                 .keyboardShortcut("f", modifiers: .command)
                 .disabled(viewModel.isActiveSpaceLocked || viewModel.desktopOverlay.isDesktopModeActive)
+
+                Divider()
+
+                Toggle("Desktop Overlay", isOn: Binding(
+                    get: { viewModel.desktopOverlay.isEnabled },
+                    set: { viewModel.desktopOverlay.isEnabled = $0 }
+                ))
             }
             // Settings — сцена Window, системного пункта "Settings…" у неё нет:
             // ставим свой на место .appSettings. Барьер против побега из
@@ -155,23 +158,6 @@ struct ThoughtsApp: App {
                     Label("Settings\u{2026}", systemImage: "gearshape")
                 }
                 .keyboardShortcut(",", modifiers: .command)
-            }
-            // .after(.windowArrangement) — стандартная точка вставки
-            // приложением своих пунктов в системное меню Window, ниже
-            // "Zoom"/"Move Window to..." и разделителя перед списком окон.
-            CommandGroup(after: .windowArrangement) {
-                Toggle("Desktop Overlay", isOn: Binding(
-                    get: { viewModel.desktopOverlay.isEnabled },
-                    set: { viewModel.desktopOverlay.isEnabled = $0 }
-                ))
-            }
-            // .after(.help), а не .replacing(.help) — иначе слетает
-            // системное поле поиска по меню, которое SwiftUI туда кладёт
-            // по умолчанию.
-            CommandGroup(after: .help) {
-                Button("Replay Onboarding") {
-                    NotificationCenter.default.post(name: .replayOnboarding, object: nil)
-                }
             }
             CommandMenu("Spaces") {
                 // Однонаправленный вход в Desktop mode — не toggle: повторное
@@ -255,6 +241,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         #endif
         NSApp.windows.first?.acceptsMouseMovedEvents = true
         maximizeOnFirstLaunch()
+        hideUnusedMenus()
         #if PLUGINS
         PluginsModel.shared.attachConverters()
         PluginsModel.shared.reload()
@@ -277,6 +264,27 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
         if let unreadable = BoardStore.shared.unreadableFileURL {
             showUnreadableBoardAlert(unreadable)
+        }
+    }
+
+    /// Help и Window в строке меню не нужны. SwiftUI собирает их сам и может
+    /// пересобрать при смене состояния, поэтому убираем при каждом добавлении.
+    private var menuObserver: Any?
+
+    private func hideUnusedMenus() {
+        func prune() {
+            guard let main = NSApp.mainMenu else { return }
+            for item in main.items where item.submenu === NSApp.helpMenu || item.submenu === NSApp.windowsMenu
+                || ["Help", "Window"].contains(item.title) {
+                main.removeItem(item)
+            }
+        }
+        DispatchQueue.main.async { prune() }
+        menuObserver = NotificationCenter.default.addObserver(
+            forName: NSMenu.didAddItemNotification, object: nil, queue: .main
+        ) { note in
+            guard let menu = note.object as? NSMenu, menu === NSApp.mainMenu else { return }
+            DispatchQueue.main.async { prune() }
         }
     }
 

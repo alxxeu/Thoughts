@@ -12,9 +12,6 @@ extension Notification.Name {
     /// Cmd+F — входит/выходит из Focus Mode для карточки, которая сейчас
     /// держит текстовый фокус (см. ThoughtsApp/ContentView).
     static let toggleFocusCard = Notification.Name("ToggleFocusCard")
-    /// "Replay Onboarding" в Settings → General — показывает тур заново
-    /// поверх канвы, не дожидаясь следующего первого запуска.
-    static let replayOnboarding = Notification.Name("ReplayOnboarding")
     /// File → Clear Space — просит ContentView показать подтверждение
     /// перед необратимым удалением всех карточек активного Space. Само
     /// удаление происходит только после явного подтверждения в алерте,
