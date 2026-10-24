@@ -302,6 +302,12 @@ struct ContentView: View {
         }
     }
 
+    /// Центр карточки в долях её неподвижной рамки (та лежит в (0, 0)).
+    private func cardAnchor(_ position: CGPoint, _ size: CGSize) -> UnitPoint {
+        UnitPoint(x: (position.x + size.width / 2) / max(size.width, 1),
+                  y: (position.y + size.height / 2) / max(size.height, 1))
+    }
+
     private var unlockedSpaceContent: some View {
         GeometryReader { proxy in
             ZStack(alignment: .topLeading) {
@@ -409,11 +415,14 @@ struct ContentView: View {
                     // каждой стороне через .animation(_:) на AnyTransition,
                     // а не общая длительность из withAnimation в месте
                     // мутации activeSlot.
+                    // Масштаб — вокруг центра самой карточки: рамка карточки по layout стоит
+                    // в углу канвы (.offset двигает только картинку), так что центр по
+                    // умолчанию дал бы «выезд» из левого верхнего угла.
                     .transition(
                         .asymmetric(
-                            insertion: .opacity.combined(with: .scale(scale: 0.85))
+                            insertion: .opacity.combined(with: .scale(scale: 0.85, anchor: cardAnchor(displayPosition, displaySize)))
                                 .animation(.easeOut(duration: 0.08)),
-                            removal: .opacity.combined(with: .scale(scale: 0.85))
+                            removal: .opacity.combined(with: .scale(scale: 0.85, anchor: cardAnchor(displayPosition, displaySize)))
                                 .animation(.easeOut(duration: 0.05))
                         )
                     )
