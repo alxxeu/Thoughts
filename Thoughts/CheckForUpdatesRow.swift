@@ -32,7 +32,7 @@ nonisolated enum AppStoreVersion {
             .map { Release(version: $0.version, pageURL: $0.trackViewUrl) }
     }
 
-    /// 1.10 новее 1.9, 1.4.1 новее 1.4.
+    /// 1.10 новее 1.9, 1.4.2 новее 1.4.
     static func isNewer(_ version: String, than current: String) -> Bool {
         version.compare(current, options: .numeric) == .orderedDescending
     }
