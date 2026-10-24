@@ -181,16 +181,21 @@ struct FullScreenBackgroundOption: Identifiable, Hashable {
     static let defaultID = "builtin.graphite"
     private static let customPrefix = "custom:"
 
+    /// Пресеты адаптивные: тёмный тон в тёмной теме, светлый — в светлой.
     static let builtIn: [FullScreenBackgroundOption] = [
-        preset(defaultID, "Graphite", 0x1E1E20),
-        preset("builtin.midnight", "Midnight", 0x16203A),
-        preset("builtin.plum", "Plum", 0x2A1D2E),
-        preset("builtin.forest", "Forest", 0x18261F),
-        preset("builtin.sand", "Sand", 0xE8E1D5)
+        preset(defaultID, "Graphite", dark: 0x1E1E20, light: 0xE7E7EA),
+        preset("builtin.midnight", "Midnight", dark: 0x16203A, light: 0xD9E2F4),
+        preset("builtin.plum", "Plum", dark: 0x2A1D2E, light: 0xEADDF0),
+        preset("builtin.forest", "Forest", dark: 0x18261F, light: 0xDAEADF),
+        preset("builtin.sand", "Sand", dark: 0x3A342B, light: 0xE8E1D5)
     ]
 
-    private static func preset(_ id: String, _ title: String, _ rgb: Int) -> FullScreenBackgroundOption {
-        FullScreenBackgroundOption(id: id, title: title, color: NSColor(rgb: rgb))
+    private static func preset(_ id: String, _ title: String, dark: Int, light: Int) -> FullScreenBackgroundOption {
+        let darkColor = NSColor(rgb: dark), lightColor = NSColor(rgb: light)
+        let adaptive = NSColor(name: nil) { appearance in
+            appearance.bestMatch(from: [.darkAqua, .aqua]) == .darkAqua ? darkColor : lightColor
+        }
+        return FullScreenBackgroundOption(id: id, title: title, color: adaptive)
     }
 
     static func custom(_ color: NSColor) -> FullScreenBackgroundOption {
@@ -206,6 +211,27 @@ struct FullScreenBackgroundOption: Identifiable, Hashable {
             return FullScreenBackgroundOption(id: id, title: "Custom", color: color)
         }
         return builtIn[0]
+    }
+}
+
+/// Что лежит под канвой: размытие того, что под окном (Material), ровный цвет или свои обои.
+/// Хранится одним id: `builtin.material`, `image` или id цвета (`FullScreenBackgroundOption`).
+enum BackgroundChoice: Equatable {
+    case material
+    case color(FullScreenBackgroundOption)
+    case image
+
+    static let materialID = "builtin.material"
+    static let imageID = "image"
+
+    static func resolve(_ id: String) -> BackgroundChoice {
+        switch id {
+        case imageID: return .image
+        case materialID: return .material
+        default:
+            let isColor = FullScreenBackgroundOption.builtIn.contains { $0.id == id } || id.hasPrefix("custom:")
+            return isColor ? .color(FullScreenBackgroundOption.resolve(id)) : .material
+        }
     }
 }
 

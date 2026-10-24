@@ -28,9 +28,9 @@ final class AppearanceSettings {
     private static let textSizeKey = "appearance.textSize"
     private static let canvasPatternKey = "appearance.canvasPattern"
     private static let patternOpacityKey = "appearance.patternOpacity"
-    private static let fullScreenBackgroundKey = "appearance.fullScreenBackground"
+    private static let backgroundKey = "appearance.background"
     private static let recentTextColorsKey = "appearance.recentTextColors"
-    private static let recentFullScreenColorsKey = "appearance.recentFullScreenBackgrounds"
+    private static let recentBackgroundColorsKey = "appearance.recentFullScreenBackgrounds"
 
     /// Сколько последних своих цветов помнить у каждого пикера.
     static let recentColorsLimit = 3
@@ -66,11 +66,11 @@ final class AppearanceSettings {
 
     /// Последние свои цвета текста (id вида `custom:#RRGGBB`), новые первыми.
     private(set) var recentTextColorIDs: [String]
-    /// Последние свои цвета фона fullscreen.
-    private(set) var recentFullScreenBackgroundIDs: [String]
+    /// Последние свои цвета фона.
+    private(set) var recentBackgroundIDs: [String]
 
     @ObservationIgnored private var lastTextColorPick = Date.distantPast
-    @ObservationIgnored private var lastFullScreenPick = Date.distantPast
+    @ObservationIgnored private var lastBackgroundPick = Date.distantPast
 
     var canvasPatternID: String {
         didSet {
@@ -78,15 +78,23 @@ final class AppearanceSettings {
         }
     }
 
-    /// Ровный фон окна в fullscreen (там под окном нечего размывать).
-    var fullScreenBackgroundID: String {
+    /// Фон окна во всех режимах (окно, fullscreen, Desktop Overlay): Material / цвет / свои обои.
+    var backgroundID: String {
         didSet {
-            UserDefaults.standard.set(fullScreenBackgroundID, forKey: Self.fullScreenBackgroundKey)
+            UserDefaults.standard.set(backgroundID, forKey: Self.backgroundKey)
         }
     }
 
-    var fullScreenBackground: FullScreenBackgroundOption {
-        FullScreenBackgroundOption.resolve(fullScreenBackgroundID)
+    var background: BackgroundChoice { BackgroundChoice.resolve(backgroundID) }
+
+    /// Растёт при смене картинки обоев, чтобы фон перерисовался.
+    private(set) var backgroundImageRevision = 0
+
+    /// Диалог выбора картинки; выбрали — она становится фоном.
+    func chooseBackgroundImage(startingIn directory: URL? = nil, message: String) {
+        guard BackgroundImagePicker.pick(startingIn: directory, message: message) else { return }
+        backgroundImageRevision += 1
+        backgroundID = BackgroundChoice.imageID
     }
 
     var patternOpacity: Double {
@@ -106,9 +114,9 @@ final class AppearanceSettings {
         Self.remember(textColorID, in: &recentTextColorIDs, stamp: &lastTextColorPick, key: Self.recentTextColorsKey)
     }
 
-    func pickCustomFullScreenBackground(_ color: NSColor) {
-        fullScreenBackgroundID = FullScreenBackgroundOption.custom(color).id
-        Self.remember(fullScreenBackgroundID, in: &recentFullScreenBackgroundIDs, stamp: &lastFullScreenPick, key: Self.recentFullScreenColorsKey)
+    func pickCustomBackground(_ color: NSColor) {
+        backgroundID = FullScreenBackgroundOption.custom(color).id
+        Self.remember(backgroundID, in: &recentBackgroundIDs, stamp: &lastBackgroundPick, key: Self.recentBackgroundColorsKey)
     }
 
     /// Свой цвет — в начало списка недавних (без повторов, не больше трёх).
@@ -146,9 +154,9 @@ final class AppearanceSettings {
         textColorID = colorID
         textSize = size
         canvasPatternID = defaults.string(forKey: Self.canvasPatternKey) ?? CanvasPattern.defaultID
-        fullScreenBackgroundID = defaults.string(forKey: Self.fullScreenBackgroundKey) ?? FullScreenBackgroundOption.defaultID
+        backgroundID = defaults.string(forKey: Self.backgroundKey) ?? BackgroundChoice.materialID
         recentTextColorIDs = defaults.stringArray(forKey: Self.recentTextColorsKey) ?? []
-        recentFullScreenBackgroundIDs = defaults.stringArray(forKey: Self.recentFullScreenColorsKey) ?? []
+        recentBackgroundIDs = defaults.stringArray(forKey: Self.recentBackgroundColorsKey) ?? []
         if defaults.object(forKey: Self.patternOpacityKey) != nil {
             patternOpacity = defaults.double(forKey: Self.patternOpacityKey)
         } else {

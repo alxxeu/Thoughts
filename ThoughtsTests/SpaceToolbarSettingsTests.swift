@@ -1,3 +1,4 @@
+import AppKit
 import Foundation
 import Testing
 @testable import Thoughts
@@ -52,5 +53,26 @@ struct SpaceToolbarSettingsTests {
         let defaults = makeDefaults()
         defaults.set(["trashOld", "clearSpace", "askAI", "clearSpace"], forKey: "spaceToolbar.order")
         #expect(SpaceToolbarSettings(defaults: defaults).order == [.clearSpace, .askAI, .tidyCards, .lockSpace, .plugins])
+    }
+}
+
+struct BackgroundChoiceTests {
+    @Test func idsResolve() {
+        #expect(BackgroundChoice.resolve("builtin.material") == .material)
+        #expect(BackgroundChoice.resolve("image") == .image)
+        #expect(BackgroundChoice.resolve("custom:#102030") == .color(FullScreenBackgroundOption.resolve("custom:#102030")))
+        #expect(BackgroundChoice.resolve("builtin.sand") == .color(FullScreenBackgroundOption.resolve("builtin.sand")))
+        #expect(BackgroundChoice.resolve("garbage") == .material)
+    }
+
+    @Test @MainActor func presetsAdaptToTheAppearance() throws {
+        let graphite = FullScreenBackgroundOption.resolve("builtin.graphite").color
+        let dark = try #require(NSAppearance(named: .darkAqua))
+        let light = try #require(NSAppearance(named: .aqua))
+        var darkHex = "", lightHex = ""
+        dark.performAsCurrentDrawingAppearance { darkHex = graphite.hexString }
+        light.performAsCurrentDrawingAppearance { lightHex = graphite.hexString }
+        #expect(darkHex == "#1E1E20")
+        #expect(lightHex == "#E7E7EA")
     }
 }

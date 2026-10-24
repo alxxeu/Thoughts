@@ -121,14 +121,43 @@ struct AppearanceSettingsTab: View {
                 }
                 .disabled(settings.canvasPattern.kind == .none)
 
-                LabeledContent("Full Screen") {
+                LabeledContent("Background") {
                     HStack(spacing: 8) {
-                        ForEach(FullScreenBackgroundOption.builtIn + settings.recentFullScreenBackgroundIDs.map(FullScreenBackgroundOption.resolve)) { option in
-                            swatch(option.color, title: option.title, isSelected: settings.fullScreenBackgroundID == option.id) {
-                                settings.fullScreenBackgroundID = option.id
+                        // Свои обои — первыми: выбрана — открывает выбор другой картинки,
+                        // не выбрана, но есть — выбирает её, нет — открывает выбор.
+                        Button {
+                            if settings.backgroundID != BackgroundChoice.imageID, BackgroundImageStore.shared.hasImage {
+                                settings.backgroundID = BackgroundChoice.imageID
+                            } else {
+                                settings.chooseBackgroundImage(message: "Choose an image for the background")
+                            }
+                        } label: {
+                            imageSwatch
+                        }
+                        .buttonStyle(.plain)
+                        .help("Your image")
+                        .contextMenu {
+                            Button("Choose Image\u{2026}") {
+                                settings.chooseBackgroundImage(message: "Choose an image for the background")
+                            }
+                            // Панель откроется в папке, где лежат нынешние обои, — без права записи экрана.
+                            Button("Use Current Wallpaper\u{2026}") {
+                                settings.chooseBackgroundImage(startingIn: BackgroundImagePicker.currentWallpaperFolder,
+                                                               message: "Choose your current wallpaper")
                             }
                         }
-                        ColorPicker("Custom Color", selection: fullScreenColorBinding, supportsOpacity: false)
+                        // Material — размытие того, что под окном.
+                        Button { settings.backgroundID = BackgroundChoice.materialID } label: {
+                            materialSwatch
+                        }
+                        .buttonStyle(.plain)
+                        .help("Material \u{2014} blurs what is behind the window")
+                        ForEach(FullScreenBackgroundOption.builtIn + settings.recentBackgroundIDs.map(FullScreenBackgroundOption.resolve)) { option in
+                            swatch(option.color, title: option.title, isSelected: settings.backgroundID == option.id) {
+                                settings.backgroundID = option.id
+                            }
+                        }
+                        ColorPicker("Custom Color", selection: backgroundColorBinding, supportsOpacity: false)
                             .labelsHidden()
                             .help("Custom Color")
                     }
@@ -136,7 +165,7 @@ struct AppearanceSettingsTab: View {
             } header: {
                 Text("Background")
             } footer: {
-                Text("In full screen there is no desktop behind the window to blur, so Thoughts fills it with this color.")
+                Text("Material blurs what is behind the window. Material, a color or your own image works the same in a window, in full screen and on the desktop. Right-click the image button to choose another picture or use your current wallpaper.")
             }
         }
         .formStyle(.grouped)
@@ -159,10 +188,13 @@ struct AppearanceSettingsTab: View {
 
         return ZStack {
             Color(nsColor: .underPageBackgroundColor)
-            // Канва Thoughts — размытие .hudWindow того, что под окном (обои).
-            // Здесь то же самое вживую: файл обоев из песочницы не прочитать,
-            // а desktopImageURL после смены обоев отдаёт старый путь.
-            PreviewBackdrop()
+            // Фон по настройке; для Material — то же размытие вживую (файл обоев из
+            // песочницы не прочитать, а desktopImageURL после смены обоев отдаёт старый путь).
+            if case .material = settings.background {
+                PreviewBackdrop()
+            } else {
+                AppBackgroundView(settings: settings)
+            }
             CanvasPatternView(pattern: settings.canvasPattern, opacity: settings.patternOpacity)
 
             VStack(alignment: .leading, spacing: 6) {
@@ -206,10 +238,44 @@ struct AppearanceSettingsTab: View {
         .help(title)
     }
 
-    private var fullScreenColorBinding: Binding<Color> {
+    private var materialSwatch: some View {
+        MaterialSwatchArt()
+            .frame(width: 16, height: 16)
+            .clipShape(Circle())
+            .overlay(Circle().stroke(Color.primary.opacity(0.25), lineWidth: 0.5))
+            .padding(3)
+            .overlay(Circle().stroke(Color.accentColor, lineWidth: 2)
+                .opacity(settings.backgroundID == BackgroundChoice.materialID ? 1 : 0))
+    }
+
+    /// Свои обои: миниатюра картинки, пока её нет — значок фото.
+    private var imageSwatch: some View {
+        Group {
+            if let image = BackgroundImageStore.shared.image {
+                let _ = settings.backgroundImageRevision
+                Image(nsImage: image).resizable().scaledToFill()
+            } else {
+                Image(systemName: "photo")
+                    .font(.system(size: 9, weight: .semibold))
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+                    .background(Color.primary.opacity(0.12))
+            }
+        }
+        .frame(width: 16, height: 16)
+        .clipShape(Circle())
+        .overlay(Circle().stroke(Color.primary.opacity(0.25), lineWidth: 0.5))
+        .padding(3)
+        .overlay(Circle().stroke(Color.accentColor, lineWidth: 2)
+            .opacity(settings.backgroundID == BackgroundChoice.imageID ? 1 : 0))
+    }
+
+    private var backgroundColorBinding: Binding<Color> {
         Binding(
-            get: { Color(nsColor: settings.fullScreenBackground.color) },
-            set: { settings.pickCustomFullScreenBackground(NSColor($0)) }
+            get: {
+                if case .color(let option) = settings.background { return Color(nsColor: option.color) }
+                return Color(nsColor: FullScreenBackgroundOption.resolve(FullScreenBackgroundOption.defaultID).color)
+            },
+            set: { settings.pickCustomBackground(NSColor($0)) }
         )
     }
 
@@ -233,4 +299,19 @@ private struct PreviewBackdrop: NSViewRepresentable {
     }
 
     func updateNSView(_ nsView: NSVisualEffectView, context: Context) {}
+}
+
+/// Картинка значка Material: горизонтальная радуга, правая половина закрыта настоящим
+/// материалом — он размывает полосы под собой, как размывает обои под окном.
+struct MaterialSwatchArt: View {
+    private static let stripes: [Color] = [.red, .orange, .yellow, .green, .blue, .purple]
+
+    var body: some View {
+        ZStack(alignment: .trailing) {
+            VStack(spacing: 0) {
+                ForEach(Self.stripes.indices, id: \.self) { Self.stripes[$0] }
+            }
+            Rectangle().fill(.ultraThinMaterial).frame(width: 8)
+        }
+    }
 }

@@ -40,7 +40,7 @@ struct ThoughtsApp: App {
                     // прозрачным — реальный рабочий стол виден без единого
                     // визуального следа Thoughts поверх него.
                     if !viewModel.desktopOverlay.isDesktopModeActive {
-                        WindowBackdrop(settings: viewModel.appearanceSettings)
+                        AppBackgroundView(settings: viewModel.appearanceSettings)
                     }
                 }
                 .ignoresSafeArea()
@@ -494,70 +494,41 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 }
 
-/// Фон главного окна. Ultra Thin Material — живой блюр с наименее заметными
-/// швами (BACKLOG «прямоугольные швы»). В fullscreen и Split View под окном
-/// чёрный фон отдельного Space, блюр съедает цвет — там ровный цвет из
-/// Settings → Appearance → Full Screen.
-private struct WindowBackdrop: View {
+/// Содержимое фона по настройке Appearance → Background: Material, ровный цвет или свои
+/// обои — одно для окна, fullscreen и Desktop Overlay; им же рисуется превью в Settings.
+struct AppBackgroundView: View {
     var settings: AppearanceSettings
-    @State private var isFullScreen = false
-    @State private var host = HostWindow()
+    @Environment(\.colorScheme) private var colorScheme
 
     var body: some View {
-        Group {
-            if isFullScreen {
-                Color(nsColor: settings.fullScreenBackground.color)
+        switch settings.background {
+        case .color(let option):
+            Color(nsColor: option.color)
+        case .image:
+            let _ = settings.backgroundImageRevision
+            if let image = BackgroundImageStore.shared.image {
+                GeometryReader { proxy in
+                    Image(nsImage: image)
+                        .resizable()
+                        .scaledToFill()
+                        .frame(width: proxy.size.width, height: proxy.size.height)
+                        .clipped()
+                }
+                // Картинку чуть приглушаем: карточки и текст должны читаться на любых обоях.
+                .overlay(Color.black.opacity(0.18))
             } else {
-                Rectangle().fill(.ultraThinMaterial)
+                material
             }
-        }
-        // Фон пересоздаётся при выходе из Desktop mode — состояние берём у окна.
-        .background(HostWindowReader(host: host) { window in
-            isFullScreen = window.styleMask.contains(.fullScreen)
-        })
-        // На willEnter — чтобы цвет был уже во время анимации перехода.
-        .onReceive(NotificationCenter.default.publisher(for: NSWindow.willEnterFullScreenNotification)) { note in
-            if isOwnWindow(note) { isFullScreen = true }
-        }
-        .onReceive(NotificationCenter.default.publisher(for: NSWindow.didExitFullScreenNotification)) { note in
-            if isOwnWindow(note) { isFullScreen = false }
+        case .material:
+            material
         }
     }
 
-    /// Окно Settings тоже может уйти в fullscreen — реагируем только на своё.
-    private func isOwnWindow(_ note: Notification) -> Bool {
-        guard let window = note.object as? NSWindow else { return false }
-        return window === host.window
-    }
-
-    final class HostWindow {
-        weak var window: NSWindow?
-    }
-
-    private struct HostWindowReader: NSViewRepresentable {
-        let host: HostWindow
-        let onResolve: (NSWindow) -> Void
-
-        func makeNSView(context: Context) -> Probe { Probe(host: host, onResolve: onResolve) }
-        func updateNSView(_ nsView: Probe, context: Context) {}
-
-        final class Probe: NSView {
-            let host: HostWindow
-            let onResolve: (NSWindow) -> Void
-            init(host: HostWindow, onResolve: @escaping (NSWindow) -> Void) {
-                self.host = host
-                self.onResolve = onResolve
-                super.init(frame: .zero)
-            }
-            required init?(coder: NSCoder) { fatalError() }
-            override func viewDidMoveToWindow() {
-                super.viewDidMoveToWindow()
-                host.window = window
-                guard let window else { return }
-                // Не менять @State посреди обновления вида.
-                DispatchQueue.main.async { [onResolve] in onResolve(window) }
-            }
-        }
+    /// Ultra Thin Material — живой блюр с наименее заметными швами (BACKLOG «прямоугольные
+    /// швы»). Светлеет на светлых обоях, поэтому в светлой теме добавляем лёгкое затемнение.
+    private var material: some View {
+        Rectangle().fill(.ultraThinMaterial)
+            .overlay(Color.black.opacity(colorScheme == .light ? 0.1 : 0))
     }
 }
 
