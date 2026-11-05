@@ -33,33 +33,30 @@ func render(scale: CGFloat) -> Data {
     ctx.drawRadialGradient(glow, startCenter: CGPoint(x: width / 2, y: iconY), startRadius: 0,
                            endCenter: CGPoint(x: width / 2, y: iconY), endRadius: 320, options: [])
 
-    // Звёзды: детерминированно, та же «хэш-синусная» схема, что в StarFieldCanvas.
-    for i in 0..<170 {
+    // Звёзды: детерминированно, та же «хэш-синусная» схема, что в StarFieldCanvas. Фон показывается
+    // в Finder 1:1 (на Retina — растянутым вдвое), поэтому звёзды — целые пиксели, без размытия.
+    for i in 0..<150 {
         let s1 = sin(Double(i) * 12.9898 + 1.0) * 43758.5453, s2 = cos(Double(i) * 78.2330 + 2.0) * 43758.5453
         let s3 = sin(Double(i) * 45.1640 + 3.0) * 12345.6789
-        let x = (s1 - floor(s1)) * Double(width), y = (s2 - floor(s2)) * Double(height)
-        let size = 1.0 + (s3 - floor(s3)) * 1.1, alpha = 0.3 + (s2 - floor(s2)) * 0.55
+        let x = floor((s1 - floor(s1)) * Double(width)), y = floor((s2 - floor(s2)) * Double(height))
+        let size: Double = (s3 - floor(s3)) > 0.82 ? 3 : 2
+        let alpha = 0.35 + (s2 - floor(s2)) * 0.5
         ctx.setFillColor(CGColor(red: 1, green: 1, blue: 1, alpha: alpha))
         ctx.fillEllipse(in: CGRect(x: x, y: y, width: size, height: size))
     }
 
-    // Стрелка между иконками: тонкая линия с наконечником и мягким свечением.
-    let from = appX + 92, to = folderX - 92
-    func drawArrow(color: CGColor, line: CGFloat) {
-        ctx.setStrokeColor(color); ctx.setLineWidth(line); ctx.setLineCap(.round); ctx.setLineJoin(.round)
-        ctx.move(to: CGPoint(x: from, y: iconY)); ctx.addLine(to: CGPoint(x: to, y: iconY))
-        ctx.move(to: CGPoint(x: to - 13, y: iconY - 11)); ctx.addLine(to: CGPoint(x: to, y: iconY)); ctx.addLine(to: CGPoint(x: to - 13, y: iconY + 11))
-        ctx.strokePath()
-    }
-    ctx.setShadow(offset: .zero, blur: 10, color: CGColor(red: 0.6, green: 0.6, blue: 1, alpha: 0.9))
-    drawArrow(color: CGColor(red: 1, green: 1, blue: 1, alpha: 0.55), line: 3)
-    ctx.setShadow(offset: .zero, blur: 0, color: nil)
-    drawArrow(color: CGColor(red: 1, green: 1, blue: 1, alpha: 0.85), line: 2.5)
+    // Стрелка между иконками: чёткая линия 3 px по целым пикселям, без свечения (оно на Retina расплывается).
+    let from = (appX + 92).rounded(), to = (folderX - 92).rounded(), lineY = iconY.rounded() + 0.5
+    ctx.setStrokeColor(CGColor(red: 1, green: 1, blue: 1, alpha: 0.9))
+    ctx.setLineWidth(3); ctx.setLineCap(.round); ctx.setLineJoin(.round)
+    ctx.move(to: CGPoint(x: from, y: lineY)); ctx.addLine(to: CGPoint(x: to, y: lineY))
+    ctx.move(to: CGPoint(x: to - 14, y: lineY - 12)); ctx.addLine(to: CGPoint(x: to, y: lineY)); ctx.addLine(to: CGPoint(x: to - 14, y: lineY + 12))
+    ctx.strokePath()
 
     // Светлые плашки под подписями иконок: Finder рисует подписи чёрным, на тёмном небе их не прочесть.
     let labelY = iconY + 82
     for x in [appX, folderX] {
-        let pill = CGRect(x: x - 56, y: labelY - 11, width: 112, height: 22)
+        let pill = CGRect(x: (x - 56).rounded(), y: (labelY - 11).rounded(), width: 112, height: 22)
         ctx.setFillColor(CGColor(red: 1, green: 1, blue: 1, alpha: 0.88))
         ctx.addPath(CGPath(roundedRect: pill, cornerWidth: 11, cornerHeight: 11, transform: nil))
         ctx.fillPath()
@@ -69,8 +66,8 @@ func render(scale: CGFloat) -> Data {
     ctx.saveGState()
     ctx.translateBy(x: 0, y: height); ctx.scaleBy(x: 1, y: -1) // вернуть обычные координаты для текста
     let text = NSAttributedString(string: "Drag to install", attributes: [
-        .font: NSFont.systemFont(ofSize: 14, weight: .semibold),
-        .foregroundColor: NSColor(white: 1, alpha: 0.75)
+        .font: NSFont.systemFont(ofSize: 15, weight: .bold),
+        .foregroundColor: NSColor(white: 1, alpha: 0.9)
     ])
     let size = text.size()
     text.draw(at: NSPoint(x: (width - size.width) / 2, y: height - iconY - 34 - size.height / 2))
