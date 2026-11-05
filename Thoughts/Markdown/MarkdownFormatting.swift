@@ -99,7 +99,13 @@ enum MarkdownFormatting {
             line.range(of: blockMarkerPattern, options: .regularExpression).map { String(line[$0]) } ?? ""
         }
         let targets = old.filter { single || !$0.isEmpty }
-        let remove = !targets.isEmpty && targets.allSatisfy { Self.kind(ofMarker: existing($0)) == kind }
+        // Задачей считается только стандартный маркер `- [ ] `: голый `[x] ` при включении
+        // Checklist нормализуется в `- [ ] `, а не снимается.
+        func isStandard(_ marker: String) -> Bool { kind != .task || marker.hasPrefix("- ") }
+        let remove = !targets.isEmpty && targets.allSatisfy {
+            let marker = existing($0)
+            return Self.kind(ofMarker: marker) == kind && isStandard(marker)
+        }
 
         var number = 0
         let new = old.map { line -> String in
