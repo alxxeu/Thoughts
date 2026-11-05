@@ -1,7 +1,7 @@
 #!/bin/bash
 # Фаза сборки "Embed Sparkle (Direct)": кладёт Sparkle.framework в приложение,
 # подписывает его части (как велит документация Sparkle для песочницы).
-# Адрес ленты и открытый ключ EdDSA — в Thoughts-Direct-Info.plist.
+# Адрес ленты и открытый ключ EdDSA — в Config/Thoughts-Direct-Info.plist.
 set -euo pipefail
 "$SRCROOT/scripts/fetch-sparkle.sh"
 

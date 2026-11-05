@@ -12,15 +12,6 @@ DerivedData/
 *.dSYM.zip
 Thoughts.xcodeproj/xcshareddata/xcodecloud/
 
-# Локальные заметки по процессу разработки — не для публичного репозитория
-BACKLOG.md
-BACKLOG-iOS.md
-EXECUTE.md
-
-# Рабочие материалы: отложенные наработки и всё для App Store (скрипты, кадры, тексты)
-docs/shelved/
-docs/appstore/
-
 # Sparkle (scripts/fetch-sparkle.sh), сборки для GitHub
 Vendor/
 build/
