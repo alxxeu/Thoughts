@@ -19,15 +19,18 @@ final="$root/build/direct"
 repo=alxxeu/Thoughts
 
 scripts/fetch-sparkle.sh
-rm -rf "$out" && mkdir -p "$out"
+[ -n "${APP:-}" ] && mkdir -p "$out" || { rm -rf "$out" && mkdir -p "$out"; }
 
-echo "→ Архив (Direct)"
-# Свой DerivedData рядом с архивом: общий (~/Library/.../DerivedData) после прерванной сборки
-# оставляет повреждённую build.db, и архив падает с «disk I/O error».
-xcodebuild archive -scheme Thoughts -configuration Direct \
-  -archivePath "$out/Thoughts.xcarchive" -derivedDataPath "$out/DerivedData" -allowProvisioningUpdates -quiet
+# APP=<путь к уже нотаризованному Thoughts.app> — только пересобрать DMG (оформление окна установщика),
+# без архива и нотаризации приложения.
+if [ -z "${APP:-}" ]; then
+  echo "→ Архив (Direct)"
+  # Свой DerivedData рядом с архивом: общий (~/Library/.../DerivedData) после прерванной сборки
+  # оставляет повреждённую build.db, и архив падает с «disk I/O error».
+  xcodebuild archive -scheme Thoughts -configuration Direct \
+    -archivePath "$out/Thoughts.xcarchive" -derivedDataPath "$out/DerivedData" -allowProvisioningUpdates -quiet
 
-cat > "$out/export.plist" <<EOF
+  cat > "$out/export.plist" <<EOF
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0"><dict>
@@ -37,25 +40,25 @@ cat > "$out/export.plist" <<EOF
 </dict></plist>
 EOF
 
-echo "→ Экспорт с подписью Developer ID"
-xcodebuild -exportArchive -archivePath "$out/Thoughts.xcarchive" \
-  -exportOptionsPlist "$out/export.plist" -exportPath "$out/export" -allowProvisioningUpdates -quiet
-app="$out/export/Thoughts.app"
-version=$(/usr/libexec/PlistBuddy -c "Print :CFBundleShortVersionString" "$app/Contents/Info.plist")
-codesign --verify --deep --strict "$app"
+  echo "→ Экспорт с подписью Developer ID"
+  xcodebuild -exportArchive -archivePath "$out/Thoughts.xcarchive" \
+    -exportOptionsPlist "$out/export.plist" -exportPath "$out/export" -allowProvisioningUpdates -quiet
+  app="$out/export/Thoughts.app"
+  version=$(/usr/libexec/PlistBuddy -c "Print :CFBundleShortVersionString" "$app/Contents/Info.plist")
+  codesign --verify --deep --strict "$app"
 
-echo "→ Нотаризация приложения $version"
-ditto -c -k --keepParent "$app" "$out/Thoughts.zip"
-xcrun notarytool submit "$out/Thoughts.zip" --keychain-profile notary --wait
-xcrun stapler staple "$app"
+  echo "→ Нотаризация приложения $version"
+  ditto -c -k --keepParent "$app" "$out/Thoughts.zip"
+  xcrun notarytool submit "$out/Thoughts.zip" --keychain-profile notary --wait
+  xcrun stapler staple "$app"
+else
+  app="$APP"
+  version=$(/usr/libexec/PlistBuddy -c "Print :CFBundleShortVersionString" "$app/Contents/Info.plist")
+fi
 
 echo "→ DMG"
-stage="$out/dmg"
-mkdir -p "$stage"
-ditto "$app" "$stage/Thoughts.app"
-ln -s /Applications "$stage/Applications"
 dmg="$out/Thoughts-$version.dmg"
-hdiutil create -volname "Thoughts" -srcfolder "$stage" -fs HFS+ -format UDZO -ov "$dmg" >/dev/null
+scripts/make-dmg.sh "$app" "$dmg"
 codesign -s "Developer ID Application" --timestamp "$dmg"
 xcrun notarytool submit "$dmg" --keychain-profile notary --wait
 xcrun stapler staple "$dmg"
