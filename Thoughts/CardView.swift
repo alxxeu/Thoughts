@@ -8,6 +8,10 @@ struct CardView: View {
     /// размере по центру канвы, остальные гаснут. Позиция/размер задаются
     /// снаружи (ContentView), сам `card` при этом не меняется.
     var isInFocusMode: Bool = false
+    /// Размер в Focus Mode задаёт ContentView (от размера канвы).
+    var focusSize: CGSize = CGSize(width: 640, height: 480)
+    /// Щипок двумя пальцами по карточке — войти в фокус (выйти — onRequestExitFocus).
+    var onRequestEnterFocus: () -> Void = {}
     /// Текстовый курсор встал в эту карточку / ушёл из неё — ContentView
     /// по этому определяет, какую карточку фокусировать по Cmd+F.
     var onTextFocusChange: (Bool) -> Void = { _ in }
@@ -25,23 +29,24 @@ struct CardView: View {
     @State private var isHoveringDeleteButton = false
     @State private var deleteProgress: CGFloat = 0.0
     @State private var isPressingDelete = false
+    @State private var deleteHeld = false
+    @State private var failedDeleteTaps = FailedTapCounter()
+    @State private var deleteHoldHint = HintTimer()
     @State private var isShowingTagPopover = false
     @State private var isHoveringTagButton = false
     @State private var isRevealed = false
     @State private var relockTask: Task<Void, Never>? = nil // Таймер автоблокировки после клика вне карточки
     @State private var isHighlighted = false
     @State private var unhighlightTask: Task<Void, Never>? = nil
-    @State private var isGeneratingAI = false
-    // Футер снимается СВОИМ состоянием, а не условием по isInFocusMode:
-    // оно переключается внутри анимации ContentView, из-за чего кнопка
-    // улетала вместе с уезжающей карточкой.
-    @State private var isFocusFooterVisible = false
     // Ненавязчивая одноразовая подсказка про Cmd+F — см. .onChange(of:
     // card.text) ниже. hasShownFocusTipHint не даёт показать её больше
     // одного раза за время жизни этой CardView (новый релонч приложения
     // или новая карточка — снова доступно).
-    @State private var focusTipHint = HintTimer()
     @State private var hasShownFocusTipHint = false
+    /// Короткая подсказка над карточкой (раз за жизнь CardView); плашка снизу — раз навсегда (TipsState).
+    @State private var focusTipHint = HintTimer()
+    /// Подсказка про колонки — один раз, сразу после создания карточки из шаблона.
+    @State private var boardTipHint = HintTimer()
     // Одноразовая анимация появления карточки из Ask AI/Summarize —
     // "выскакивает" из-под нотча к своей итоговой позиции. См.
     // triggerAIPopInAnimationIfNeeded().
@@ -83,7 +88,7 @@ struct CardView: View {
     }
     /// В Focus Mode размер продиктован фокусом, а не моделью/драгом.
     private var effectiveSize: CGSize {
-        guard !isInFocusMode else { return BoardViewModel.focusCardSize }
+        guard !isInFocusMode else { return focusSize }
         return CGSize(
             width: dragResizeSize?.width ?? card.size.width,
             height: dragResizeSize?.height ?? card.size.height
@@ -103,7 +108,37 @@ struct CardView: View {
             // Тот же принцип, что уже применён к заблокированному Space
             // целиком (см. ContentView.swift — ForEach с карточками не
             // создаётся вовсе, пока Space заблокирован).
-            if !isPrivacyLocked {
+            if !isPrivacyLocked, KanbanBoard.isBoard(card.text) {
+                KanbanCardView(
+                    text: $card.text,
+                    isFocused: $isTextFocused,
+                    cardSize: effectiveSize,
+                    typography: viewModel.appearanceSettings.cardTypography,
+                    onTextChange: { viewModel.scheduleDebouncedSave() },
+                    onFocusChange: { focused in
+                        if focused { viewModel.bringToFront(card) }
+                    }
+                )
+                // Не пересчитывать доску на каждый кадр, пока карточку двигают.
+                .equatable()
+                .opacity(isFocusTransitioning ? 0 : 1)
+                .animation(isFocusTransitioning ? nil : .easeIn(duration: 0.15), value: isFocusTransitioning)
+                .zIndex(0)
+                .mask(alignment: .top) {
+                    VStack(spacing: 0) {
+                        LinearGradient(colors: [.clear, .black], startPoint: .top, endPoint: .bottom)
+                            .frame(height: 15)
+                        Color.black
+                        LinearGradient(colors: [.black, .clear], startPoint: .top, endPoint: .bottom)
+                            .frame(height: 15)
+                    }
+                }
+                .onReceive(NotificationCenter.default.publisher(for: .focusNewCard)) { notification in
+                    if let targetID = notification.object as? UUID, targetID == card.id {
+                        isTextFocused = true
+                    }
+                }
+            } else if !isPrivacyLocked {
                 CardTextView(
                     text: $card.text,
                     isFocused: $isTextFocused,
@@ -202,7 +237,8 @@ struct CardView: View {
                 if inside { NSCursor.arrow.set() }
             }
             .popover(isPresented: $isShowingTagPopover, arrowEdge: .bottom) {
-                TagPopoverView(selectedColor: $card.tagColor, privacyMode: $card.privacyMode) {
+                TagPopoverView(selectedColor: $card.tagColor, privacyMode: $card.privacyMode,
+                               captionOnTrailing: card.position.x + card.size.width / 2 < viewModel.lastCanvasSize.width / 2) {
                     isShowingTagPopover = false
                     viewModel.saveImmediately()
                 }
@@ -308,6 +344,7 @@ struct CardView: View {
                     if inside { NSCursor.arrow.set() }
                 }
                 .onLongPressGesture(minimumDuration: 0.5, maximumDistance: 10, perform: {
+                    deleteHeld = true
                     Task { @MainActor in
                         viewModel.deleteCard(card)
                         resetDeleteState()
@@ -319,10 +356,33 @@ struct CardView: View {
                             deleteProgress = 1.0
                         }
                     } else {
+                        // Отпустили, не дождавшись конца удержания: три раза подряд — подсказать.
+                        if deleteHeld { failedDeleteTaps.reset() } else if failedDeleteTaps.fail() { deleteHoldHint.show(holdFor: 3) }
+                        deleteHeld = false
                         resetDeleteState()
                     }
                 })
             }
+
+            // КНОПКА ВЫХОДА ИЗ ФОКУСА — справа сверху, как у «свернуть» в системных окнах. Всегда
+            // в дереве и только меняет прозрачность: исчезает быстро и на месте, а не уезжает
+            // вместе со сжимающейся карточкой.
+            let showsExitButton = isInFocusMode && !isFocusTransitioning
+            Button(action: onRequestExitFocus) {
+                Image(systemName: "arrow.up.forward.and.arrow.down.backward")
+                    .font(.system(size: 12, weight: .semibold))
+                    .foregroundStyle(Color(nsColor: viewModel.appearanceSettings.cardTypography.color).opacity(0.6))
+                    .frame(width: 28, height: 28)
+                    .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .help("Exit Focus Mode (esc)")
+            .padding(8)
+            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topTrailing)
+            .opacity(showsExitButton ? 1 : 0)
+            .allowsHitTesting(showsExitButton)
+            .animation(showsExitButton ? .easeIn(duration: 0.2) : .easeOut(duration: 0.06), value: showsExitButton)
+            .zIndex(104)
 
             // ПОДСВЕТКА ПРИ ПЕРЕХОДЕ ИЗ SPOTLIGHT / НОВОЙ AI-КАРТОЧКИ
             // Spotlight — временная (гаснет через 1.6с, см. .highlightCard
@@ -334,60 +394,46 @@ struct CardView: View {
                 .allowsHitTesting(false)
                 .animation(.easeInOut(duration: 0.3), value: isAIHighlighted)
                 .zIndex(106)
-
-            // ИНДИКАТОР AI-ЗАПРОСА
-            if isGeneratingAI {
-                RoundedRectangle(cornerRadius: 16)
-                    .fill(.black.opacity(0.25))
-                    .overlay {
-                        ProgressView()
-                            .controlSize(.small)
-                            .tint(.white)
-                    }
-                    .allowsHitTesting(false)
-                    .transition(.opacity)
-                    .zIndex(107)
-            }
         }
         .frame(width: effectiveSize.width, height: effectiveSize.height)
-        // Футер Focus Mode — кнопка "Ask AI…", разворачивающаяся в панель
-        // во всю ширину карточки. Привязка к ВЕРХНЕМУ краю плюс сдвиг на
-        // высоту карточки: так положение не зависит от собственной высоты
-        // футера, которая скачет между кнопкой и раскрытой панелью
-        // (alignmentGuide внутри overlay это не решает).
-        .overlay(alignment: .top) {
-            if isFocusFooterVisible {
-                CardAskAIPanel(
-                    card: card,
-                    viewModel: viewModel,
-                    isTextFocused: $isTextFocused,
-                    isGenerating: $isGeneratingAI
-                )
-                // Именно focusCardSize, а не effectiveSize: футер живёт
-                // только в фокусе, а на выходе effectiveSize уже вернулся
-                // к размеру карточки и сдвиг поехал бы вместе с ней.
-                .offset(y: BoardViewModel.focusCardSize.height + 12)
-            }
-        }
         // Подсказка про Cmd+F во время печати в обычной карточке — над
         // самой карточкой, мелким полупрозрачным текстом, не мешает
         // печатать (allowsHitTesting(false), не блокирующий элемент).
         .overlay(alignment: .top) {
             if focusTipHint.isVisible {
-                // .primary, а не дефолтный белый у HintLabel — этот хинт
-                // висит прямо над обычной карточкой на фоне канвы, не
-                // поверх затемнения (в отличие от подсказки выхода из
-                // Focus Mode), так что фиксированный белый в светлой теме
-                // был бы нечитаем — та же причина, что у подсказки
-                // пустого Space.
+                // .primary, а не белый по умолчанию: подсказка лежит прямо на фоне канвы.
                 HintLabel(text: "Try \u{2318}F to focus this card", fontSize: 10, color: AnyShapeStyle(.primary), opacity: 0.5)
                     .offset(y: -22)
+            }
+        }
+        .overlay(alignment: .top) {
+            if deleteHoldHint.isVisible {
+                HintLabel(text: "Hold \u{00D7} to archive", fontSize: 10, color: AnyShapeStyle(.primary), opacity: 0.5)
+                    .offset(y: -22)
+            }
+        }
+        .overlay(alignment: .top) {
+            if boardTipHint.isVisible {
+                HintLabel(text: "Right-click to add or remove columns", fontSize: 10, color: AnyShapeStyle(.primary), opacity: 0.5)
+                    .offset(y: -22)
+            }
+        }
+        .onReceive(NotificationCenter.default.publisher(for: .boardTemplateCreated)) { notification in
+            if let id = notification.object as? UUID, id == card.id {
+                boardTipHint.show(holdFor: Self.boardTipHoldDuration)
             }
         }
         .scaleEffect(aiPopInScale)
         .offset(aiPopInOffset)
         .onAppear { triggerAIPopInAnimationIfNeeded() }
         .onHover { isHovering = $0 }
+        // Щипок двумя пальцами, как при увеличении картинки: растянуть — в фокус, сжать — обратно.
+        .simultaneousGesture(
+            MagnifyGesture().onEnded { value in
+                if value.magnification > 1.2, !isInFocusMode { onRequestEnterFocus() }
+                else if value.magnification < 0.8, isInFocusMode { onRequestExitFocus() }
+            }
+        )
         .simultaneousGesture(
             DragGesture(minimumDistance: 0, coordinateSpace: .local)
                 .updating($hasSignaledGestureStart) { _, state, _ in
@@ -400,18 +446,14 @@ struct CardView: View {
         )
 
         .animation(.easeInOut(duration: 0.35), value: isPrivacyLocked)
-        .animation(.easeInOut(duration: 0.15), value: isGeneratingAI)
         .onChange(of: isTextFocused) { _, focused in
             onTextFocusChange(focused)
         }
         .onChange(of: isInFocusMode) { _, active in
-            // Футер гаснет тем же fade, что и появлялся, только быстрее —
-            // он привязан к карточке, а она в этот момент уже уезжает.
-            withAnimation(.easeOut(duration: 0.12)) { isFocusFooterVisible = false }
+            // Подсказка про Cmd+F выполнена, когда в фокус вошли.
             if active {
-                // Подсказка про Cmd+F теряет смысл ровно в момент, когда
-                // Cmd+F уже нажали — не даём ей доиграть поверх входа в фокус.
                 focusTipHint.cancel()
+                TipsState.shared.noteAction(for: .focusMode)
             }
         }
         // Срабатывает только на реальный переход через порог во время
@@ -423,15 +465,11 @@ struct CardView: View {
                   oldValue.count < Self.focusTipThreshold, newValue.count >= Self.focusTipThreshold else { return }
             hasShownFocusTipHint = true
             focusTipHint.show(holdFor: Self.focusTipHoldDuration)
+            TipsState.shared.offer(.focusMode)
         }
         // Переход закончился — карточка встала на место. Только теперь
         // возвращаем то, что прятали на время движения.
-        .onChange(of: isFocusTransitioning) { _, transitioning in
-            guard !transitioning, isInFocusMode else { return }
-            withAnimation(.easeIn(duration: 0.15)) { isFocusFooterVisible = true }
-        }
-        // Escape, когда текст карточки НЕ в фокусе (например, курсор ушёл в
-        // поле Ask AI или карточку просто не редактируют). Случай "текст в
+        // Escape, когда текст карточки НЕ в фокусе (например, карточку просто не редактируют). Случай "текст в
         // фокусе" перехватывается раньше, в CardNSTextView.cancelOperation —
         // NSTextView не пропускает Escape дальше по цепочке сам.
         .onExitCommand(perform: isInFocusMode ? onRequestExitFocus : nil)
@@ -497,6 +535,7 @@ struct CardView: View {
     private static let focusTipThreshold = 60
     /// Достаточно долго, чтобы подсказку успели прочитать.
     private static let focusTipHoldDuration: Double = 4.5
+    private static let boardTipHoldDuration: Double = 6
 
     // MARK: - Helper Methods & Gestures
 
@@ -516,12 +555,14 @@ struct CardView: View {
                 }
                 guard let origin = dragOrigin else { return }
 
-                card.position = BoardViewModel.clampedPosition(
+                let position = BoardViewModel.clampedPosition(
                     CGPoint(x: origin.x + value.translation.width, y: origin.y + value.translation.height),
                     size: card.size,
                     canvasSize: canvasSize,
                     topInset: effectiveTopInset
                 )
+                // В онбординге — не дальше «окна» в Space.
+                card.position = BoardViewModel.clampedToSandbox(CGRect(origin: position, size: card.size)).origin
                 
                 if let preview = BoardViewModel.placementPreview(
                     movingId: card.id,
@@ -571,6 +612,10 @@ struct CardView: View {
                     }
                 }
                 
+                // Прилипание к краям канвы не должно выносить карточку из «окна» онбординга.
+                if BoardViewModel.onboardingSandbox != nil {
+                    card.position = BoardViewModel.clampedToSandbox(CGRect(origin: card.position, size: card.size)).origin
+                }
                 onPlacementPreviewChange(nil)
                 onEdgeHintsChange([])
                 // dragOrigin ставится только в onChanged реального драга — если

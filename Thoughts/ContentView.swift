@@ -105,7 +105,8 @@ private struct WindowAccessor: NSViewRepresentable {
 struct ContentView: View {
     var viewModel: BoardViewModel
     /// Отдаётся в SettingsNavigation — см. комментарий там.
-    @Environment(\.openSettings) private var openSettings
+    @Environment(\.openWindow) private var openWindow
+    @Environment(\.colorScheme) private var colorScheme
     @State private var creationStart: CGPoint?
     @State private var draftFrame: CGRect?
     @State private var placementPreview: CGRect?
@@ -150,15 +151,20 @@ struct ContentView: View {
 
     @State private var overlayWindow = DesktopOverlayWindowController()
 
+    /// Вход/выход из Desktop mode: доска тает (opacity), а убирается из дерева только после
+    /// fade — иначе она исчезала бы мгновенно, а на столе звёзды не должны крутиться зря.
+    @State private var isBoardMounted = true
+    @State private var boardOpacity: Double = 1
+    private static let desktopFade = Animation.easeOut(duration: 0.25)
+
     var body: some View {
         Group {
-            if viewModel.desktopOverlay.isDesktopModeActive {
-                // Desktop mode: карточки полностью скрыты, окно прозрачно и
-                // ignoresMouseEvents (см. onChange ниже) — реальный рабочий
+            if !isBoardMounted {
+                // Desktop mode: карточки полностью скрыты (после fade, см. fadeBoard), окно
+                // прозрачно и ignoresMouseEvents (см. onChange ниже) — реальный рабочий
                 // стол должен быть виден без единого визуального следа
                 // Thoughts поверх него.
                 Color.clear
-                    .transition(.opacity)
             } else {
                 // Отдельная вложенная Group — лок/анлок анимируется
                 // изолированно от Desktop Mode выше, см. .transition(.identity)
@@ -173,6 +179,18 @@ struct ContentView: View {
                         // тоже не рендерится). Никакого отдельного blur-слоя
                         // поверх живого контента не нужно.
                         SpaceLockOverlayView(viewModel: viewModel)
+                            // Плашка Space поверх блокировки: только имя и свайп к соседним Spaces.
+                            .overlay(alignment: .top) {
+                                SpaceToolbar(
+                                    viewModel: viewModel,
+                                    canvasSize: canvasSize,
+                                    topInset: effectiveTopInset,
+                                    isFocusModeActive: false,
+                                    isOnboardingActive: onboardingViewModel.isActive,
+                                    isLocked: true
+                                )
+                                .padding(.top, workspacePillTopPadding)
+                            }
                             .transition(.opacity)
                     } else {
                         // .identity, а не дефолтный .opacity — иначе при
@@ -188,11 +206,15 @@ struct ContentView: View {
                             .transition(.identity)
                     }
                 }
+                .opacity(boardOpacity)
             }
+        }
+        .overlay(alignment: .bottom) {
+            TipToastLayer(isHidden: onboardingViewModel.isActive)
         }
         .overlay {
             if onboardingViewModel.isActive {
-                OnboardingView(onboardingViewModel: onboardingViewModel)
+                OnboardingView(onboardingViewModel: onboardingViewModel, board: viewModel)
                     .transition(.opacity)
             }
         }
@@ -205,7 +227,8 @@ struct ContentView: View {
         .animation(.easeOut(duration: 0.1), value: viewModel.activeSlot)
         .animation(.easeOut(duration: 0.25), value: onboardingViewModel.isActive)
         .onAppear {
-            SettingsNavigation.shared.openSettingsAction = openSettings
+            SettingsNavigation.shared.openWindowAction = openWindow
+            configureOnboarding()
         }
         .background(
             WindowAccessor { overlayWindow.attach($0) }
@@ -229,8 +252,9 @@ struct ContentView: View {
         .onChange(of: viewModel.desktopOverlay.isEnabled) { _, _ in
             overlayWindow.apply()
         }
-        .onChange(of: viewModel.desktopOverlay.isDesktopModeActive) { _, _ in
+        .onChange(of: viewModel.desktopOverlay.isDesktopModeActive) { _, isActive in
             overlayWindow.apply()
+            fadeBoard(toDesktop: isActive)
         }
         .onReceive(NotificationCenter.default.publisher(for: .switchWorkspace)) { notification in
             if let slot = notification.object as? Int, slot != viewModel.activeSlot {
@@ -245,23 +269,19 @@ struct ContentView: View {
                     viewModel.switchWorkspace(to: slot)
                 }
                 onboardingViewModel.handle(.spaceSwitched)
+                didSwitchSpace(to: slot)
             }
         }
         .onReceive(NotificationCenter.default.publisher(for: .lockCurrentSpace)) { _ in
             viewModel.lockActiveSpaceManually()
+            TipsState.shared.noteAction(for: .spaceLock)
         }
         .onReceive(NotificationCenter.default.publisher(for: .toggleFocusCard)) { _ in
-            guard !viewModel.isActiveSpaceLocked,
-                  !viewModel.desktopOverlay.isDesktopModeActive,
-                  !onboardingViewModel.isActive else { return }
             if focusedCardID != nil {
                 setFocusedCard(nil)
             } else if let textFocusedCardID {
-                setFocusedCard(textFocusedCardID)
+                requestFocus(on: textFocusedCardID)
             }
-        }
-        .onReceive(NotificationCenter.default.publisher(for: .replayOnboarding)) { _ in
-            onboardingViewModel.start()
         }
         .onReceive(NotificationCenter.default.publisher(for: .cardWasMoved)) { _ in
             onboardingViewModel.handle(.cardMoved)
@@ -295,8 +315,14 @@ struct ContentView: View {
             }
         }
         message: {
-            Text("This will permanently delete all \(viewModel.cards.count) card\(viewModel.cards.count == 1 ? "" : "s") in this Space. This can\u{2019}t be undone.")
+            Text("All \(viewModel.cards.count) card\(viewModel.cards.count == 1 ? "" : "s") in this Space will move to the Archive (Settings \u{2192} Archive), where they stay for 30 days.")
         }
+    }
+
+    /// Центр карточки в долях её неподвижной рамки (та лежит в (0, 0)).
+    private func cardAnchor(_ position: CGPoint, _ size: CGSize) -> UnitPoint {
+        UnitPoint(x: (position.x + size.width / 2) / max(size.width, 1),
+                  y: (position.y + size.height / 2) / max(size.height, 1))
     }
 
     private var unlockedSpaceContent: some View {
@@ -318,10 +344,17 @@ struct ContentView: View {
                         NotificationCenter.default.post(name: .clearTextSelection, object: nil)
                         NSApp.keyWindow?.makeFirstResponder(nil)
                     }
+                    // Правый клик по пустому месту: карточка из шаблона — в точке клика.
+                    .overlay {
+                        CanvasContextMenu { template, point in
+                            addCard(from: template, at: point, canvasSize: proxy.size)
+                        }
+                    }
 
                 ForEach(viewModel.cards) { card in
                     let isFocused = card.id == focusedCardID
-                    let displaySize = isFocused ? BoardViewModel.focusCardSize : card.size
+                    let focusSize = BoardViewModel.focusSize(canvasSize: proxy.size, topInset: effectiveTopInset)
+                    let displaySize = isFocused ? focusSize : card.size
                     let displayPosition = isFocused
                         ? BoardViewModel.focusOrigin(canvasSize: proxy.size, topInset: effectiveTopInset)
                         : BoardViewModel.clampedPosition(card.position, size: card.size, canvasSize: proxy.size, topInset: effectiveTopInset)
@@ -331,6 +364,8 @@ struct ContentView: View {
                         viewModel: viewModel,
                         canvasSize: proxy.size,
                         isInFocusMode: isFocused,
+                        focusSize: focusSize,
+                        onRequestEnterFocus: { requestFocus(on: card.id) },
                         onTextFocusChange: { focused in
                             // "Чистим только если это всё ещё наше" — при
                             // переходе фокуса с карточки на карточку blur
@@ -400,12 +435,15 @@ struct ContentView: View {
                     // каждой стороне через .animation(_:) на AnyTransition,
                     // а не общая длительность из withAnimation в месте
                     // мутации activeSlot.
+                    // Масштаб — вокруг центра самой карточки: рамка карточки по layout стоит
+                    // в углу канвы (.offset двигает только картинку), так что центр по
+                    // умолчанию дал бы «выезд» из левого верхнего угла.
                     .transition(
                         .asymmetric(
-                            insertion: .opacity.combined(with: .scale(scale: 0.85))
+                            insertion: .opacity.combined(with: .scale(scale: 0.85, anchor: cardAnchor(displayPosition, displaySize)))
                                 .animation(.easeOut(duration: 0.08)),
-                            removal: .opacity.combined(with: .scale(scale: 0.85))
-                                .animation(.easeOut(duration: 0.05))
+                            removal: .opacity.combined(with: .scale(scale: 0.85, anchor: cardAnchor(displayPosition, displaySize)))
+                                .animation(.easeOut(duration: 0.15))
                         )
                     )
                     .onAppear {
@@ -423,7 +461,7 @@ struct ContentView: View {
                 // саму карточку (1000). Клик по нему — один из трёх способов
                 // выйти из Focus Mode, см. подпись под карточкой.
                 if focusedCardID != nil {
-                    Color.black.opacity(0.45)
+                    focusBackdrop
                         .contentShape(Rectangle())
                         .onTapGesture { setFocusedCard(nil) }
                         .zIndex(500)
@@ -472,13 +510,17 @@ struct ContentView: View {
                         .allowsHitTesting(false)
                 }
                 
-                HStack(spacing: 0) {
-                    Color.clear
-                        .frame(width: 76)
-                    WindowDragArea()
+                // Зона перетаскивания окна — только в обычном режиме: в Desktop Overlay окно
+                // закреплено на весь экран и двигаться не должно.
+                if !viewModel.desktopOverlay.isEnabled {
+                    HStack(spacing: 0) {
+                        Color.clear
+                            .frame(width: 76)
+                        WindowDragArea()
+                    }
+                    .frame(height: effectiveTopInset)
+                    .frame(maxWidth: .infinity, alignment: .topLeading)
                 }
-                .frame(height: effectiveTopInset)
-                .frame(maxWidth: .infinity, alignment: .topLeading)
             }
             
             .coordinateSpace(name: "canvas")
@@ -539,6 +581,11 @@ struct ContentView: View {
         .onChange(of: viewModel.activeSlot) { _, _ in
             updateEmptyHintState()
         }
+        // Сфокусированную карточку удалили (или Space сменился) — выйти из фокуса, а не оставить пустое затемнение.
+        .onChange(of: viewModel.cards.map(\.id)) { _, ids in
+            if let focusedCardID, !ids.contains(focusedCardID) { setFocusedCard(nil) }
+            if let textFocusedCardID, !ids.contains(textFocusedCardID) { self.textFocusedCardID = nil }
+        }
         .onChange(of: viewModel.cards.isEmpty) { _, _ in
             updateEmptyHintState()
         }
@@ -571,6 +618,19 @@ struct ContentView: View {
     /// В обычном окне — маленькая граница. В Desktop Overlay окно
     /// растянуто на весь экран, и карточки не должны упираться в самый
     /// верх/вырез камеры — там, где обычно сидят системные виджеты.
+    private func fadeBoard(toDesktop: Bool) {
+        if toDesktop {
+            withAnimation(Self.desktopFade) { boardOpacity = 0 }
+            Task { @MainActor in
+                try? await Task.sleep(for: .milliseconds(300))
+                if viewModel.desktopOverlay.isDesktopModeActive { isBoardMounted = false }
+            }
+        } else {
+            isBoardMounted = true
+            withAnimation(Self.desktopFade) { boardOpacity = 1 }
+        }
+    }
+
     private var effectiveTopInset: CGFloat {
         viewModel.desktopOverlay.isEnabled ? BoardViewModel.desktopOverlayTopInset : BoardViewModel.topCreationLimit
     }
@@ -579,9 +639,48 @@ struct ContentView: View {
     /// chrome окна), так что отступ под неё можно менять независимо от
     /// самого окна/frame — без компромисса с покрытием экрана, в отличие
     /// от системных элементов.
+    /// Обучение по ходу работы при смене Space: подсказки про Spaces / Space Lock.
+    private func didSwitchSpace(to slot: Int) {
+        // Сначала — «сделал то, о чём была плашка», потом — новые.
+        TipsState.shared.noteAction(for: .spaceSwitch)
+        TipsState.shared.offer(.spaceSwitch)
+        // Про панель Space — после подсказки про Spaces, при следующей смене Space.
+        if TipsState.shared.seen.contains(.spaceSwitch) { TipsState.shared.offer(.spaceBar) }
+        if !viewModel.securitySettings.isPasscodeEnabled { TipsState.shared.offer(.spaceLock) }
+    }
+
+    /// Конец онбординга: выбранный режим (окно / рабочий стол) и шпаргалка на доске.
+    private func configureOnboarding() {
+        let board = viewModel
+        onboardingViewModel.onFinish = { home, isFirstRun in
+            if let home { board.desktopOverlay.isEnabled = home == .desktop }
+            if isFirstRun { CheatSheetCard.add(to: board) }
+            // Первая подсказка после тура — про Spaces: карточки уже умеем, дальше —
+            // где их ещё держать.
+            DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) {
+                TipsState.shared.offer(.spaceSwitch)
+            }
+        }
+    }
+
     private var workspacePillTopPadding: CGFloat {
         guard viewModel.desktopOverlay.isEnabled else { return 10 }
-        return (NSScreen.main?.safeAreaInsets.top ?? 0) + 12
+        return BoardViewModel.screenTopInset + 12
+    }
+
+    private func addCard(from template: CardTemplate, at point: CGPoint, canvasSize: CGSize) {
+        let size = CGSize(width: BoardViewModel.snap(template.size.width), height: BoardViewModel.snap(template.size.height))
+        let origin = BoardViewModel.clampedPosition(point, size: size, canvasSize: canvasSize, topInset: effectiveTopInset)
+        let card = viewModel.addCard(at: origin, size: size, text: template.text)
+        card.tagColor = template.tag
+        newlyCreatedCardID = card.id
+        guard template.isBoard else { return }
+        // Карточка ещё монтируется — подсказка (CardView) чуть позже.
+        let id = card.id
+        Task { @MainActor in
+            try? await Task.sleep(for: .milliseconds(400))
+            NotificationCenter.default.post(name: .boardTemplateCreated, object: id)
+        }
     }
 
     private func canvasDragGesture(in canvasSize: CGSize) -> some Gesture {
@@ -608,15 +707,40 @@ struct ContentView: View {
                 // канву — та же проблема, что clampedPosition уже решает для
                 // отображения обычных карточек, но с учётом их реального size.
                 let clampedOrigin = BoardViewModel.clampedPosition(origin, size: size, canvasSize: canvasSize, topInset: effectiveTopInset)
-                draftFrame = CGRect(origin: clampedOrigin, size: size)
+                draftFrame = BoardViewModel.clampedToSandbox(CGRect(origin: clampedOrigin, size: size))
             }
             .onEnded { _ in
                 defer { creationStart = nil; draftFrame = nil }
                 guard let frame = draftFrame else { return }
                 
-                newlyCreatedCardID = viewModel.addCard(at: frame.origin, size: frame.size).id
-                onboardingViewModel.handle(.cardCreated)
+                let card = viewModel.addCard(at: frame.origin, size: frame.size)
+                newlyCreatedCardID = card.id
+                onboardingViewModel.cardCreated(card.id)
             }
+    }
+
+    /// Подложка под сфокусированной карточкой: в тёмной теме затемнение, в светлой — без него.
+    @ViewBuilder
+    private var focusBackdrop: some View {
+        if colorScheme == .dark {
+            Color.black.opacity(0.45)
+        } else {
+            Color.clear
+        }
+    }
+
+    /// Войти в фокус на карточке (⌘F, щипок).
+    private func requestFocus(on id: UUID) {
+        guard !viewModel.isActiveSpaceLocked,
+              !viewModel.desktopOverlay.isDesktopModeActive,
+              !onboardingViewModel.isActive else { return }
+        // Карточки может уже не быть (удалили, пока в ней был курсор) — тогда фокусировать нечего,
+        // иначе откроется пустое затемнение.
+        guard viewModel.cards.contains(where: { $0.id == id }) else {
+            if textFocusedCardID == id { textFocusedCardID = nil }
+            return
+        }
+        setFocusedCard(id)
     }
 
     /// Единственная точка смены фокуса. Флаг перехода обязан меняться в

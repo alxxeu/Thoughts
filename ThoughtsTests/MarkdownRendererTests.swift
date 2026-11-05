@@ -45,9 +45,9 @@ struct MarkdownRendererTests {
         #expect(font.map { NSFontManager.shared.traits(of: $0).contains(.boldFontMask) } == false)
     }
 
-    private func hidden(_ text: String, selection: NSRange?) -> String {
+    private func hidden(_ text: String) -> String {
         let s = NSMutableAttributedString(string: text)
-        MarkdownRenderer.style(s, typography: typography, selection: selection)
+        MarkdownRenderer.style(s, typography: typography)
         var out = ""
         for (i, ch) in (text as NSString).description.utf16.enumerated() {
             if s.attribute(MarkdownRenderer.hiddenKey, at: i, effectiveRange: nil) != nil { out.append(Character(Unicode.Scalar(ch)!)) }
@@ -55,41 +55,33 @@ struct MarkdownRendererTests {
         return out
     }
 
-    @Test func markersHideAwayFromCursor() {
-        let text = "a **b** c **d**"
-        // Не в фокусе — скрыто всё.
-        #expect(hidden(text, selection: nil) == "********")
-        // Курсор сразу после первого `**b**` — его звёздочки видны.
-        #expect(hidden(text, selection: NSRange(location: 7, length: 0)) == "****")
-        // Курсор у пробела между словами — ни один фрагмент не касается.
-        #expect(hidden(text, selection: NSRange(location: 9, length: 0)) == "********")
+    @Test func markersAlwaysHidden() {
+        // Скрыто всё, где бы ни стоял курсор (живой Markdown, как на iPhone).
+        #expect(hidden("a **b** c **d**") == "********")
     }
 
     @Test func blockMarkers() {
-        #expect(hidden("# Title", selection: NSRange(location: 3, length: 0)).isEmpty)
-        #expect(hidden("# Title\nx", selection: NSRange(location: 9, length: 0)) == "# ")
+        #expect(hidden("# Title") == "# ")
         let list = NSMutableAttributedString(string: "- item")
         MarkdownRenderer.style(list, typography: typography)
         #expect(list.attribute(MarkdownRenderer.bulletKey, at: 0, effectiveRange: nil) != nil)
         #expect(list.attribute(MarkdownRenderer.bulletKey, at: 1, effectiveRange: nil) == nil)
         // Разделитель не скрывается, а становится прозрачным — у строки остаётся высота.
-        #expect(hidden("x\n---", selection: NSRange(location: 0, length: 0)).isEmpty)
+        #expect(hidden("x\n---").isEmpty)
         let divider = NSMutableAttributedString(string: "x\n---")
-        MarkdownRenderer.style(divider, typography: typography, selection: NSRange(location: 0, length: 0))
+        MarkdownRenderer.style(divider, typography: typography)
         #expect(divider.attribute(.foregroundColor, at: 3, effectiveRange: nil) as? NSColor == .clear)
-        MarkdownRenderer.style(divider, typography: typography, selection: NSRange(location: 4, length: 0))
-        #expect(divider.attribute(.foregroundColor, at: 3, effectiveRange: nil) as? NSColor != .clear)
     }
 
     @Test func newBlocks() {
         // Цитата: черта, `> ` скрыт без курсора.
-        #expect(hidden("> q", selection: nil) == "> ")
+        #expect(hidden("> q") == "> ")
         let quote = styled("> q")
         #expect(quote.attribute(MarkdownRenderer.quoteKey, at: 2, effectiveRange: nil) != nil)
 
         // Чек-лист: `[x]` скрыт, пробел за ним несёт квадратик, выполненный — зачёркнут.
         let task = NSMutableAttributedString(string: "[x] done")
-        MarkdownRenderer.style(task, typography: typography, selection: NSRange(location: 6, length: 0))
+        MarkdownRenderer.style(task, typography: typography)
         #expect(task.attribute(MarkdownRenderer.hiddenKey, at: 0, effectiveRange: nil) != nil)
         #expect(task.attribute(MarkdownRenderer.hiddenKey, at: 3, effectiveRange: nil) == nil)
         #expect(task.attribute(MarkdownRenderer.taskBoxKey, at: 3, effectiveRange: nil) as? Bool == true)
@@ -104,6 +96,21 @@ struct MarkdownRendererTests {
         #expect(code.attribute(MarkdownRenderer.codeBlockKey, at: 6, effectiveRange: nil) != nil)
     }
 
+    @Test func urlInsideHiddenLinkMarkupIsNotALink() {
+        let s = styled("[site](https://example.com)")
+        #expect(s.attribute(.link, at: 1, effectiveRange: nil) != nil) // текст ссылки
+        #expect(s.attribute(.link, at: 10, effectiveRange: nil) == nil) // адрес в скобках
+    }
+
+    @Test func linkWithoutSchemeGetsHttps() {
+        #expect(MarkdownRenderer.linkTarget("example.com/a")?.absoluteString == "https://example.com/a")
+        #expect(MarkdownRenderer.linkTarget(" https://x.com ")?.absoluteString == "https://x.com")
+        #expect(MarkdownRenderer.linkTarget("mailto:a@b.co")?.absoluteString == "mailto:a@b.co")
+        #expect(MarkdownRenderer.linkTarget("  ") == nil)
+        let s = styled("[site](example.com)")
+        #expect((s.attribute(.link, at: 1, effectiveRange: nil) as? URL)?.absoluteString == "https://example.com")
+    }
+
     @Test func emptyFenceIsPlainText() {
         // Одиночный ``` и блок без строк кода — не блок: без поля и кнопки.
         #expect(styled("```").attribute(MarkdownRenderer.codeBlockKey, at: 0, effectiveRange: nil) == nil)
@@ -111,16 +118,18 @@ struct MarkdownRendererTests {
         #expect(styled("```\nx").attribute(MarkdownRenderer.codeBlockKey, at: 0, effectiveRange: nil) != nil)
     }
 
-    @Test func revealedRangesChangeOnlyNearSyntax() {
-        let text = "plain words here **bold** end"
-        let inPlain1 = MarkdownRenderer.revealedRanges(in: text, selection: NSRange(location: 2, length: 0))
-        let inPlain2 = MarkdownRenderer.revealedRanges(in: text, selection: NSRange(location: 8, length: 0))
-        let atBold = MarkdownRenderer.revealedRanges(in: text, selection: NSRange(location: 20, length: 0))
-        // Курсор ходит по обычному тексту — перекрашивать незачем.
-        #expect(inPlain1 == inPlain2)
-        // Подошёл к **bold** — раскрытое изменилось.
-        #expect(inPlain1 != atBold)
-        #expect(MarkdownRenderer.revealedRanges(in: text, selection: nil).isEmpty)
+    @Test func columnsBecomeTableCells() {
+        let s = styled("a\n||\nb\n||\nc")
+        func cell(_ i: Int) -> Int? {
+            (s.attribute(.paragraphStyle, at: i, effectiveRange: nil) as? NSParagraphStyle)?
+                .textBlocks.compactMap { ($0 as? NSTextTableBlock)?.startingColumn }.first
+        }
+        #expect(cell(0) == 0)   // a
+        #expect(cell(2) == 0)   // `||` — в левой колонке, невидима
+        #expect(cell(5) == 1)   // b
+        #expect(cell(10) == 2)  // c
+        #expect(s.attribute(.foregroundColor, at: 2, effectiveRange: nil) as? NSColor == .clear)
+        // Без `||` таблицы нет.
+        #expect(((styled("a\nb").attribute(.paragraphStyle, at: 0, effectiveRange: nil)) as? NSParagraphStyle)?.textBlocks.isEmpty != false)
     }
 }
-

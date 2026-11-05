@@ -87,6 +87,15 @@ struct MarkdownStylerTests {
         #expect(MarkdownStyler.plainText("a\n") == "a\n")
     }
 
+    @Test func quoteNeedsSpaceAfterMarker() {
+        // Одинокий `>` и `>text` — обычный текст; `>` внутри цитаты — её пустая строка.
+        #expect(MarkdownStyler.parse(">").map(\.block) == [.paragraph])
+        #expect(MarkdownStyler.parse(">the").map(\.block) == [.paragraph])
+        #expect(MarkdownStyler.parse("> ").map(\.block) == [.quote])
+        #expect(MarkdownStyler.parse("a\n>").map(\.block) == [.paragraph, .paragraph])
+        #expect(MarkdownStyler.parse("> a\n>").map(\.block) == [.quote, .quote])
+    }
+
     @Test func quotesAndTasks() {
         let paragraphs = MarkdownStyler.parse("> said **this**\n>\n- [ ] todo\n- [x] done\n- [ ]no space\n[] a\n[x] b\n[ ] c\n- [] d")
         #expect(paragraphs.map(\.block) == [.quote, .quote, .task(done: false), .task(done: true), .bullet,
@@ -132,5 +141,19 @@ struct MarkdownStylerTests {
         #expect(link?.style == .link("https://en.wikipedia.org/wiki/Swift_(language)"))
         #expect(MarkdownStyler.plainText(text) == "Swift rocks")
     }
-}
 
+    @Test func columnBreakSplitsColumns() {
+        let paragraphs = MarkdownStyler.parse("# Plan\n- [ ] a\n||\n# To go\n- [ ] b\n||\nReady")
+        #expect(paragraphs.map(\.column) == [0, 0, 0, 1, 1, 1, 2])
+        #expect(paragraphs.map(\.isColumnBreak) == [false, false, true, false, false, true, false])
+        // `||` в блоке кода и внутри строки — не разделитель.
+        #expect(MarkdownStyler.parse("```\n||\n```").allSatisfy { !$0.isColumnBreak })
+        #expect(MarkdownStyler.parse("a || b").allSatisfy { !$0.isColumnBreak })
+        #expect(MarkdownStyler.plainText("a\n||\nb") == "a\n\nb")
+    }
+
+    @Test func boardMarkerIsNotIndexed() {
+        #expect(MarkdownStyler.plainText("::: board\n# Plan\n- a").hasPrefix("\n"))
+        #expect(!MarkdownStyler.plainText("::: board\n# Plan\n- a").contains(":::"))
+    }
+}

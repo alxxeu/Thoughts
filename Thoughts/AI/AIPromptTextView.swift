@@ -12,6 +12,8 @@ private final class AIPromptNSTextView: NSTextView {
     var sendKeyBinding: AISendKeyBinding?
     /// nil — обычное поведение NSTextView (Escape уходит в complete:).
     var onEscape: (() -> Void)?
+    /// ⌥↓ — 1, ⌥↑ — -1. nil — стрелки как обычно (абзацы).
+    var onOptionArrow: ((Int) -> Void)?
 
     override func keyDown(with event: NSEvent) {
         // Escape ловим здесь, а не в cancelOperation: в non-activating
@@ -19,6 +21,11 @@ private final class AIPromptNSTextView: NSTextView {
         // уводит Escape в complete: и до cancelOperation дело не доходит.
         if event.keyCode == 53, let onEscape, !hasMarkedText() {
             onEscape()
+            return
+        }
+
+        if event.modifierFlags.contains(.option), let onOptionArrow, [125, 126].contains(event.keyCode) {
+            onOptionArrow(event.keyCode == 125 ? 1 : -1) // 125 — вниз, 126 — вверх
             return
         }
 
@@ -53,6 +60,7 @@ struct AIPromptTextView: NSViewRepresentable {
     /// nil — по настройке Settings → AI (панели Ask AI).
     var sendKeyBinding: AISendKeyBinding? = nil
     var onEscape: (() -> Void)? = nil
+    var onOptionArrow: ((Int) -> Void)? = nil
 
     func makeNSView(context: Context) -> NSScrollView {
         let scrollView = NSScrollView()
@@ -81,6 +89,7 @@ struct AIPromptTextView: NSViewRepresentable {
         textView.onSend = onSend
         textView.sendKeyBinding = sendKeyBinding
         textView.onEscape = onEscape
+        textView.onOptionArrow = onOptionArrow
 
         scrollView.documentView = textView
         return scrollView
@@ -97,6 +106,7 @@ struct AIPromptTextView: NSViewRepresentable {
         textView.onSend = onSend
         textView.sendKeyBinding = sendKeyBinding
         textView.onEscape = onEscape
+        textView.onOptionArrow = onOptionArrow
         if textView.font != font { textView.font = font }
         if textView.textColor != textColor {
             textView.textColor = textColor

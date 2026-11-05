@@ -11,7 +11,7 @@ enum KeychainSync {
             SecuritySettings.shared.isPasscodeEnabled = true
         }
 
-        for provider in [AIProviderKind.openAI, .anthropic] {
+        for provider in AIProviderKind.allCases where provider.needsAPIKey {
             AIKeyStore.item(for: provider).reconcile(uploadLocal: uploadLocal)
         }
         AISettings.shared.refreshKeyState()

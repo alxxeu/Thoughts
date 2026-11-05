@@ -1,8 +1,12 @@
 import Foundation
 
 /// Chat Completions API — https://platform.openai.com/docs/api-reference/chat
+/// Тот же формат у Gemini, OpenRouter, Groq, Mistral и Ollama — отличаются
+/// только адресом (AIProviderKind.chatCompletionsURL) и ключом.
 struct OpenAITextService: AITextService {
-    let apiKey: String
+    let endpoint: URL
+    /// nil — без заголовка Authorization (локальный Ollama).
+    let apiKey: String?
     let model: String
 
     private struct RequestBody: Encodable {
@@ -33,9 +37,11 @@ struct OpenAITextService: AITextService {
     }
 
     func generate(systemPrompt: String, userText: String) async throws -> String {
-        var request = URLRequest(url: URL(string: "https://api.openai.com/v1/chat/completions")!)
+        var request = URLRequest(url: endpoint)
         request.httpMethod = "POST"
-        request.setValue("Bearer \(apiKey)", forHTTPHeaderField: "Authorization")
+        if let apiKey {
+            request.setValue("Bearer \(apiKey)", forHTTPHeaderField: "Authorization")
+        }
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
         request.httpBody = try JSONEncoder().encode(RequestBody(
             model: model,

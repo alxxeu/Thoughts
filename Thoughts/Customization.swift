@@ -3,7 +3,7 @@ import AppKit
 
 // Кастомизация карточек и канвы — каждый вариант описан данными со
 // строковым id, а не enum-кейсом: встроенные наборы ниже — это просто
-// статические массивы, и будущие плагины (см. docs/plugins.md) смогут
+// статические массивы, и будущие плагины (см. thoughts-plugins/docs/plugins.md) смогут
 // добавлять свои варианты в тот же реестр под id вида "pluginID/itemID".
 // Неизвестный id (например, после удаления плагина) всегда откатывается
 // к варианту по умолчанию, а не ломает отрисовку.
@@ -68,8 +68,11 @@ struct CardFontOption: Identifiable, Hashable {
             .sorted { $0.localizedCaseInsensitiveCompare($1) == .orderedAscending }
     }
 
+    /// Шрифты из включённых плагинов (`pluginID/itemID`).
+    static var plugins: [CardFontOption] { PluginsModel.shared.contributions.fonts }
+
     static func resolve(_ id: String) -> CardFontOption {
-        if let option = builtIn.first(where: { $0.id == id }) {
+        if let option = builtIn.first(where: { $0.id == id }) ?? plugins.first(where: { $0.id == id }) {
             return option
         }
         if id.hasPrefix(familyPrefix) {
@@ -152,14 +155,83 @@ struct TextColorOption: Identifiable, Hashable {
         return TextColorOption(id: customPrefix + hex, title: "Custom", color: NSColor(hex: hex) ?? color)
     }
 
+    /// Цвета из включённых плагинов.
+    static var plugins: [TextColorOption] { PluginsModel.shared.contributions.textColors }
+
     static func resolve(_ id: String) -> TextColorOption {
-        if let option = builtIn.first(where: { $0.id == id }) {
+        if let option = builtIn.first(where: { $0.id == id }) ?? plugins.first(where: { $0.id == id }) {
             return option
         }
         if id.hasPrefix(customPrefix), let color = NSColor(hex: String(id.dropFirst(customPrefix.count))) {
             return TextColorOption(id: id, title: "Custom", color: color)
         }
         return builtIn[0]
+    }
+}
+
+// MARK: - Фон в полноэкранном режиме
+
+/// Ровный цвет фона окна в fullscreen — тот же принцип, что у
+/// TextColorOption: несколько готовых тонов и свой через ColorPicker.
+struct FullScreenBackgroundOption: Identifiable, Hashable {
+    let id: String
+    let title: String
+    let color: NSColor
+
+    static let defaultID = "builtin.graphite"
+    private static let customPrefix = "custom:"
+
+    /// Пресеты адаптивные: тёмный тон в тёмной теме, светлый — в светлой.
+    static let builtIn: [FullScreenBackgroundOption] = [
+        preset(defaultID, "Graphite", dark: 0x1E1E20, light: 0xE7E7EA),
+        preset("builtin.midnight", "Midnight", dark: 0x16203A, light: 0xD9E2F4),
+        preset("builtin.plum", "Plum", dark: 0x2A1D2E, light: 0xEADDF0),
+        preset("builtin.forest", "Forest", dark: 0x18261F, light: 0xDAEADF),
+        preset("builtin.sand", "Sand", dark: 0x3A342B, light: 0xE8E1D5)
+    ]
+
+    private static func preset(_ id: String, _ title: String, dark: Int, light: Int) -> FullScreenBackgroundOption {
+        let darkColor = NSColor(rgb: dark), lightColor = NSColor(rgb: light)
+        let adaptive = NSColor(name: nil) { appearance in
+            appearance.bestMatch(from: [.darkAqua, .aqua]) == .darkAqua ? darkColor : lightColor
+        }
+        return FullScreenBackgroundOption(id: id, title: title, color: adaptive)
+    }
+
+    static func custom(_ color: NSColor) -> FullScreenBackgroundOption {
+        let hex = color.hexString
+        return FullScreenBackgroundOption(id: customPrefix + hex, title: "Custom", color: NSColor(hex: hex) ?? color)
+    }
+
+    static func resolve(_ id: String) -> FullScreenBackgroundOption {
+        if let option = builtIn.first(where: { $0.id == id }) {
+            return option
+        }
+        if id.hasPrefix(customPrefix), let color = NSColor(hex: String(id.dropFirst(customPrefix.count))) {
+            return FullScreenBackgroundOption(id: id, title: "Custom", color: color)
+        }
+        return builtIn[0]
+    }
+}
+
+/// Что лежит под канвой: размытие того, что под окном (Material), ровный цвет или свои обои.
+/// Хранится одним id: `builtin.material`, `image` или id цвета (`FullScreenBackgroundOption`).
+enum BackgroundChoice: Equatable {
+    case material
+    case color(FullScreenBackgroundOption)
+    case image
+
+    static let materialID = "builtin.material"
+    static let imageID = "image"
+
+    static func resolve(_ id: String) -> BackgroundChoice {
+        switch id {
+        case imageID: return .image
+        case materialID: return .material
+        default:
+            let isColor = FullScreenBackgroundOption.builtIn.contains { $0.id == id } || id.hasPrefix("custom:")
+            return isColor ? .color(FullScreenBackgroundOption.resolve(id)) : .material
+        }
     }
 }
 
@@ -189,9 +261,27 @@ struct CanvasPattern: Identifiable, Hashable {
         CanvasPattern(id: "builtin.diagonal", title: "Diagonal", kind: .diagonal, spacing: 18)
     ]
 
+    /// Паттерны из включённых плагинов.
+    static var plugins: [CanvasPattern] { PluginsModel.shared.contributions.patterns }
+
     static func resolve(_ id: String) -> CanvasPattern {
-        builtIn.first { $0.id == id } ?? builtIn[0]
+        builtIn.first { $0.id == id } ?? plugins.first { $0.id == id } ?? builtIn[0]
     }
+}
+
+// MARK: - Темы
+
+/// Тема из плагина: набор шрифт + цвет текста + паттерн (+ интенсивность).
+/// Выбор применяет значения в AppearanceSettings — отдельно тема не хранится.
+struct ThemeOption: Identifiable, Hashable {
+    let id: String
+    let title: String
+    var fontID: String?
+    var textColorID: String?
+    var patternID: String?
+    var patternIntensity: Double?
+
+    static var plugins: [ThemeOption] { PluginsModel.shared.contributions.themes }
 }
 
 // MARK: - Hex-цвета
@@ -211,6 +301,13 @@ extension NSColor {
         let digits = hex.hasPrefix("#") ? String(hex.dropFirst()) : hex
         guard digits.count == 6, let value = Int(digits, radix: 16) else { return nil }
         self.init(rgb: value)
+    }
+
+    /// Светлый ли цвет (относительная яркость sRGB > 0.5): по нему выбирают
+    /// тёмную или светлую подложку под текст такого цвета.
+    var isLight: Bool {
+        let c = usingColorSpace(.sRGB) ?? self
+        return 0.2126 * c.redComponent + 0.7152 * c.greenComponent + 0.0722 * c.blueComponent > 0.5
     }
 
     var hexString: String {

@@ -12,6 +12,8 @@ struct SpaceToolbar: View {
     var isFocusModeActive: Bool
     /// Во время онбординга плашка What’s new ждёт.
     var isOnboardingActive: Bool
+    /// Space заблокирован: плашка поверх блокировки — только имя и свайп к соседним Spaces.
+    var isLocked: Bool = false
 
     @Environment(\.colorScheme) private var colorScheme
     /// Space, который сейчас переименовывают (nil — поле закрыто). Имя
@@ -35,12 +37,82 @@ struct SpaceToolbar: View {
     @State private var tooltipVisibleLabel: String?
     @State private var tooltipTask: Task<Void, Never>?
 
+    // Настройка капсулы: шестерёнка выплывает по наведению, режим правки («тряска»)
+    // скрывает и возвращает иконки (SpaceToolbarSettings), пазл открывает панель Plugins.
+    private let toolbarSettings = SpaceToolbarSettings.shared
+    @State private var isEditingToolbar = false
+    @State private var isHoveringPill = false
+    @State private var pillHideTask: Task<Void, Never>?
+    @State private var isShowingPluginsPanel = false
+    /// Иконка, которую тащат в режиме правки, и её сдвиг от своего места.
+    @State private var draggingItem: ToolbarItem?
+    /// Сырой сдвиг свайпа по панели (панель едет на `SpaceBarSwipe.resisted` от него).
+    @State private var swipeRaw: CGFloat = 0
+    /// Оттяжка точки (−1…1); после смены Space сбрасывается без анимации.
+    @State private var dotPull: CGFloat = 0
+    /// Идёт свайп по панели (и ещё чуть после него): подсказки при наведении не показываем.
+    @State private var isSwiping = false
+    @State private var swipeEndTask: Task<Void, Never>?
+    @State private var isShowingLockHint = false
+    @State private var lockHintIconHover = false
+    @State private var lockHintPopoverHover = false
+    @State private var lockHintTask: Task<Void, Never>?
+    @State private var dragTranslation: CGFloat = 0
+
     /// Заметка для плашки What’s new; nil — плашки нет.
     @State private var whatsNewNote = WhatsNew.pendingNote()
     /// После ✕ плашка пару секунд подсказывает, где найти заметки.
     @State private var isShowingWhatsNewHint = false
 
-    private var isEditingWorkspaceName: Bool { renamingSlot != nil }
+    private var isEditingWorkspaceName: Bool { renamingSlot != nil && !isLocked }
+
+    /// Точки всех Spaces: текущий ярче; видны, пока курсор на панели или идёт свайп.
+    private var spaceDots: some View {
+        SpaceBarDots(activeSlot: viewModel.activeSlot, hasDesktop: viewModel.desktopOverlay.isEnabled, ink: ink, pull: dotPull)
+        .opacity(isHoveringPill || swipeRaw != 0 ? 1 : 0)
+        .animation(.easeOut(duration: 0.15), value: isHoveringPill || swipeRaw != 0)
+        .allowsHitTesting(false)
+    }
+
+    /// Свайп: пока идёт — панель тянется; закончился за порогом — Space меняется на соседний.
+    private func updateSwipe(_ raw: CGFloat, ended: Bool) {
+        guard !isEditingToolbar, !isEditingWorkspaceName else { return }
+        if !ended {
+            if !isSwiping { dismissToolbarTooltip() }
+            isSwiping = true
+            swipeEndTask?.cancel()
+            swipeRaw = raw
+            dotPull = SpaceBarSwipe.dotPull(forRaw: raw)
+            return
+        }
+        // Панель ещё возвращается на место — подсказки возвращаются чуть позже.
+        swipeEndTask?.cancel()
+        swipeEndTask = Task { @MainActor in
+            try? await Task.sleep(for: .milliseconds(450))
+            guard !Task.isCancelled else { return }
+            isSwiping = false
+        }
+        let step = SpaceBarSwipe.step(forRaw: raw)
+        withAnimation(SpaceBarSwipe.returnAnimation) { swipeRaw = 0 }
+        if step != 0 {
+            var transaction = Transaction(); transaction.disablesAnimations = true
+            withTransaction(transaction) { dotPull = 0 }
+        } else {
+            withAnimation(SpaceBarSwipe.returnAnimation) { dotPull = 0 }
+        }
+        guard step != 0 else { return }
+        switch SpaceBarSwipe.destination(current: viewModel.activeSlot, step: step, hasDesktop: viewModel.desktopOverlay.isEnabled) {
+        case .desktop: viewModel.desktopOverlay.isDesktopModeActive = true
+        case .space(let slot): NotificationCenter.default.post(name: .switchWorkspace, object: slot)
+        }
+    }
+
+    /// Цвет текста и иконок — как цвет текста карточек (Settings → Appearance).
+    private var inkNSColor: NSColor { viewModel.appearanceSettings.cardTypography.color.withAlphaComponent(1) }
+    private var ink: Color { Color(nsColor: inkNSColor) }
+    /// Подложка под ним: светлый текст — тёмная, тёмный — светлая, чтобы капсула читалась
+    /// на любом фоне (в светлой теме материал сам светлый).
+    private var pillTint: Color { SpaceBarStyle.tint(ink: inkNSColor, isDark: colorScheme == .dark) }
 
     var body: some View {
         VStack(spacing: 6) {
@@ -50,7 +122,7 @@ struct SpaceToolbar: View {
                         TextField("Space name", text: $workspaceNameDraft)
                             .textFieldStyle(.plain)
                             .font(.system(size: 11, weight: .semibold))
-                            .foregroundStyle(Color.white.opacity(0.85))
+                            .foregroundStyle(ink.opacity(0.85))
                             .multilineTextAlignment(.center)
                             .frame(width: 100)
                             .focused($isWorkspaceNameFieldFocused)
@@ -66,19 +138,20 @@ struct SpaceToolbar: View {
                             }
                     } else {
                         Text(viewModel.activeWorkspaceName)
+                            .contentTransition(.identity)
                             .font(.system(size: 11, weight: .semibold))
-                            .foregroundStyle(Color.white.opacity(0.9))
+                            .foregroundStyle(ink.opacity(0.9))
                     }
                 }
                 .contentShape(Rectangle())
                 .onTapGesture {
-                    if !isEditingWorkspaceName {
+                    if !isEditingWorkspaceName, !isLocked {
                         dismissToolbarTooltip()
                         startWorkspaceRename()
                     }
                 }
                 .onHover { inside in
-                    guard !isEditingWorkspaceName else { return }
+                    guard !isEditingWorkspaceName, !isLocked else { return }
                     setToolbarHover(inside, "Rename")
                 }
                 .overlay(alignment: .top) { toolbarTooltip("Rename") }
@@ -87,51 +160,71 @@ struct SpaceToolbar: View {
                 // название — не отдельные капсулы под ним, чтобы новая
                 // функция была ещё одной иконкой в этом же ряду, а не
                 // ещё одной строкой вниз.
-                if !isEditingWorkspaceName {
-                    Rectangle()
-                        .fill(Color.white.opacity(0.15))
-                        .frame(width: 1, height: 14)
-
-                    // Развёрнутая на 45° звёздочка читается как крестик —
-                    // понятная подсказка "нажми ещё раз, чтобы закрыть".
-                    toolbarButton("Ask AI", icon: "sparkle", isActive: isAskingSpaceAI, rotation: isAskingSpaceAI ? 45 : 0) {
-                        // Если в этот момент печатали в какой-то карточке,
-                        // её текстовое поле удерживает first responder —
-                        // панель Ask AI должна явно получить его, а не
-                        // соревноваться за фокус в тот же момент.
-                        NSApp.keyWindow?.makeFirstResponder(nil)
-                        withAnimation(spaceAISpring) { isAskingSpaceAI.toggle() }
+                if !isEditingWorkspaceName, !isLocked {
+                    let items = toolbarSettings.order.filter { ToolbarItem.available.contains($0) }.filter {
+                        ($0 != .askAI || viewModel.aiSettings.isEnabled)
+                            && (isEditingToolbar || !toolbarSettings.isHidden($0))
                     }
-
-                    toolbarButton("Tidy Cards", icon: "square.grid.2x2.fill") {
-                        withAnimation(.spring(response: 0.4, dampingFraction: 0.8)) {
-                            viewModel.tidyCards(canvasSize: canvasSize, topInset: topInset)
+                    if !items.isEmpty {
+                        Rectangle()
+                            .fill(ink.opacity(0.15))
+                            .frame(width: 1, height: 14)
+                    }
+                    ForEach(Array(items.enumerated()), id: \.element) { index, item in
+                        if isEditingToolbar {
+                            editableIcon(item, phase: index)
+                        } else {
+                            toolbarIcon(item)
                         }
                     }
-                    .disabled(viewModel.cards.isEmpty)
-
-                    toolbarButton("Clear Space", icon: "trash.fill") {
-                        NotificationCenter.default.post(name: .requestClearSpace, object: nil)
-                    }
-                    .disabled(viewModel.cards.isEmpty)
                 }
             }
+            // Одна высота у обычной панели, панели в режиме переименования и в Desktop mode.
+            .frame(height: SpaceBarStyle.contentHeight)
             .padding(.horizontal, 14)
             .padding(.vertical, 5)
-            // Название/иконки — фиксированно белые в обеих темах. Материал
-            // даёт настоящее размытие (плоский чёрный тон на цветных обоях
-            // в Desktop Overlay грязно гасит фон), тон сверху — только чтобы
-            // белый текст оставался читаемым; в Light Mode он легче.
+            // Название/иконки — цвета текста карточек. Материал даёт настоящее
+            // размытие (плоский тон на цветных обоях в Desktop Overlay грязно гасит
+            // фон), тон сверху (`pillTint`) — только чтобы текст читался.
             .background(
                 Capsule()
                     .fill(.ultraThinMaterial)
-                    .overlay(Capsule().fill(Color.black.opacity(colorScheme == .dark ? 0.1 : 0.18)))
+                    .overlay(Capsule().fill(pillTint))
             )
+            // Смена Space: имя и ширина капсулы (вместе с фоном) меняются сразу, без общей
+            // анимации — иначе фон ещё растёт/сжимается, а новые имя и иконки уже торчат за ним.
+            .transaction(value: viewModel.activeSlot) { $0.animation = nil }
+            // Настройка капсулы — правым кликом (раньше была шестерёнка сбоку).
+            .contextMenu {
+                if !isLocked { Button(isEditingToolbar ? "Done" : "Customize Space Bar\u{2026}") {
+                    withAnimation(.spring(response: 0.35, dampingFraction: 0.75)) { isEditingToolbar.toggle() }
+                } }
+            }
+            .overlay {
+                // Наведение — по области шире капсулы (с точками под ней) и независимо от вложенных
+                // кнопок: у SwiftUI `.onHover` оно «мигало» и точки гасли, пока курсор на панели.
+                SpaceBarScrollCatcher(onScroll: { total, ended in updateSwipe(total, ended: ended) },
+                                      onHover: { setPillHover($0) })
+                    .padding(-24)
+            }
+            .simultaneousGesture(
+                DragGesture(minimumDistance: 8)
+                    .onChanged { value in updateSwipe(value.translation.width, ended: false) }
+                    .onEnded { value in updateSwipe(value.translation.width, ended: true) }
+            )
+            // Точки Spaces — под панелью, не сдвигая разметку.
+            .overlay(alignment: .bottom) { spaceDots.offset(y: 12) }
+            .offset(x: SpaceBarSwipe.resisted(swipeRaw))
 
             if isAskingSpaceAI {
                 askAIPanel
-            } else if let whatsNewNote, !isOnboardingActive {
+            } else if isShowingPluginsPanel {
+                pluginsPanel
+            } else if let whatsNewNote, !isOnboardingActive, !isLocked {
                 whatsNewBanner(whatsNewNote)
+            } else if let version = UpdateNotice.shared.availableVersion, UpdateNotice.shared.isBannerVisible,
+                      !isOnboardingActive, !isLocked {
+                updateBanner(version)
             }
         }
         .onReceive(NotificationCenter.default.publisher(for: .clearTextSelection)) { _ in
@@ -142,10 +235,22 @@ struct SpaceToolbar: View {
             withAnimation(spaceAISpring) { isAskingSpaceAI = false }
         }
         .onChange(of: isFocusModeActive) { _, active in
-            if active { isAskingSpaceAI = false }
+            if active {
+                isAskingSpaceAI = false
+                isShowingPluginsPanel = false
+            }
+        }
+        .onReceive(NotificationCenter.default.publisher(for: .clearTextSelection)) { _ in
+            // Клик по свободному холсту — конец правки капсулы и закрытие панели Plugins.
+            if isEditingToolbar { withAnimation(.spring(response: 0.35, dampingFraction: 0.8)) { isEditingToolbar = false } }
+            if isShowingPluginsPanel { withAnimation(spaceAISpring) { isShowingPluginsPanel = false } }
         }
         .onChange(of: viewModel.activeSlot) { _, _ in
             commitWorkspaceRename()
+        }
+        .onReceive(NotificationCenter.default.publisher(for: .customizeSpaceBar)) { _ in
+            guard !isLocked, !isFocusModeActive else { return }
+            withAnimation(.spring(response: 0.35, dampingFraction: 0.75)) { isEditingToolbar.toggle() }
         }
         .alert("AI Error", isPresented: Binding(
             get: { spaceAIErrorMessage != nil },
@@ -158,6 +263,259 @@ struct SpaceToolbar: View {
     }
 
     private var spaceAISpring: Animation { .spring(response: 0.4, dampingFraction: 0.76) }
+
+    // MARK: - Иконки капсулы
+
+    /// Обычная иконка-действие.
+    @ViewBuilder
+    private func toolbarIcon(_ item: ToolbarItem) -> some View {
+        switch item {
+        case .askAI:
+            // Развёрнутая на 45° звёздочка читается как крестик —
+            // понятная подсказка "нажми ещё раз, чтобы закрыть".
+            toolbarButton("Ask AI", icon: item.symbol, isActive: isAskingSpaceAI, rotation: isAskingSpaceAI ? 45 : 0) {
+                // Если в этот момент печатали в какой-то карточке,
+                // её текстовое поле удерживает first responder —
+                // панель Ask AI должна явно получить его, а не
+                // соревноваться за фокус в тот же момент.
+                NSApp.keyWindow?.makeFirstResponder(nil)
+                withAnimation(spaceAISpring) {
+                    isShowingPluginsPanel = false
+                    isAskingSpaceAI.toggle()
+                }
+                if isAskingSpaceAI {
+                    TipsState.shared.offer(.askAI)
+                } else {
+                    TipsState.shared.noteAction(for: .askAI)
+                }
+            }
+        case .tidyCards:
+            toolbarButton("Tidy Cards", icon: item.symbol) {
+                withAnimation(.spring(response: 0.4, dampingFraction: 0.8)) {
+                    viewModel.tidyCards(canvasSize: canvasSize, topInset: topInset)
+                }
+            }
+            .disabled(viewModel.cards.isEmpty)
+        case .clearSpace:
+            toolbarButton("Clear Space", icon: item.symbol) {
+                NotificationCenter.default.post(name: .requestClearSpace, object: nil)
+            }
+            .disabled(viewModel.cards.isEmpty)
+        case .lockSpace:
+            // Как ⌘L. Пока пароля нет — иконка неактивна, по наведению — подсказка и кнопка в Settings.
+            if viewModel.securitySettings.isPasscodeEnabled {
+                toolbarButton("Lock Space", icon: item.symbol) {
+                    NotificationCenter.default.post(name: .lockCurrentSpace, object: nil)
+                }
+            } else {
+                lockSetupIcon(item)
+            }
+        case .plugins:
+            toolbarButton("Plugins", icon: item.symbol, isActive: isShowingPluginsPanel) {
+                NSApp.keyWindow?.makeFirstResponder(nil)
+                withAnimation(spaceAISpring) {
+                    isAskingSpaceAI = false
+                    isShowingPluginsPanel.toggle()
+                }
+            }
+        }
+    }
+
+    /// Замок без пароля: приглушён, по наведению — окошко «настройте пароль» с кнопкой.
+    /// Окошко остаётся, пока курсор на иконке или в нём самом.
+    private func lockSetupIcon(_ item: ToolbarItem) -> some View {
+        Image(systemName: item.symbol)
+            .font(.system(size: 15))
+            .foregroundStyle(ink.opacity(0.35))
+            .contentShape(Rectangle())
+            .onHover { lockHintIconHover = $0; updateLockHint() }
+            .popover(isPresented: $isShowingLockHint, arrowEdge: .bottom) {
+                VStack(alignment: .leading, spacing: 8) {
+                    Text("Set up a passcode in Settings to lock Spaces.")
+                        .font(.system(size: 11))
+                        .fixedSize(horizontal: false, vertical: true)
+                    Button("Open Security") {
+                        isShowingLockHint = false
+                        SettingsNavigation.shared.open(.security)
+                    }
+                    .controlSize(.small)
+                }
+                .frame(width: 180)
+                .padding(10)
+                .onHover { lockHintPopoverHover = $0; updateLockHint() }
+            }
+    }
+
+    private func updateLockHint() {
+        lockHintTask?.cancel()
+        let want = lockHintIconHover || lockHintPopoverHover
+        lockHintTask = Task { @MainActor in
+            try? await Task.sleep(for: .seconds(want ? 0.3 : 0.25))
+            guard !Task.isCancelled else { return }
+            isShowingLockHint = want
+        }
+    }
+
+    /// Шаг иконок в режиме правки: ширина рамки + spacing ряда.
+    private static let editIconWidth: CGFloat = 20
+    private static let editStep: CGFloat = editIconWidth + 10
+
+    /// Иконки в режиме правки, в текущем порядке.
+    private var editRow: [ToolbarItem] {
+        toolbarSettings.order.filter {
+            ToolbarItem.available.contains($0) && ($0 != .askAI || viewModel.aiSettings.isEnabled)
+        }
+    }
+
+    /// Куда встанет перетаскиваемая иконка, если отпустить сейчас.
+    private var dropIndex: Int? {
+        guard let draggingItem, let start = editRow.firstIndex(of: draggingItem) else { return nil }
+        let steps = Int((dragTranslation / Self.editStep).rounded())
+        return min(max(start + steps, 0), editRow.count - 1)
+    }
+
+    /// Как в iOS: пока тащат, порядок не меняется — соседи только раздвигаются,
+    /// освобождая место; порядок меняется, когда отпустили.
+    private func shift(for item: ToolbarItem) -> CGFloat {
+        guard let draggingItem, item != draggingItem, let drop = dropIndex,
+              let start = editRow.firstIndex(of: draggingItem),
+              let index = editRow.firstIndex(of: item) else { return 0 }
+        if start < drop, index > start, index <= drop { return -Self.editStep }
+        if drop < start, index >= drop, index < start { return Self.editStep }
+        return 0
+    }
+
+    /// Иконка в режиме правки: дрожит; «−» — скрыть, у скрытой (приглушена) «+» —
+    /// вернуть (кликом по бейджу или по самой иконке); перетаскивание меняет порядок.
+    private func editableIcon(_ item: ToolbarItem, phase: Int) -> some View {
+        let isHidden = toolbarSettings.isHidden(item)
+        let isDragging = draggingItem == item
+        return Image(systemName: item.symbol)
+            .font(.system(size: 15))
+            .foregroundStyle(ink.opacity(isHidden ? 0.35 : 0.9))
+            .frame(width: Self.editIconWidth)
+            .contentShape(Rectangle())
+            .onTapGesture { toggleHidden(item, isHidden: isHidden) }
+            .overlay(alignment: .topLeading) {
+                Image(systemName: isHidden ? "plus" : "minus")
+                    .font(.system(size: 7, weight: .heavy))
+                    .foregroundStyle(.white)
+                    .frame(width: 12, height: 12)
+                    .background(Circle().fill(isHidden ? Color.green : Color.red))
+                    // Область нажатия бейджа больше самого кружка.
+                    .frame(width: 18, height: 18)
+                    .contentShape(Circle())
+                    .onTapGesture { toggleHidden(item, isHidden: isHidden) }
+                    .offset(x: -9, y: -9)
+            }
+            .modifier(WobbleEffect(phase: phase, isEnabled: !isDragging))
+            .scaleEffect(isDragging ? 1.15 : 1)
+            // Перетаскиваемая — ровно за курсором; соседи — с пружиной.
+            .offset(x: isDragging ? dragTranslation : shift(for: item))
+            .animation(isDragging ? nil : .spring(response: 0.3, dampingFraction: 0.8), value: dropIndex)
+            .zIndex(isDragging ? 1 : 0)
+            .gesture(
+                DragGesture(minimumDistance: 3)
+                    .onChanged { value in
+                        if draggingItem != item { draggingItem = item }
+                        dragTranslation = value.translation.width
+                    }
+                    .onEnded { _ in dropDraggedIcon() }
+            )
+    }
+
+    private func toggleHidden(_ item: ToolbarItem, isHidden: Bool) {
+        withAnimation(.spring(response: 0.3, dampingFraction: 0.8)) {
+            toolbarSettings.setHidden(item, !isHidden)
+            if item == .plugins, !isHidden { isShowingPluginsPanel = false }
+            if item == .askAI, !isHidden { isAskingSpaceAI = false }
+        }
+    }
+
+    /// Отпустили: порядок меняется без анимации — иконки уже стоят на новых
+    /// местах (соседи сдвинуты, перетаскиваемая под курсором), прыжка нет.
+    private func dropDraggedIcon() {
+        guard let item = draggingItem, let drop = dropIndex else { return }
+        let rest = dragTranslation - CGFloat(drop - (editRow.firstIndex(of: item) ?? drop)) * Self.editStep
+        var transaction = Transaction()
+        transaction.disablesAnimations = true
+        withTransaction(transaction) {
+            toolbarSettings.move(item, to: drop, within: editRow)
+            draggingItem = nil
+            dragTranslation = rest
+        }
+        // Остаток (курсор не точно на месте) — доезжает пружиной.
+        withAnimation(.spring(response: 0.3, dampingFraction: 0.8)) { dragTranslation = 0 }
+    }
+
+    /// Точки Spaces появляются после короткого наведения (120 мс) и пропадают чуть позже.
+    private func setPillHover(_ inside: Bool) {
+        pillHideTask?.cancel()
+        pillHideTask = Task {
+            try? await Task.sleep(for: .milliseconds(inside ? 120 : 220))
+            guard !Task.isCancelled else { return }
+            isHoveringPill = inside
+        }
+    }
+
+    // MARK: - Панель Plugins
+
+    private var pluginsPanel: some View {
+        let plugins = PluginsModel.shared
+        return VStack(alignment: .leading, spacing: 10) {
+            Text("Plugins")
+                .font(.system(size: 13, weight: .semibold))
+            if plugins.installed.isEmpty {
+                Text("No plugins yet. Plugins add fonts, colors, patterns, themes and card templates.")
+                    .font(.system(size: 12))
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            } else {
+                ForEach(plugins.installed.filter { $0.error == nil }) { plugin in
+                    Toggle(isOn: Binding(
+                        get: { plugin.isEnabled },
+                        set: { plugins.setEnabled($0, for: plugin) }
+                    )) {
+                        Text(plugin.name).font(.system(size: 12))
+                    }
+                    .toggleStyle(.switch)
+                    .controlSize(.mini)
+                }
+            }
+            Button {
+                withAnimation(spaceAISpring) { isShowingPluginsPanel = false }
+                SettingsNavigation.shared.open(.plugins)
+            } label: {
+                HStack(spacing: 6) {
+                    Image(systemName: "plus")
+                    Text("Add Plugins\u{2026}")
+                    Spacer()
+                }
+                .font(.system(size: 12))
+                .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+        }
+        .padding(.horizontal, 14)
+        .padding(.vertical, 12)
+        .frame(width: 260, alignment: .leading)
+        .background(
+            CardSurfaceBackground(
+                cornerRadius: 16,
+                usesGlassEffect: false,
+                tintOpacity: 0.15,
+                materialStyle: .thickMaterial,
+                lightMaterialStyle: .ultraThinMaterial,
+                lightTintOpacity: 0.2
+            )
+        )
+        .transition(
+            .asymmetric(
+                insertion: .scale(scale: 0.5, anchor: .top).combined(with: .opacity).animation(spaceAISpring),
+                removal: .scale(scale: 0.5, anchor: .top).combined(with: .opacity).animation(.easeIn(duration: 0.15))
+            )
+        )
+    }
 
     /// Как у Arc: «обновились» + What’s new (карточка с заметками по центру
     /// Space) или ✕ (подсказка, где заметки лежат, и плашка уходит).
@@ -220,16 +578,68 @@ struct SpaceToolbar: View {
         .transition(.scale(scale: 0.8, anchor: .top).combined(with: .opacity))
     }
 
+    /// Новая версия найдена Sparkle (только DMG): та же плашка, что What’s new.
+    private func updateBanner(_ version: String) -> some View {
+        VStack(alignment: .leading, spacing: 8) {
+            HStack(alignment: .firstTextBaseline) {
+                Text("Thoughts \(version) is available")
+                    .font(.system(size: 13, weight: .semibold))
+                Spacer()
+                Button {
+                    withAnimation(.easeIn(duration: 0.25)) { UpdateNotice.shared.dismissBanner() }
+                } label: {
+                    Image(systemName: "xmark")
+                        .font(.system(size: 11, weight: .semibold))
+                        .foregroundStyle(.secondary)
+                        .frame(width: 18, height: 18)
+                        .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .help("Close")
+            }
+            Button {
+                #if DIRECT
+                DirectUpdater.checkForUpdates()
+                #endif
+            } label: {
+                HStack(spacing: 8) {
+                    Image(systemName: "arrow.down.circle")
+                    Text("Update")
+                    Image(systemName: "arrow.right")
+                        .font(.system(size: 11, weight: .semibold))
+                    Spacer()
+                }
+                .font(.system(size: 13))
+                .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+        }
+        .padding(.horizontal, 14)
+        .padding(.vertical, 10)
+        .frame(width: 240)
+        .background(
+            CardSurfaceBackground(
+                cornerRadius: 16,
+                usesGlassEffect: false,
+                tintOpacity: 0.15,
+                materialStyle: .thickMaterial,
+                lightMaterialStyle: .ultraThinMaterial,
+                lightTintOpacity: 0.2
+            )
+        )
+        .transition(.scale(scale: 0.8, anchor: .top).combined(with: .opacity))
+    }
+
     private func openWhatsNew(_ note: ReleaseNote) {
         WhatsNew.markSeen()
-        let size = CGSize(width: 360, height: 440)
+        let size = WhatsNew.cardSize(for: note)
         let origin = CGPoint(
             x: max(0, (canvasSize.width - size.width) / 2),
             y: max(0, (canvasSize.height - size.height) / 2)
         )
         withAnimation(spaceAISpring) {
             // Свечение по краям, как у карточки ответа AI, — до первого касания.
-            let card = viewModel.addCard(at: origin, size: size, text: WhatsNew.markdown(for: note))
+            let card = viewModel.addCard(at: origin, size: size, text: WhatsNew.cardText(for: note))
             viewModel.aiHighlightedCardIDs.insert(card.id)
             whatsNewNote = nil
         }
@@ -356,10 +766,10 @@ struct SpaceToolbar: View {
         }
 
         tooltipTask?.cancel()
-        if inside {
+        if inside, !isSwiping {
             tooltipTask = Task {
                 try? await Task.sleep(for: .seconds(0.45))
-                guard !Task.isCancelled else { return }
+                guard !Task.isCancelled, !isSwiping else { return }
                 withAnimation(.easeIn(duration: 0.1)) {
                     tooltipVisibleLabel = label
                 }
@@ -388,7 +798,7 @@ struct SpaceToolbar: View {
                 .rotationEffect(.degrees(rotation))
         }
         .buttonStyle(.plain)
-        .foregroundStyle(Color.white.opacity(isActive || hoveredToolbarLabel == label ? 1 : 0.85))
+        .foregroundStyle(ink.opacity(isActive || hoveredToolbarLabel == label ? 1 : 0.85))
         .font(.system(size: 15))
         .onHover { setToolbarHover($0, label) }
         .overlay(alignment: .top) { toolbarTooltip(label) }
@@ -445,5 +855,24 @@ struct SpaceToolbar: View {
 
     private func cancelWorkspaceRename() {
         renamingSlot = nil
+    }
+}
+
+/// Лёгкая «тряска» иконок в режиме правки капсулы — как в iOS при перестановке
+/// приложений; фаза у каждой иконки своя, чтобы они не качались в унисон.
+private struct WobbleEffect: ViewModifier {
+    let phase: Int
+    /// Перетаскиваемая иконка не дрожит.
+    var isEnabled = true
+
+    /// От часов, а не repeatForever-анимацией: ту обрывала любая другая анимация
+    /// (перестановка, скрытие иконки), и дрожание останавливалось насовсем.
+    func body(content: Content) -> some View {
+        TimelineView(.animation(paused: !isEnabled)) { context in
+            let t = context.date.timeIntervalSinceReferenceDate
+            let period = 0.24 + Double(phase % 3) * 0.03
+            let angle = isEnabled ? sin(t * 2 * .pi / period + Double(phase)) * 2.2 : 0
+            content.rotationEffect(.degrees(angle))
+        }
     }
 }

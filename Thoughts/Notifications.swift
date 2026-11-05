@@ -12,20 +12,21 @@ extension Notification.Name {
     /// Cmd+F — входит/выходит из Focus Mode для карточки, которая сейчас
     /// держит текстовый фокус (см. ThoughtsApp/ContentView).
     static let toggleFocusCard = Notification.Name("ToggleFocusCard")
-    /// "Replay Onboarding" в Settings → General — показывает тур заново
-    /// поверх канвы, не дожидаясь следующего первого запуска.
-    static let replayOnboarding = Notification.Name("ReplayOnboarding")
     /// File → Clear Space — просит ContentView показать подтверждение
     /// перед необратимым удалением всех карточек активного Space. Само
     /// удаление происходит только после явного подтверждения в алерте,
     /// не по этому уведомлению напрямую.
     static let requestClearSpace = Notification.Name("RequestClearSpace")
+    /// View → Customize Space Bar…: включает/выключает правку иконок капсулы Space.
+    static let customizeSpaceBar = Notification.Name("CustomizeSpaceBar")
     /// Клик по пустому холсту или начало драга по нему — карточки снимают
     /// текстовое выделение/фокус, если он был у одной из них.
     static let clearTextSelection = Notification.Name("ClearTextSelection")
     /// Только что созданная карточка домаунтилась — просит её собственный
     /// CardTextView взять фокус (см. задержку в ContentView.addCard-flow).
     static let focusNewCard = Notification.Name("FocusNewCard")
+    /// Карточка-виджет создана из шаблона (object — UUID карточки): показать подсказку про колонки.
+    static let boardTemplateCreated = Notification.Name("BoardTemplateCreated")
 
     // MARK: - Onboarding-гейты (см. OnboardingViewModel.handle) — сигналят
     // о РЕАЛЬНОМ завершении жеста (не о начале), чтобы шаг интерактивного

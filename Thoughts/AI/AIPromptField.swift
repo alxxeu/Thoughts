@@ -1,7 +1,7 @@
 import SwiftUI
 
 /// Поле вопроса к AI на тёмных панелях — Ask AI по Space (SpaceToolbar) и
-/// под карточкой в Focus Mode (CardAskAIPanel): плейсхолдер, выбор
+/// в Ask AI-панелях: плейсхолдер, выбор
 /// провайдера слева внизу, отправка со спиннером справа внизу. У панели
 /// из контекстного меню (AskAIPopover) — системный стиль, она своя.
 struct AIPromptField: View {

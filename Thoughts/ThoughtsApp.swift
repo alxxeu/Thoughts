@@ -39,9 +39,13 @@ struct ThoughtsApp: App {
                     // В Desktop mode фон тоже должен быть полностью
                     // прозрачным — реальный рабочий стол виден без единого
                     // визуального следа Thoughts поверх него.
-                    if !viewModel.desktopOverlay.isDesktopModeActive {
-                        VisualEffectBlur(material: .hudWindow, blendingMode: .behindWindow)
+                    ZStack {
+                        if !viewModel.desktopOverlay.isDesktopModeActive {
+                            AppBackgroundView(settings: viewModel.appearanceSettings)
+                                .transition(.opacity)
+                        }
                     }
+                    .animation(.easeOut(duration: 0.25), value: viewModel.desktopOverlay.isDesktopModeActive)
                 }
                 .ignoresSafeArea()
                 .preferredColorScheme(preferredColorScheme)
@@ -65,6 +69,14 @@ struct ThoughtsApp: App {
                 formatButton("Underline", "markdownUnderline:", "u")
                 formatButton("Strikethrough", "markdownStrikethrough:", "x", modifiers: [.command, .shift])
                 formatButton("Highlight", "markdownHighlight:", "h", modifiers: [.command, .shift])
+                Button(FormatCommand.code.title) { FormatCommand.code.send() }
+                Button(FormatCommand.link.title) { FormatCommand.link.send() }
+
+                Divider()
+
+                ForEach(FormatCommand.blocks, id: \.self) { command in
+                    Button(command.title) { command.send() }
+                }
 
                 Divider()
 
@@ -110,10 +122,6 @@ struct ThoughtsApp: App {
                     BackupCoordinator.importBackup(viewModel: viewModel)
                 }
                 .disabled(viewModel.isActiveSpaceLocked)
-                Button("Export as Markdown…") {
-                    BackupCoordinator.exportMarkdown(viewModel: viewModel)
-                }
-                .disabled(viewModel.isActiveSpaceLocked)
                 Divider()
                 Button("Clear Space…") {
                     NotificationCenter.default.post(name: .requestClearSpace, object: nil)
@@ -135,30 +143,30 @@ struct ThoughtsApp: App {
                 }
                 .keyboardShortcut("f", modifiers: .command)
                 .disabled(viewModel.isActiveSpaceLocked || viewModel.desktopOverlay.isDesktopModeActive)
-            }
-            // Системный пункт "Settings…" (со своей иконкой в App-меню)
-            // оставлен как есть — не переопределяем .appSettings отдельной
-            // кнопкой без иконки, получался дубль. Барьер против побега из
-            // заблокированного Space в Settings всё равно живёт в самом
-            // SettingsView (isActiveSpaceLocked → lockedPlaceholder), а не
-            // в disabled-состоянии пункта меню — так что убрать дубль можно
-            // без потери защиты.
-            // .after(.windowArrangement) — стандартная точка вставки
-            // приложением своих пунктов в системное меню Window, ниже
-            // "Zoom"/"Move Window to..." и разделителя перед списком окон.
-            CommandGroup(after: .windowArrangement) {
+
+                Divider()
+
                 Toggle("Desktop Overlay", isOn: Binding(
                     get: { viewModel.desktopOverlay.isEnabled },
                     set: { viewModel.desktopOverlay.isEnabled = $0 }
                 ))
-            }
-            // .after(.help), а не .replacing(.help) — иначе слетает
-            // системное поле поиска по меню, которое SwiftUI туда кладёт
-            // по умолчанию.
-            CommandGroup(after: .help) {
-                Button("Replay Onboarding") {
-                    NotificationCenter.default.post(name: .replayOnboarding, object: nil)
+
+                Button("Customize Space Bar\u{2026}") {
+                    NotificationCenter.default.post(name: .customizeSpaceBar, object: nil)
                 }
+                .disabled(viewModel.isActiveSpaceLocked || viewModel.desktopOverlay.isDesktopModeActive)
+            }
+            // Settings — сцена Window, системного пункта "Settings…" у неё нет:
+            // ставим свой на место .appSettings. Барьер против побега из
+            // заблокированного Space живёт в самом SettingsView
+            // (isActiveSpaceLocked → lockedPlaceholder).
+            CommandGroup(replacing: .appSettings) {
+                Button {
+                    SettingsNavigation.shared.open(SettingsNavigation.shared.selectedTab)
+                } label: {
+                    Label("Settings\u{2026}", systemImage: "gearshape")
+                }
+                .keyboardShortcut(",", modifiers: .command)
             }
             CommandMenu("Spaces") {
                 // Однонаправленный вход в Desktop mode — не toggle: повторное
@@ -193,10 +201,16 @@ struct ThoughtsApp: App {
                 }
             }
         }
-        Settings {
+        // Settings — обычное окно, как у Thaw: сцена Settings центрирует заголовок
+        // и рисует пустую полосу тулбара, а Window с .titleBar + .unified даёт
+        // заголовок раздела слева в одной строке с кнопками окна.
+        Window("Settings", id: SettingsNavigation.windowID) {
             SettingsView(viewModel: viewModel)
                 .preferredColorScheme(preferredColorScheme)
         }
+        .windowStyle(.titleBar)
+        .windowToolbarStyle(.unified)
+        .windowResizability(.contentSize)
     }
 
     /// Пункт Format: действие уходит в карточку с курсором (CardNSTextView);
@@ -235,7 +249,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         _ = DirectUpdater.controller // запускает Sparkle и его автопроверку
         #endif
         NSApp.windows.first?.acceptsMouseMovedEvents = true
+        maximizeOnFirstLaunch()
+        #if PLUGINS
+        PluginsModel.shared.attachConverters()
+        PluginsModel.shared.reload()
+        #endif
         if let viewModel {
+            DesktopSpaceBarPanel.shared.attach(viewModel: viewModel)
             QuickCaptureController.shared.start(viewModel: viewModel)
             CloudSyncEngine.shared.start(viewModel: viewModel)
             registerSpaceHotKeys(viewModel)
@@ -261,6 +281,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     /// ещё и отправляем очередь в iCloud, но ждём не дольше 2 с.
     func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
         viewModel?.flushPendingSave()
+        viewModel?.archive.flush()
         guard CloudSyncSettings.shared.isEnabled else { return .terminateNow }
 
         var hasReplied = false
@@ -311,6 +332,20 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         return true
     }
 
+    /// Первый запуск (тур ещё не пройден): окно — на весь экран (без Dock и строки
+    /// меню), а не маленьким по умолчанию — онбординг и доска должны дышать.
+    /// Дальше размер окна помнит сама система.
+    private func maximizeOnFirstLaunch() {
+        guard !OnboardingState.hasCompletedTour else { return }
+        DispatchQueue.main.async {
+            guard let window = NSApp.windows.first(where: { $0.isVisible && $0.canBecomeMain }) ?? NSApp.windows.first,
+                  let screen = window.screen ?? NSScreen.main,
+                  !window.styleMask.contains(.fullScreen),
+                  !(self.viewModel?.desktopOverlay.isEnabled ?? false) else { return }
+            window.setFrame(screen.visibleFrame, display: true, animate: false)
+        }
+    }
+
     private func showMainWindow() {
         NSApp.activate(ignoringOtherApps: true)
         if let window = NSApp.windows.first {
@@ -325,6 +360,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     /// `[ ] | { }`). keyCode — физические клавиши, от раскладки не зависят.
     /// Регистрируются на всё время работы приложения; занятое другим
     /// приложением сочетание просто не сработает.
+    /// Из Finder (рабочий стол) хватает и голого ⌥1–9 — см. registerSpaceHotKeys.
     /// ⌥1–9 — здесь, а не только шорткатом пункта меню: через меню каждое
     /// нажатие подсвечивало меню, перерисовывало Space синхронно внутри
     /// подсветки, а на частых нажатиях AppKit ещё и притормаживал повторы —
@@ -332,8 +368,28 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     /// переключения между кадрами сливаются в одну перерисовку. Пункты меню
     /// остаются — для вида и для клика мышью.
     private func handleSpaceKey(_ event: NSEvent) -> Bool {
-        guard let viewModel,
-              event.modifierFlags.intersection([.command, .control, .option, .shift]) == .option,
+        // Открыт обзор Spaces (⌥Tab) — все клавиши ему.
+        if SpaceSwitcher.shared.isActive { return SpaceSwitcher.shared.handle(event) }
+        guard let viewModel else { return false }
+        let modifiers = event.modifierFlags.intersection([.command, .control, .option, .shift])
+
+        // ⌥Tab / ⇧⌥Tab — обзор всех Spaces, как ⌘Tab; работает и в тексте.
+        if event.keyCode == 48, modifiers == .option || modifiers == [.option, .shift] {
+            if !event.isARepeat { showSpaceSwitcher(step: modifiers.contains(.shift) ? -1 : 1) }
+            return true
+        }
+
+        // ⌥← / ⌥→ — соседний Space по кругу; в тексте — как обычно, по словам.
+        if modifiers == .option, event.keyCode == 123 || event.keyCode == 124 {
+            guard !(event.window?.firstResponder is NSTextView) else { return false }
+            guard !event.isARepeat else { return true }
+            let slot = BoardViewModel.neighbourSlot(of: viewModel.activeSlot, step: event.keyCode == 123 ? -1 : 1)
+            viewModel.desktopOverlay.isDesktopModeActive = false
+            NotificationCenter.default.post(name: .switchWorkspace, object: slot)
+            return true
+        }
+
+        guard modifiers == .option,
               let slot = Self.digitKeyCodes.firstIndex(of: UInt32(event.keyCode)).map({ $0 + 1 }) else { return false }
         // В тексте ⌥1–9 печатают символы (¡, ™, £…) — как и до перехвата.
         guard !(event.window?.firstResponder is NSTextView) else { return false }
@@ -347,22 +403,120 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     private static let digitKeyCodes: [UInt32] = [18, 19, 20, 21, 23, 22, 26, 28, 25] // kVK_ANSI_1...9
+    private static let tabKeyCode: UInt32 = 48
+
+    /// Обзор Spaces; повторный вызов при открытом — сдвиг выбора.
+    private func showSpaceSwitcher(step: Int = 1) {
+        guard let viewModel else { return }
+        SpaceSwitcher.shared.trigger(viewModel: viewModel, step: step) { [weak self] slot in
+            self?.switchSpaceFromHotKey(slot, viewModel: viewModel)
+        }
+    }
 
     private func registerSpaceHotKeys(_ viewModel: BoardViewModel) {
         for (index, keyCode) in Self.digitKeyCodes.enumerated() {
             let slot = index + 1
             GlobalHotKeyManager.shared.register(keyCode: keyCode, modifiers: UInt32(controlKey | optionKey)) { [weak self] in
-                let overlay = viewModel.desktopOverlay
-                // Уже на этом Space и он на экране — зажатый хоткей ничего не повторяет.
-                if slot == viewModel.activeSlot, !overlay.isDesktopModeActive,
-                   overlay.isEnabled || NSApp.isActive { return }
-                // В Overlay окно живёт на уровне стола — активировать нечего,
-                // достаточно выйти из Desktop mode.
-                if !overlay.isEnabled { self?.showMainWindow() }
-                overlay.isDesktopModeActive = false
-                NotificationCenter.default.post(name: .switchWorkspace, object: slot)
+                self?.switchSpaceFromHotKey(slot, viewModel: viewModel)
             }
         }
+        // ⌃⌥Tab — обзор Spaces из любого приложения (держать ⌥, Tab — дальше).
+        GlobalHotKeyManager.shared.register(keyCode: Self.tabKeyCode, modifiers: UInt32(controlKey | optionKey)) { [weak self] in
+            self?.showSpaceSwitcher()
+        }
+
+        // Голый ⌥1–9 — только пока впереди Finder (рабочий стол, Desktop
+        // mode после клика по иконке): регистрируется при его активации и
+        // снимается при уходе, так что в остальных приложениях ⌥+цифра
+        // печатает свои символы как обычно.
+        NSWorkspace.shared.notificationCenter.addObserver(
+            forName: NSWorkspace.didActivateApplicationNotification,
+            object: nil,
+            queue: .main
+        ) { [weak self] note in
+            let app = note.userInfo?[NSWorkspace.applicationUserInfoKey] as? NSRunningApplication
+            self?.updateFinderSpaceHotKeys(finderIsActive: app?.bundleIdentifier == Self.finderBundleID, viewModel: viewModel)
+        }
+        updateFinderSpaceHotKeys(
+            finderIsActive: NSWorkspace.shared.frontmostApplication?.bundleIdentifier == Self.finderBundleID,
+            viewModel: viewModel
+        )
+    }
+
+    private static let finderBundleID = "com.apple.finder"
+    private var finderSpaceHotKeys: [HotKeyToken] = []
+
+    private func updateFinderSpaceHotKeys(finderIsActive: Bool, viewModel: BoardViewModel) {
+        if finderIsActive {
+            guard finderSpaceHotKeys.isEmpty else { return }
+            for (index, keyCode) in Self.digitKeyCodes.enumerated() {
+                let slot = index + 1
+                if case .success(let token) = GlobalHotKeyManager.shared.register(keyCode: keyCode, modifiers: UInt32(optionKey), action: { [weak self] in
+                    self?.switchSpaceFromHotKey(slot, viewModel: viewModel)
+                }) {
+                    finderSpaceHotKeys.append(token)
+                }
+            }
+            // И ⌥Tab — обзор Spaces с рабочего стола.
+            if case .success(let token) = GlobalHotKeyManager.shared.register(keyCode: Self.tabKeyCode, modifiers: UInt32(optionKey), action: { [weak self] in
+                self?.showSpaceSwitcher()
+            }) {
+                finderSpaceHotKeys.append(token)
+            }
+        } else if !finderSpaceHotKeys.isEmpty {
+            GlobalHotKeyManager.shared.unregister(finderSpaceHotKeys)
+            finderSpaceHotKeys = []
+        }
+    }
+
+    private func switchSpaceFromHotKey(_ slot: Int, viewModel: BoardViewModel) {
+        let overlay = viewModel.desktopOverlay
+        // Уже на этом Space и он на экране — зажатый хоткей ничего не повторяет.
+        if slot == viewModel.activeSlot, !overlay.isDesktopModeActive,
+           overlay.isEnabled || NSApp.isActive { return }
+        // В Overlay окно живёт на уровне стола — активировать нечего,
+        // достаточно выйти из Desktop mode.
+        if !overlay.isEnabled { showMainWindow() }
+        overlay.isDesktopModeActive = false
+        NotificationCenter.default.post(name: .switchWorkspace, object: slot)
+    }
+}
+
+/// Содержимое фона по настройке Appearance → Background: Material, ровный цвет или свои
+/// обои — одно для окна, fullscreen и Desktop Overlay; им же рисуется превью в Settings.
+struct AppBackgroundView: View {
+    var settings: AppearanceSettings
+    @Environment(\.colorScheme) private var colorScheme
+
+    var body: some View {
+        switch settings.background {
+        case .color(let option):
+            Color(nsColor: option.color)
+        case .image:
+            let _ = settings.backgroundImageRevision
+            if let image = BackgroundImageStore.shared.image {
+                GeometryReader { proxy in
+                    Image(nsImage: image)
+                        .resizable()
+                        .scaledToFill()
+                        .frame(width: proxy.size.width, height: proxy.size.height)
+                        .clipped()
+                }
+                // Картинку чуть приглушаем: карточки и текст должны читаться на любых обоях.
+                .overlay(Color.black.opacity(0.18))
+            } else {
+                material
+            }
+        case .material:
+            material
+        }
+    }
+
+    /// Ultra Thin Material — живой блюр с наименее заметными швами (BACKLOG «прямоугольные
+    /// швы»). Светлеет на светлых обоях, поэтому в светлой теме добавляем лёгкое затемнение.
+    private var material: some View {
+        Rectangle().fill(.ultraThinMaterial)
+            .overlay(Color.black.opacity(colorScheme == .light ? 0.1 : 0))
     }
 }
 

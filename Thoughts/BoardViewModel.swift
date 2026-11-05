@@ -91,9 +91,19 @@ final class BoardViewModel {
     /// отдельной, большей границы карточки могли бы создаваться/лежать
     /// вплотную к верхнему краю экрана (и под вырезом камеры). Ориентир —
     /// уровень, на котором обычно сидят системные виджеты рабочего стола:
-    /// высота выреза (0 на моделях без него) плюс отступ.
+    /// высота строки меню (или выреза) плюс отступ.
     static var desktopOverlayTopInset: CGFloat {
-        (NSScreen.main?.safeAreaInsets.top ?? 0) + 50
+        screenTopInset + 50
+    }
+
+    /// Что занято сверху экрана: вырез камеры или строка меню — что больше.
+    /// Раньше брали только вырез: на Маках без него это 0, и плашка Space с
+    /// карточками в Desktop Overlay уезжали под строку меню. Строку меню даёт
+    /// разница между полным экраном и его видимой частью (0, если меню
+    /// скрывается автоматически).
+    static var screenTopInset: CGFloat {
+        guard let screen = NSScreen.main else { return 0 }
+        return max(screen.safeAreaInsets.top, screen.frame.maxY - screen.visibleFrame.maxY)
     }
 
     init() {
@@ -140,6 +150,23 @@ final class BoardViewModel {
         // непрерывно перезапускает переход/анимацию на то же самое место.
         guard clamped != activeSlot else { return }
         activeSlot = clamped
+    }
+
+    /// Соседний Space по кругу: после 9 — 1, перед 1 — 9.
+    static func neighbourSlot(of slot: Int, step: Int) -> Int {
+        ((slot - 1 + step) % 9 + 9) % 9 + 1
+    }
+
+    /// Карточки любого Space (для обзора Spaces по ⌥Tab).
+    func cards(inSlot slot: Int) -> [Card] {
+        cardsByWorkspace[slot] ?? []
+    }
+
+    /// Заперт ли Space сейчас — как isActiveSpaceLocked, но для любого слота.
+    func isLocked(slot: Int) -> Bool {
+        isSpaceLockEnforced
+            && (workspaces.first { $0.slot == slot }?.isProtected ?? false)
+            && !unlockedProtectedSlots.contains(slot)
     }
 
     // MARK: - Space Lock
@@ -248,15 +275,16 @@ final class BoardViewModel {
     /// активного Space. Пишет и в заблокированный Space: панель только
     /// добавляет, ничего из его содержимого не показывая.
     @discardableResult
-    func addQuickCaptureCard(text: String) -> Card {
+    func addQuickCaptureCard(text: String, slot: Int? = nil) -> Card {
+        let targetSlot = slot ?? activeSlot
         let size = Self.quickCaptureCardSize
         let topInset = desktopOverlay.isEnabled ? Self.desktopOverlayTopInset : Self.topCreationLimit
         let canvasSize = lastCanvasSize == .zero
             ? (NSScreen.main?.visibleFrame.size ?? CGSize(width: 900, height: 600))
             : lastCanvasSize
-        let origin = Self.firstFreeOrigin(size: size, among: cards, canvasSize: canvasSize, topInset: topInset)
+        let origin = Self.firstFreeOrigin(size: size, among: cardsByWorkspace[targetSlot] ?? [], canvasSize: canvasSize, topInset: topInset)
         // Чек-листы — в стандартный `- [ ] `, как при наборе в карточке.
-        return addCard(at: origin, size: size, text: MarkdownFormatting.standardizingTaskMarkers(text, atLineStart: true))
+        return addCard(at: origin, size: size, slot: targetSlot, text: MarkdownFormatting.standardizingTaskMarkers(text, atLineStart: true))
     }
 
     /// Обходит канву рядами сверху-вниз, слева-направо с шагом
@@ -287,8 +315,16 @@ final class BoardViewModel {
         return clampedPosition(centered, size: size, canvasSize: canvasSize, topInset: topInset)
     }
 
-    func deleteCard(_ card: Card) {
-        cards.removeAll { $0.id == card.id }
+    /// Архив удалённых карточек (30 дней) — см. CardArchive.
+    @ObservationIgnored let archive = CardArchive()
+
+    /// `toArchive: false` — служебное удаление (например, карточка курса при «Назад» в онбординге).
+    func deleteCard(_ card: Card, toArchive: Bool = true) {
+        if toArchive { archive.add([card], slot: activeSlot) }
+        // Явная анимация: переход исчезновения у CardView короткий, без неё он терялся при любой задержке кадра.
+        withAnimation(.easeOut(duration: 0.18)) {
+            cards.removeAll { $0.id == card.id }
+        }
         saveImmediately()
     }
 
@@ -502,6 +538,9 @@ final class BoardViewModel {
 
         for corner in corners {
             let sorted = (groups[corner.quadrant] ?? []).sorted(by: tidyOrder)
+            // Ровные прямоугольники: размеры карточек угла выравниваются до упаковки.
+            let sizes = TidyGeometry.normalizedSizes(sorted.map { TidyGeometry.Item(id: $0.id, size: $0.size) })
+            for card in sorted { if let size = sizes[card.id] { card.size = size } }
             let layout = bestShelfLayout(
                 sorted, anchor: corner.anchor, growRight: corner.growRight, growDown: corner.growDown,
                 maxRowExtent: halfWidth, maxColumnExtent: halfHeight, gap: gap
@@ -520,7 +559,19 @@ final class BoardViewModel {
     /// Необратимо — сама эта функция ничего не спрашивает, вызывающая
     /// сторона обязана получить согласие пользователя заранее.
     func clearActiveSpace() {
-        cards = []
+        archive.add(cards, slot: activeSlot)
+        withAnimation(.easeOut(duration: 0.18)) { cards = [] }
+        saveImmediately()
+    }
+
+    /// Возвращает карточку из архива в её Space. Новый id: у удалённой карточки на других
+    /// Mac может остаться запись об удалении, и синк снова убрал бы вернувшуюся.
+    func restoreFromArchive(_ id: UUID) {
+        guard var record = archive.take(id) else { return }
+        record.id = UUID()
+        let card = record.makeCard()
+        card.raisedAt = Date()
+        cardsByWorkspace[record.workspaceSlot, default: []].append(card)
         saveImmediately()
     }
 
@@ -820,26 +871,26 @@ final class BoardViewModel {
 }
 
 extension BoardViewModel {
-    /// Единый размер карточки в Focus Mode — один и тот же для любой
-    /// карточки, независимо от её реального `card.size` (см. ContentView:
-    /// сам `card.size` при этом не меняется, фокус только переопределяет
-    /// отображение).
-    static let focusCardSize = CGSize(width: 640, height: 480)
+    /// Размер карточки в Focus Mode: от размера канвы (крупнее прежней фиксированной 640×480),
+    /// один и тот же для любой карточки — `card.size` не меняется, фокус только переопределяет
+    /// отображение.
+    static func focusSize(canvasSize: CGSize, topInset: CGFloat = topCreationLimit) -> CGSize {
+        let maxWidth = max(canvasSize.width - canvasSidePadding * 2, 1)
+        let maxHeight = max(canvasSize.height - topInset - canvasSidePadding, 1)
+        return CGSize(
+            width: min(max(canvasSize.width * 0.62, 640), 900, maxWidth),
+            height: min(max(canvasSize.height * 0.70, 480), 700, maxHeight)
+        )
+    }
 
-    /// Под сфокусированной карточкой всегда висит кнопка "Ask AI…" — без
-    /// этого резерва композиция "карточка + кнопка" читалась бы смещённой
-    /// вниз, хотя сама карточка строго по центру.
-    static let focusFooterReserve: CGFloat = 44
-
-    /// Верхний левый угол сфокусированной карточки. При канве меньше
-    /// самой карточки центрирование дало бы отрицательный origin и увело
-    /// бы её верх/левый край за экран — поэтому зажимаем по тем же
-    /// границам, что и обычные карточки.
+    /// Верхний левый угол сфокусированной карточки: по центру области под плашкой.
+    /// При канве меньше самой карточки зажимаем по тем же границам, что и обычные карточки.
     static func focusOrigin(canvasSize: CGSize, topInset: CGFloat = topCreationLimit) -> CGPoint {
-        let availableHeight = canvasSize.height - topInset - focusFooterReserve
+        let size = focusSize(canvasSize: canvasSize, topInset: topInset)
+        let availableHeight = canvasSize.height - topInset
         return CGPoint(
-            x: max(canvasSidePadding, (canvasSize.width - focusCardSize.width) / 2),
-            y: max(topInset, topInset + (availableHeight - focusCardSize.height) / 2)
+            x: max(canvasSidePadding, (canvasSize.width - size.width) / 2),
+            y: max(topInset, topInset + (availableHeight - size.height) / 2)
         )
     }
 
@@ -1021,6 +1072,19 @@ extension BoardViewModel {
     /// драга создания). Здесь — одна функция с обеими границами и size,
     /// которая покрывает все три случая (size: .zero эквивалентен старому
     /// clamped).
+    /// «Окно» в Space на экране 3 онбординга: пока задано, новая карточка
+    /// создаётся и двигается только внутри (координаты канвы).
+    static var onboardingSandbox: CGRect?
+
+    /// Рамка карточки, зажатая в «окно» онбординга (если оно есть).
+    static func clampedToSandbox(_ frame: CGRect) -> CGRect {
+        guard let box = onboardingSandbox else { return frame }
+        let size = CGSize(width: min(frame.width, box.width), height: min(frame.height, box.height))
+        let x = min(max(frame.minX, box.minX), box.maxX - size.width)
+        let y = min(max(frame.minY, box.minY), box.maxY - size.height)
+        return CGRect(origin: CGPoint(x: x, y: y), size: size)
+    }
+
     static func clampedPosition(_ point: CGPoint, size: CGSize, canvasSize: CGSize, topInset: CGFloat = topCreationLimit) -> CGPoint {
         let pad = canvasSidePadding
         let top = topInset

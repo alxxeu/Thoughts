@@ -39,6 +39,16 @@ private let generalShortcuts: [ShortcutInfo] = [
         symbol: "\u{2325}1\u{2013}9"
     ),
     ShortcutInfo(
+        title: "Previous / Next Space",
+        subtitle: "Go to the neighboring Space, from 9 back to 1. Not while typing in a card.",
+        symbol: "\u{2325}\u{2190} \u{2325}\u{2192}"
+    ),
+    ShortcutInfo(
+        title: "All Spaces",
+        subtitle: "Like \u{2318}Tab: hold \u{2325}, press Tab to pick a Space, release to go there. Esc cancels. From other apps: \u{2303}\u{2325}Tab.",
+        symbol: "\u{2325}Tab"
+    ),
+    ShortcutInfo(
         title: "Switch Spaces from Any App",
         subtitle: "Jumps to that Space and brings Thoughts forward.",
         symbol: "\u{2303}\u{2325}1\u{2013}9"

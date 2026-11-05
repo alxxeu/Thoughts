@@ -11,11 +11,106 @@ struct ReleaseNote: Identifiable {
 
     let version: String
     let sections: [Section]
+    /// Короткая версия для карточки What’s new — канбан-доской: колонка на раздел,
+    /// плитка на пункт (простой текст, без Markdown). nil — карточка-текст.
+    var board: [Section]? = nil
     var id: String { version }
 }
 
 enum ReleaseNotes {
     static let all: [ReleaseNote] = [
+        ReleaseNote(version: "1.5", sections: [
+            .init(title: "New", items: [
+                "**Archive** \u{2014} a deleted card (hold the \u{00D7}, or Clear Space) waits in Settings \u{2192} Archive for 30 days. Restore it to its Space or delete it for good.",
+                "**Quick Capture grows out of the notch** \u{2014} a glass panel with the Space you\u{2019}re saving to; press \u{2325}\u{2191} or \u{2325}\u{2193} to pick another one.",
+                "**Space bar** \u{2014} swipe it with two fingers or drag to jump to the next Space. It also shows over a locked Space and on your desktop.",
+                "**Backgrounds** \u{2014} Material, colors that adapt to light and dark, or your own image, the same in a window, full screen and on the desktop.",
+                "**Focus Mode** with a larger glass card, an exit arrow and a pinch to focus.",
+                "**Kanban** \u{2014} a + in every column header, Return adds a tile above, done tiles sink.",
+                "**View \u{2192} Customize Space Bar** next to Desktop Overlay.",
+                "**Automatic updates** in Settings \u{2192} About for the download from GitHub, with a banner and a dot when a new version is out."
+            ]),
+            .init(title: "Improved", items: [
+                "**Tidy Cards** evens out card sizes in each corner so they stack into neat blocks.",
+                "Entering and leaving the desktop fades instead of jumping.",
+                "A new animation for Spoiler and Lock: the stars flow across neighboring cards.",
+                "Cards grow and shrink around their own center.",
+                "\u{2325}Tab shows the Spaces three in a row."
+            ]),
+            .init(title: "Fixed", items: [
+                "Dividers keep their dashes after you change the text color.",
+                "A stale \u{2318}F no longer lingers after leaving Focus Mode.",
+                "Checklist turns a bare [x] line into a proper task instead of removing it."
+            ])
+        ], board: [
+            .init(title: "New", items: [
+                "Archive for deleted cards",
+                "Quick Capture from the notch",
+                "Space bar swipe",
+                "Your own background",
+                "Larger Focus Mode, pinch to focus",
+                "View \u{2192} Customize Space Bar",
+                "Automatic updates"
+            ]),
+            .init(title: "Improved", items: [
+                "Tidy evens out card sizes",
+                "Smooth Desktop mode",
+                "New animation for Spoiler and Lock",
+                "Cards scale around their center"
+            ]),
+            .init(title: "Fixed", items: [
+                "Divider dashes after a color change",
+                "Stale \u{2318}F",
+                "Checklist on a bare [x]"
+            ])
+        ]),
+        ReleaseNote(version: "1.4.2", sections: [
+            .init(title: "New", items: [
+                "**Kanban cards** \u{2014} right-click an empty spot on the board and choose New Kanban Card with 1 to 4 columns. Add tiles, drag them between columns, hold the check to finish one.",
+                "**New Card** in the same right-click menu.",
+                "**All Spaces at a glance** \u{2014} hold \u{2325} and press Tab to see every Space with a map of its cards, release to jump there. From other apps: \u{2303}\u{2325}Tab.",
+                "**Next and previous Space** with \u{2325}\u{2190} and \u{2325}\u{2192}.",
+                "**Customize the Space bar** \u{2014} hover it, click the gear, then hide icons or drag them into your own order.",
+                "**More AI providers** \u{2014} Google Gemini, OpenRouter, Groq, Mistral and Ollama, plus an option to turn AI off.",
+                "**Format menu** with every Markdown style, also in the right-click menu of a card.",
+                "**Quick Capture** is now \u{2303}\u{2325}N (was \u{2303}\u{2325}\u{2318}N), unless you set your own."
+            ]),
+            .init(title: "Improved", items: [
+                "A new **Settings** window with a sidebar.",
+                "**Appearance** previews cards over your desktop and lets you pick a background color for full screen.",
+                "A lighter window background with fewer blur artifacts.",
+                "**Desktop Overlay** stays in place when you show the desktop with a hot corner or a gesture."
+            ]),
+            .init(title: "Fixed", items: [
+                "The cursor no longer jumps around Markdown headings and checklists.",
+                "Hidden Markdown characters no longer show through a selection.",
+                "Links typed without https:// open correctly.",
+                "The Space bar no longer hides under the menu bar on Macs without a notch and on external displays."
+            ])
+        ], board: [
+            .init(title: "New", items: [
+                "Kanban cards",
+                "New Card in the right-click menu",
+                "All Spaces \u{2014} \u{2325}Tab",
+                "\u{2325}\u{2190} \u{2325}\u{2192} \u{2014} next Space",
+                "Customizable Space bar",
+                "More AI providers",
+                "Markdown in the Format menu"
+            ]),
+            .init(title: "Improved", items: [
+                "New Settings window",
+                "Appearance preview on your desktop",
+                "Full-screen background color",
+                "Lighter window background",
+                "Desktop Overlay stays on Show Desktop"
+            ]),
+            .init(title: "Fixed", items: [
+                "Cursor jumps in Markdown",
+                "Hidden characters in a selection",
+                "Links without https://",
+                "Space bar under the menu bar"
+            ])
+        ]),
         ReleaseNote(version: "1.4", sections: [
             .init(title: "New", items: [
                 "**Markdown** \u{2014} write cards in Markdown: headings, **bold**, *italic*, ~underline~, ~~strikethrough~~, ==highlight==, `code`, links and lists. The formatting characters show next to the cursor and hide everywhere else. Markdown pasted from Notion and other apps arrives formatted.",
@@ -135,6 +230,26 @@ enum WhatsNew {
 
     static func markSeen(defaults: UserDefaults = .standard, version: String = currentVersion) {
         defaults.set(version, forKey: lastSeenKey)
+    }
+
+    /// Текст карточки What’s new: канбан-доска, если у заметки есть `board`,
+    /// иначе Markdown-текст.
+    static func cardText(for note: ReleaseNote) -> String {
+        guard let board = note.board else { return markdown(for: note) }
+        let columns = board.map { section in
+            (["## \(section.title)"] + section.items.map { "- \($0)" }).joined(separator: "\n")
+        }
+        return (["::: board"] + [columns.joined(separator: "\n||\n")]).joined(separator: "\n")
+    }
+
+    /// Размер карточки What’s new: доска — по 4 клетки на колонку, высота по
+    /// самой длинной колонке; текст — как раньше.
+    static func cardSize(for note: ReleaseNote) -> CGSize {
+        guard let board = note.board else { return CGSize(width: 360, height: 440) }
+        let step = BoardViewModel.cardSizeStep, gap = BoardViewModel.cardGap
+        let columns = min(24, max(2, board.count * 4))
+        let rows = min(14, max(6, (board.map(\.items.count).max() ?? 0) + 2))
+        return CGSize(width: CGFloat(columns) * step - gap, height: CGFloat(rows) * step - gap)
     }
 
     /// Текст карточки с заметкой — обычный Markdown карточек: разделы через

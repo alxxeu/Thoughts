@@ -15,8 +15,7 @@ final class SyncStateStore {
     private var systemFields: [String: Data] = [:]
 
     init() {
-        let appSupport = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first!
-        folder = appSupport.appendingPathComponent("Thoughts/Sync", isDirectory: true)
+        folder = BoardStore.dataFolder.appendingPathComponent("Sync", isDirectory: true)
         if let data = try? Data(contentsOf: recordsURL),
            let decoded = try? PropertyListDecoder().decode([String: Data].self, from: data) {
             systemFields = decoded

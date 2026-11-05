@@ -1,16 +1,104 @@
 {
-  "fill" : {
-    "automatic-gradient" : "display-p3:0.67871,0.70703,0.96924,1.00000"
-  },
+  "fill-specializations" : [
+    {
+      "value" : "system-dark"
+    },
+    {
+      "appearance" : "dark",
+      "value" : "system-dark"
+    }
+  ],
   "groups" : [
     {
       "layers" : [
         {
+          "glass" : false,
+          "image-name" : "Group 56.png",
+          "name" : "Group 56"
+        },
+        {
+          "image-name" : "Subtract bl.png",
+          "name" : "Subtract bl",
+          "opacity-specializations" : [
+            {
+              "value" : 1
+            },
+            {
+              "appearance" : "dark",
+              "value" : 1
+            }
+          ],
+          "position" : {
+            "scale" : 1,
+            "translation-in-points" : [
+              304,
+              302
+            ]
+          }
+        },
+        {
           "blend-mode" : "normal",
-          "fill" : "none",
           "glass" : true,
-          "image-name" : "image 39.png",
-          "name" : "image 39"
+          "hidden" : true,
+          "image-name" : "Subtract.png",
+          "name" : "Subtract",
+          "opacity-specializations" : [
+            {
+              "appearance" : "dark",
+              "value" : 0
+            }
+          ],
+          "position" : {
+            "scale" : 1,
+            "translation-in-points" : [
+              304,
+              302
+            ]
+          }
+        },
+        {
+          "blend-mode-specializations" : [
+            {
+              "appearance" : "tinted",
+              "value" : "plus-lighter"
+            }
+          ],
+          "glass-specializations" : [
+            {
+              "value" : false
+            },
+            {
+              "appearance" : "tinted",
+              "value" : true
+            }
+          ],
+          "hidden" : true,
+          "image-name" : "Frame xot.png",
+          "name" : "Frame xot"
+        },
+        {
+          "fill" : {
+            "linear-gradient" : [
+              "display-p3:0.54575,0.55552,0.89655,1.00000",
+              "display-p3:0.48924,0.49209,0.82145,1.00000"
+            ]
+          },
+          "image-name" : "Rectangle.png",
+          "name" : "Rectangle"
+        },
+        {
+          "blend-mode" : "normal",
+          "glass" : false,
+          "hidden" : false,
+          "image-name" : "Frame 1.png",
+          "name" : "Frame 1",
+          "position" : {
+            "scale" : 2.5,
+            "translation-in-points" : [
+              0,
+              0
+            ]
+          }
         }
       ],
       "shadow" : {
@@ -19,7 +107,7 @@
       },
       "translucency" : {
         "enabled" : true,
-        "value" : 0.5
+        "value" : 0.3
       }
     }
   ],

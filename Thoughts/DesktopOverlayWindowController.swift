@@ -92,7 +92,9 @@ final class DesktopOverlayWindowController {
             window.level = NSWindow.Level(
                 rawValue: isDesktopModeActive ? desktopIconLevel - 1 : desktopIconLevel + 1
             )
-            window.collectionBehavior = [.ignoresCycle]
+            // .stationary — «Показать рабочий стол» (hot corner, жест, F11) и
+            // Mission Control не уводят окно с экрана: оно часть стола, как у Plash.
+            window.collectionBehavior = [.ignoresCycle, .stationary]
             // В обычном режиме "прозрачность" фона держится целиком на
             // VisualEffectBlur (живой блюр того, что позади окна) — само
             // NSWindow остаётся непрозрачным по умолчанию. В Desktop mode
@@ -112,6 +114,9 @@ final class DesktopOverlayWindowController {
             window.styleMask.remove([.closable, .miniaturizable, .resizable, .titled])
             window.titleVisibility = .hidden
             window.title = ""
+            // Окно закреплено: его нельзя сдвинуть ни за какую зону (раньше за верхнюю полосу можно было).
+            window.isMovable = false
+            window.isMovableByWindowBackground = false
             // Плавающий title pill позиционируется относительно верхнего
             // края фрейма окна (подтверждено эмпирически), поэтому подвинуть
             // его ниже без потери полного покрытия экрана сверху невозможно
@@ -127,6 +132,7 @@ final class DesktopOverlayWindowController {
             unregisterHotKeys()
             window.level = .normal
             window.collectionBehavior = []
+            window.isMovable = true
             window.hasShadow = true
             window.styleMask.insert([.closable, .miniaturizable, .resizable, .titled])
             window.titleVisibility = .visible
@@ -138,6 +144,7 @@ final class DesktopOverlayWindowController {
         }
 
         window.ignoresMouseEvents = isEnabled && isDesktopModeActive
+        DesktopSpaceBarPanel.shared.update()
     }
 
     /// ⌥D и запасной ⌃⌥D как глобальные хоткеи (см. GlobalHotKeyManager) —
