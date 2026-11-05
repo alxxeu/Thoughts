@@ -19,6 +19,51 @@ struct ReleaseNote: Identifiable {
 
 enum ReleaseNotes {
     static let all: [ReleaseNote] = [
+        ReleaseNote(version: "1.5", sections: [
+            .init(title: "New", items: [
+                "**Archive** \u{2014} a deleted card (hold the \u{00D7}, or Clear Space) waits in Settings \u{2192} Archive for 30 days. Restore it to its Space or delete it for good.",
+                "**Quick Capture grows out of the notch** \u{2014} a glass panel with the Space you\u{2019}re saving to; press \u{2325}\u{2191} or \u{2325}\u{2193} to pick another one.",
+                "**Space bar** \u{2014} swipe it with two fingers or drag to jump to the next Space. It also shows over a locked Space and on your desktop.",
+                "**Backgrounds** \u{2014} Material, colors that adapt to light and dark, or your own image, the same in a window, full screen and on the desktop.",
+                "**Focus Mode** with a larger glass card, an exit arrow and a pinch to focus.",
+                "**Kanban** \u{2014} a + in every column header, Return adds a tile above, done tiles sink.",
+                "**View \u{2192} Customize Space Bar** next to Desktop Overlay.",
+                "**Automatic updates** in Settings \u{2192} About for the download from GitHub, with a banner and a dot when a new version is out."
+            ]),
+            .init(title: "Improved", items: [
+                "**Tidy Cards** evens out card sizes in each corner so they stack into neat blocks.",
+                "Entering and leaving the desktop fades instead of jumping.",
+                "A new animation for Spoiler and Lock: the stars flow across neighboring cards.",
+                "Cards grow and shrink around their own center.",
+                "\u{2325}Tab shows the Spaces three in a row."
+            ]),
+            .init(title: "Fixed", items: [
+                "Dividers keep their dashes after you change the text color.",
+                "A stale \u{2318}F no longer lingers after leaving Focus Mode.",
+                "Checklist turns a bare [x] line into a proper task instead of removing it."
+            ])
+        ], board: [
+            .init(title: "New", items: [
+                "Archive for deleted cards",
+                "Quick Capture from the notch",
+                "Space bar swipe",
+                "Your own background",
+                "Larger Focus Mode, pinch to focus",
+                "View \u{2192} Customize Space Bar",
+                "Automatic updates"
+            ]),
+            .init(title: "Improved", items: [
+                "Tidy evens out card sizes",
+                "Smooth Desktop mode",
+                "New animation for Spoiler and Lock",
+                "Cards scale around their center"
+            ]),
+            .init(title: "Fixed", items: [
+                "Divider dashes after a color change",
+                "Stale \u{2318}F",
+                "Checklist on a bare [x]"
+            ])
+        ]),
         ReleaseNote(version: "1.4.2", sections: [
             .init(title: "New", items: [
                 "**Kanban cards** \u{2014} right-click an empty spot on the board and choose New Kanban Card with 1 to 4 columns. Add tiles, drag them between columns, hold the check to finish one.",

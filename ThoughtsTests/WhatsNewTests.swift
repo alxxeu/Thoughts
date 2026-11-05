@@ -47,7 +47,7 @@ struct WhatsNewTests {
 
     @Test func currentReleaseHasAWhatsNewBoard() {
         let note = ReleaseNotes.all.first
-        #expect(note?.version == "1.4.2")
+        #expect(note?.version == "1.5")
         #expect(note?.board?.map(\.title) == ["New", "Improved", "Fixed"])
     }
 }
