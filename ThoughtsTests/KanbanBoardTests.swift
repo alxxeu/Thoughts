@@ -122,4 +122,9 @@ struct KanbanDoneTests {
         #expect(board.columns[0].items.map(\.text) == ["b", "c", "a"])
         #expect(board.columns[0].items.allSatisfy { !$0.isDone })
     }
+
+    @Test func markdownExportIsPlainLists() throws {
+        let board = try #require(KanbanBoard.parse("::: board\n## Plan\n- a\n- [x] b\n  second line\n||\n- c"))
+        #expect(board.markdown() == "## Plan\n- [ ] a\n- [x] b\n  second line\n\n## Column 2\n- [ ] c")
+    }
 }

@@ -13,7 +13,7 @@ final class SettingsNavigation {
     static let windowID = "settings"
 
     enum Tab: Hashable, CaseIterable {
-        case general, appearance, security, shortcuts, ai, plugins, about
+        case general, appearance, security, shortcuts, ai, plugins, archive, about
 
         /// Вкладки в сайдбаре: Plugins — только в сборке с флагом PLUGINS
         /// (плагины отложены, код остаётся; включить — Active Compilation Conditions).

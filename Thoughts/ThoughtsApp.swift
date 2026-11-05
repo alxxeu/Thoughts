@@ -39,9 +39,13 @@ struct ThoughtsApp: App {
                     // В Desktop mode фон тоже должен быть полностью
                     // прозрачным — реальный рабочий стол виден без единого
                     // визуального следа Thoughts поверх него.
-                    if !viewModel.desktopOverlay.isDesktopModeActive {
-                        AppBackgroundView(settings: viewModel.appearanceSettings)
+                    ZStack {
+                        if !viewModel.desktopOverlay.isDesktopModeActive {
+                            AppBackgroundView(settings: viewModel.appearanceSettings)
+                                .transition(.opacity)
+                        }
                     }
+                    .animation(.easeOut(duration: 0.25), value: viewModel.desktopOverlay.isDesktopModeActive)
                 }
                 .ignoresSafeArea()
                 .preferredColorScheme(preferredColorScheme)

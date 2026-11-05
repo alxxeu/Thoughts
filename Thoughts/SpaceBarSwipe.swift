@@ -153,6 +153,9 @@ struct SpaceBarScrollCatcher: NSViewRepresentable {
 
 /// Общий вид панели Space: цвет текста — как у карточек, подложка под его яркость.
 enum SpaceBarStyle {
+    /// Высота содержимого капсулы (самая высокая иконка, 15 pt) — общая для всех видов панели,
+    /// чтобы переименование и Desktop mode не отличались от обычной по высоте.
+    static let contentHeight: CGFloat = 20
     static func tint(ink: NSColor, isDark: Bool) -> Color {
         ink.isLight
             ? Color.black.opacity(isDark ? 0.1 : 0.5)
@@ -174,7 +177,11 @@ final class DesktopSpaceBarPanel {
     /// Показывает панель, пока включён Desktop mode; иначе прячет.
     func update() {
         guard let viewModel, viewModel.desktopOverlay.isEnabled, viewModel.desktopOverlay.isDesktopModeActive else {
-            panel?.orderOut(nil)
+            guard let panel, panel.isVisible else { return }
+            NSAnimationContext.runAnimationGroup({ $0.duration = 0.2; panel.animator().alphaValue = 0 }) { [weak panel] in
+                // Если за это время режим включили снова — не прячем.
+                if panel?.alphaValue == 0 { panel?.orderOut(nil) }
+            }
             return
         }
         let panel = self.panel ?? makePanel(viewModel)
@@ -186,7 +193,9 @@ final class DesktopSpaceBarPanel {
         panel.setFrame(CGRect(x: screen.frame.midX - size.width / 2,
                               y: screen.frame.maxY - top - size.height,
                               width: size.width, height: size.height), display: true)
+        if !panel.isVisible { panel.alphaValue = 0 }
         panel.orderFront(nil)
+        NSAnimationContext.runAnimationGroup { $0.duration = 0.25; panel.animator().alphaValue = 1 }
     }
 
     private func makePanel(_ viewModel: BoardViewModel) -> NSPanel {
@@ -219,8 +228,9 @@ private struct DesktopSpaceBarView: View {
             .font(.system(size: 11, weight: .semibold))
             .foregroundStyle(ink.opacity(0.9))
             .fixedSize()
-            .padding(.horizontal, 16)
-            .padding(.vertical, 6)
+            .frame(height: SpaceBarStyle.contentHeight)
+            .padding(.horizontal, 14)
+            .padding(.vertical, 5)
         .background(Capsule().fill(.ultraThinMaterial).overlay(Capsule().fill(SpaceBarStyle.tint(ink: inkNSColor, isDark: colorScheme == .dark))))
         // Точки под капсулой, как на Spaces: по наведению и во время свайпа; на столе горит «стол».
         .overlay(alignment: .bottom) { dots.offset(y: 12) }

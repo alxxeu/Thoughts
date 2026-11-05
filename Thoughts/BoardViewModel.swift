@@ -314,7 +314,11 @@ final class BoardViewModel {
         return clampedPosition(centered, size: size, canvasSize: canvasSize, topInset: topInset)
     }
 
+    /// Архив удалённых карточек (30 дней) — см. CardArchive.
+    @ObservationIgnored let archive = CardArchive()
+
     func deleteCard(_ card: Card) {
+        archive.add([card], slot: activeSlot)
         cards.removeAll { $0.id == card.id }
         saveImmediately()
     }
@@ -529,6 +533,9 @@ final class BoardViewModel {
 
         for corner in corners {
             let sorted = (groups[corner.quadrant] ?? []).sorted(by: tidyOrder)
+            // Ровные прямоугольники: размеры карточек угла выравниваются до упаковки.
+            let sizes = TidyGeometry.normalizedSizes(sorted.map { TidyGeometry.Item(id: $0.id, size: $0.size) })
+            for card in sorted { if let size = sizes[card.id] { card.size = size } }
             let layout = bestShelfLayout(
                 sorted, anchor: corner.anchor, growRight: corner.growRight, growDown: corner.growDown,
                 maxRowExtent: halfWidth, maxColumnExtent: halfHeight, gap: gap
@@ -547,7 +554,19 @@ final class BoardViewModel {
     /// Необратимо — сама эта функция ничего не спрашивает, вызывающая
     /// сторона обязана получить согласие пользователя заранее.
     func clearActiveSpace() {
+        archive.add(cards, slot: activeSlot)
         cards = []
+        saveImmediately()
+    }
+
+    /// Возвращает карточку из архива в её Space. Новый id: у удалённой карточки на других
+    /// Mac может остаться запись об удалении, и синк снова убрал бы вернувшуюся.
+    func restoreFromArchive(_ id: UUID) {
+        guard var record = archive.take(id) else { return }
+        record.id = UUID()
+        let card = record.makeCard()
+        card.raisedAt = Date()
+        cardsByWorkspace[record.workspaceSlot, default: []].append(card)
         saveImmediately()
     }
 

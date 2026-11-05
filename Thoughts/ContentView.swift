@@ -151,15 +151,20 @@ struct ContentView: View {
 
     @State private var overlayWindow = DesktopOverlayWindowController()
 
+    /// Вход/выход из Desktop mode: доска тает (opacity), а убирается из дерева только после
+    /// fade — иначе она исчезала бы мгновенно, а на столе звёзды не должны крутиться зря.
+    @State private var isBoardMounted = true
+    @State private var boardOpacity: Double = 1
+    private static let desktopFade = Animation.easeOut(duration: 0.25)
+
     var body: some View {
         Group {
-            if viewModel.desktopOverlay.isDesktopModeActive {
-                // Desktop mode: карточки полностью скрыты, окно прозрачно и
-                // ignoresMouseEvents (см. onChange ниже) — реальный рабочий
+            if !isBoardMounted {
+                // Desktop mode: карточки полностью скрыты (после fade, см. fadeBoard), окно
+                // прозрачно и ignoresMouseEvents (см. onChange ниже) — реальный рабочий
                 // стол должен быть виден без единого визуального следа
                 // Thoughts поверх него.
                 Color.clear
-                    .transition(.opacity)
             } else {
                 // Отдельная вложенная Group — лок/анлок анимируется
                 // изолированно от Desktop Mode выше, см. .transition(.identity)
@@ -174,6 +179,18 @@ struct ContentView: View {
                         // тоже не рендерится). Никакого отдельного blur-слоя
                         // поверх живого контента не нужно.
                         SpaceLockOverlayView(viewModel: viewModel)
+                            // Плашка Space поверх блокировки: только имя и свайп к соседним Spaces.
+                            .overlay(alignment: .top) {
+                                SpaceToolbar(
+                                    viewModel: viewModel,
+                                    canvasSize: canvasSize,
+                                    topInset: effectiveTopInset,
+                                    isFocusModeActive: false,
+                                    isOnboardingActive: onboardingViewModel.isActive,
+                                    isLocked: true
+                                )
+                                .padding(.top, workspacePillTopPadding)
+                            }
                             .transition(.opacity)
                     } else {
                         // .identity, а не дефолтный .opacity — иначе при
@@ -189,6 +206,7 @@ struct ContentView: View {
                             .transition(.identity)
                     }
                 }
+                .opacity(boardOpacity)
             }
         }
         .overlay(alignment: .bottom) {
@@ -234,8 +252,9 @@ struct ContentView: View {
         .onChange(of: viewModel.desktopOverlay.isEnabled) { _, _ in
             overlayWindow.apply()
         }
-        .onChange(of: viewModel.desktopOverlay.isDesktopModeActive) { _, _ in
+        .onChange(of: viewModel.desktopOverlay.isDesktopModeActive) { _, isActive in
             overlayWindow.apply()
+            fadeBoard(toDesktop: isActive)
         }
         .onReceive(NotificationCenter.default.publisher(for: .switchWorkspace)) { notification in
             if let slot = notification.object as? Int, slot != viewModel.activeSlot {
@@ -296,7 +315,7 @@ struct ContentView: View {
             }
         }
         message: {
-            Text("This will permanently delete all \(viewModel.cards.count) card\(viewModel.cards.count == 1 ? "" : "s") in this Space. This can\u{2019}t be undone.")
+            Text("All \(viewModel.cards.count) card\(viewModel.cards.count == 1 ? "" : "s") in this Space will move to the Archive (Settings \u{2192} Archive), where they stay for 30 days.")
         }
     }
 
@@ -599,6 +618,19 @@ struct ContentView: View {
     /// В обычном окне — маленькая граница. В Desktop Overlay окно
     /// растянуто на весь экран, и карточки не должны упираться в самый
     /// верх/вырез камеры — там, где обычно сидят системные виджеты.
+    private func fadeBoard(toDesktop: Bool) {
+        if toDesktop {
+            withAnimation(Self.desktopFade) { boardOpacity = 0 }
+            Task { @MainActor in
+                try? await Task.sleep(for: .milliseconds(300))
+                if viewModel.desktopOverlay.isDesktopModeActive { isBoardMounted = false }
+            }
+        } else {
+            isBoardMounted = true
+            withAnimation(Self.desktopFade) { boardOpacity = 1 }
+        }
+    }
+
     private var effectiveTopInset: CGFloat {
         viewModel.desktopOverlay.isEnabled ? BoardViewModel.desktopOverlayTopInset : BoardViewModel.topCreationLimit
     }

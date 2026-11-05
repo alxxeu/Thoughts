@@ -1,11 +1,47 @@
 import SwiftUI
+import Observation
 #if DIRECT
 import Sparkle
+#endif
 
+/// Новая версия, о которой узнал Sparkle (только DMG-сборка; в App Store всегда nil):
+/// по ней SpaceToolbar показывает плашку, а Settings — точку у вкладки About.
+@Observable
+final class UpdateNotice {
+    static let shared = UpdateNotice()
+    private static let dismissedKey = "update.dismissedVersion"
+
+    var availableVersion: String?
+    private var dismissedVersion = UserDefaults.standard.string(forKey: dismissedKey)
+
+    /// Версия, про которую плашку уже закрыли (✕): точка в Settings остаётся, плашка нет.
+    var isBannerVisible: Bool {
+        availableVersion != nil && availableVersion != dismissedVersion
+    }
+
+    func dismissBanner() {
+        dismissedVersion = availableVersion
+        UserDefaults.standard.set(availableVersion, forKey: Self.dismissedKey)
+    }
+}
+
+#if DIRECT
 /// Сборка вне App Store (GitHub, Homebrew, сайт): обновления ставит Sparkle —
 /// лента appcast.xml в релизах GitHub, см. scripts/release-direct.sh.
 enum DirectUpdater {
-    static let controller = SPUStandardUpdaterController(updaterDelegate: nil, userDriverDelegate: nil)
+    private final class Delegate: NSObject, SPUUpdaterDelegate {
+        func updater(_ updater: SPUUpdater, didFindValidUpdate item: SUAppcastItem) {
+            Task { @MainActor in UpdateNotice.shared.availableVersion = item.displayVersionString }
+        }
+        func updaterDidNotFindUpdate(_ updater: SPUUpdater) {
+            Task { @MainActor in UpdateNotice.shared.availableVersion = nil }
+        }
+    }
+
+    private static let delegate = Delegate()
+    static let controller = SPUStandardUpdaterController(updaterDelegate: delegate, userDriverDelegate: nil)
+
+    static func checkForUpdates() { controller.checkForUpdates(nil) }
 }
 #endif
 
@@ -40,10 +76,23 @@ nonisolated enum AppStoreVersion {
 
 #if DIRECT
 struct CheckForUpdatesRow: View {
+    @State private var checksAutomatically = DirectUpdater.controller.updater.automaticallyChecksForUpdates
+    @State private var downloadsAutomatically = DirectUpdater.controller.updater.automaticallyDownloadsUpdates
+
     var body: some View {
         SettingsRowButton(title: "Check for Updates\u{2026}") {
             DirectUpdater.controller.checkForUpdates(nil)
         }
+        Toggle("Check for updates automatically", isOn: $checksAutomatically)
+            .onChange(of: checksAutomatically) { _, value in
+                DirectUpdater.controller.updater.automaticallyChecksForUpdates = value
+                if !value { downloadsAutomatically = false }
+            }
+        Toggle("Download updates automatically", isOn: $downloadsAutomatically)
+            .disabled(!checksAutomatically)
+            .onChange(of: downloadsAutomatically) { _, value in
+                DirectUpdater.controller.updater.automaticallyDownloadsUpdates = value
+            }
     }
 }
 #else

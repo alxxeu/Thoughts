@@ -72,6 +72,7 @@ struct SettingsView: View {
         )) {
             ForEach(SettingsNavigation.Tab.visible, id: \.self) { tab in
                 Label(Self.title(for: tab), systemImage: Self.symbol(for: tab))
+                    .badge(tab == .about && UpdateNotice.shared.availableVersion != nil ? Text("\u{25CF}") : nil)
                     .tag(tab)
             }
         }
@@ -87,6 +88,7 @@ struct SettingsView: View {
         case .shortcuts: ShortcutsSettingsTab()
         case .ai: AISettingsTab()
         case .plugins: PluginsSettingsTab()
+        case .archive: ArchiveSettingsTab(viewModel: viewModel)
         case .about: aboutTab
         }
     }
@@ -99,6 +101,7 @@ struct SettingsView: View {
         case .shortcuts: return "Shortcuts"
         case .ai: return "AI"
         case .plugins: return "Plugins"
+        case .archive: return "Archive"
         case .about: return "About"
         }
     }
@@ -111,6 +114,7 @@ struct SettingsView: View {
         case .shortcuts: return "command.square.fill"
         case .ai: return symbol("sparkles.2", fallback: "sparkles")
         case .plugins: return "puzzlepiece.extension.fill"
+        case .archive: return "archivebox.fill"
         case .about: return symbol("info.app.fill", fallback: "info.circle.fill")
         }
     }

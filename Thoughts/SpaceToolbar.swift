@@ -12,6 +12,8 @@ struct SpaceToolbar: View {
     var isFocusModeActive: Bool
     /// Во время онбординга плашка What’s new ждёт.
     var isOnboardingActive: Bool
+    /// Space заблокирован: плашка поверх блокировки — только имя и свайп к соседним Spaces.
+    var isLocked: Bool = false
 
     @Environment(\.colorScheme) private var colorScheme
     /// Space, который сейчас переименовывают (nil — поле закрыто). Имя
@@ -59,7 +61,7 @@ struct SpaceToolbar: View {
     /// После ✕ плашка пару секунд подсказывает, где найти заметки.
     @State private var isShowingWhatsNewHint = false
 
-    private var isEditingWorkspaceName: Bool { renamingSlot != nil }
+    private var isEditingWorkspaceName: Bool { renamingSlot != nil && !isLocked }
 
     /// Точки всех Spaces: текущий ярче; видны, пока курсор на панели или идёт свайп.
     private var spaceDots: some View {
@@ -130,13 +132,13 @@ struct SpaceToolbar: View {
                 }
                 .contentShape(Rectangle())
                 .onTapGesture {
-                    if !isEditingWorkspaceName {
+                    if !isEditingWorkspaceName, !isLocked {
                         dismissToolbarTooltip()
                         startWorkspaceRename()
                     }
                 }
                 .onHover { inside in
-                    guard !isEditingWorkspaceName else { return }
+                    guard !isEditingWorkspaceName, !isLocked else { return }
                     setToolbarHover(inside, "Rename")
                 }
                 .overlay(alignment: .top) { toolbarTooltip("Rename") }
@@ -145,7 +147,7 @@ struct SpaceToolbar: View {
                 // название — не отдельные капсулы под ним, чтобы новая
                 // функция была ещё одной иконкой в этом же ряду, а не
                 // ещё одной строкой вниз.
-                if !isEditingWorkspaceName {
+                if !isEditingWorkspaceName, !isLocked {
                     let items = toolbarSettings.order.filter { ToolbarItem.available.contains($0) }.filter {
                         ($0 != .askAI || viewModel.aiSettings.isEnabled)
                             && (isEditingToolbar || !toolbarSettings.isHidden($0))
@@ -164,11 +166,10 @@ struct SpaceToolbar: View {
                     }
                 }
             }
+            // Одна высота у обычной панели, панели в режиме переименования и в Desktop mode.
+            .frame(height: SpaceBarStyle.contentHeight)
             .padding(.horizontal, 14)
             .padding(.vertical, 5)
-            // Смена Space: имя и ширина капсулы меняются сразу, без общей анимации —
-            // иначе старое имя «въезжает» в иконки и растворяется поверх нового.
-            .transaction(value: viewModel.activeSlot) { $0.animation = nil }
             // Название/иконки — цвета текста карточек. Материал даёт настоящее
             // размытие (плоский тон на цветных обоях в Desktop Overlay грязно гасит
             // фон), тон сверху (`pillTint`) — только чтобы текст читался.
@@ -177,11 +178,14 @@ struct SpaceToolbar: View {
                     .fill(.ultraThinMaterial)
                     .overlay(Capsule().fill(pillTint))
             )
+            // Смена Space: имя и ширина капсулы (вместе с фоном) меняются сразу, без общей
+            // анимации — иначе фон ещё растёт/сжимается, а новые имя и иконки уже торчат за ним.
+            .transaction(value: viewModel.activeSlot) { $0.animation = nil }
             // Настройка капсулы — правым кликом (раньше была шестерёнка сбоку).
             .contextMenu {
-                Button(isEditingToolbar ? "Done" : "Customize Space Bar\u{2026}") {
+                if !isLocked { Button(isEditingToolbar ? "Done" : "Customize Space Bar\u{2026}") {
                     withAnimation(.spring(response: 0.35, dampingFraction: 0.75)) { isEditingToolbar.toggle() }
-                }
+                } }
             }
             .overlay {
                 // Наведение — по области шире капсулы (с точками под ней) и независимо от вложенных
@@ -203,8 +207,11 @@ struct SpaceToolbar: View {
                 askAIPanel
             } else if isShowingPluginsPanel {
                 pluginsPanel
-            } else if let whatsNewNote, !isOnboardingActive {
+            } else if let whatsNewNote, !isOnboardingActive, !isLocked {
                 whatsNewBanner(whatsNewNote)
+            } else if let version = UpdateNotice.shared.availableVersion, UpdateNotice.shared.isBannerVisible,
+                      !isOnboardingActive, !isLocked {
+                updateBanner(version)
             }
         }
         .onReceive(NotificationCenter.default.publisher(for: .clearTextSelection)) { _ in
@@ -537,6 +544,58 @@ struct SpaceToolbar: View {
                 }
                 .buttonStyle(.plain)
             }
+        }
+        .padding(.horizontal, 14)
+        .padding(.vertical, 10)
+        .frame(width: 240)
+        .background(
+            CardSurfaceBackground(
+                cornerRadius: 16,
+                usesGlassEffect: false,
+                tintOpacity: 0.15,
+                materialStyle: .thickMaterial,
+                lightMaterialStyle: .ultraThinMaterial,
+                lightTintOpacity: 0.2
+            )
+        )
+        .transition(.scale(scale: 0.8, anchor: .top).combined(with: .opacity))
+    }
+
+    /// Новая версия найдена Sparkle (только DMG): та же плашка, что What’s new.
+    private func updateBanner(_ version: String) -> some View {
+        VStack(alignment: .leading, spacing: 8) {
+            HStack(alignment: .firstTextBaseline) {
+                Text("Thoughts \(version) is available")
+                    .font(.system(size: 13, weight: .semibold))
+                Spacer()
+                Button {
+                    withAnimation(.easeIn(duration: 0.25)) { UpdateNotice.shared.dismissBanner() }
+                } label: {
+                    Image(systemName: "xmark")
+                        .font(.system(size: 11, weight: .semibold))
+                        .foregroundStyle(.secondary)
+                        .frame(width: 18, height: 18)
+                        .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .help("Close")
+            }
+            Button {
+                #if DIRECT
+                DirectUpdater.checkForUpdates()
+                #endif
+            } label: {
+                HStack(spacing: 8) {
+                    Image(systemName: "arrow.down.circle")
+                    Text("Update")
+                    Image(systemName: "arrow.right")
+                        .font(.system(size: 11, weight: .semibold))
+                    Spacer()
+                }
+                .font(.system(size: 13))
+                .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
         }
         .padding(.horizontal, 14)
         .padding(.vertical, 10)

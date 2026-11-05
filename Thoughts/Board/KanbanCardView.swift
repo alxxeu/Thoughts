@@ -320,6 +320,10 @@ struct KanbanCardView: View {
             entries.append(.init(title: "Remove Column \u{201C}\(name)\u{201D}", isDestructive: true,
                                  action: { change { $0.removeColumn(column) } }))
         }
+        entries.append(.init(title: "Copy as Markdown", action: {
+            NSPasteboard.general.clearContents()
+            NSPasteboard.general.setString(board.markdown(), forType: .string)
+        }))
         return entries
     }
 

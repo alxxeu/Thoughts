@@ -81,6 +81,21 @@ struct KanbanBoard: Equatable {
         return lines.joined(separator: "\n")
     }
 
+    /// Обычный Markdown для вставки в другие приложения: колонка — заголовок `##` и список,
+    /// плитка — пункт `- [ ]` / `- [x]`. Пустое имя колонки — «Column N».
+    func markdown() -> String {
+        columns.enumerated().map { index, column in
+            let title = column.title.replacingOccurrences(of: "\n", with: " ")
+            var lines = ["## " + (title.isEmpty ? "Column \(index + 1)" : title)]
+            for item in column.items {
+                let parts = item.text.components(separatedBy: "\n")
+                lines.append((item.isDone ? "- [x] " : "- [ ] ") + parts[0])
+                lines += parts.dropFirst().map { "  " + $0 }
+            }
+            return lines.joined(separator: "\n")
+        }.joined(separator: "\n\n")
+    }
+
     // MARK: - Правки
 
     func location(of itemID: Item.ID) -> (column: Int, index: Int)? {
