@@ -22,8 +22,10 @@ scripts/fetch-sparkle.sh
 rm -rf "$out" && mkdir -p "$out"
 
 echo "→ Архив (Direct)"
+# Свой DerivedData рядом с архивом: общий (~/Library/.../DerivedData) после прерванной сборки
+# оставляет повреждённую build.db, и архив падает с «disk I/O error».
 xcodebuild archive -scheme Thoughts -configuration Direct \
-  -archivePath "$out/Thoughts.xcarchive" -allowProvisioningUpdates -quiet
+  -archivePath "$out/Thoughts.xcarchive" -derivedDataPath "$out/DerivedData" -allowProvisioningUpdates -quiet
 
 cat > "$out/export.plist" <<EOF
 <?xml version="1.0" encoding="UTF-8"?>
