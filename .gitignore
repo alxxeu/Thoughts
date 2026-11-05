@@ -14,11 +14,12 @@ Thoughts.xcodeproj/xcshareddata/xcodecloud/
 
 # Локальные заметки по процессу разработки — не для публичного репозитория
 BACKLOG.md
+BACKLOG-iOS.md
 EXECUTE.md
 
-# Скриншоты App Store: исходники и готовые кадры (собираются docs/appstore/compose.py)
-docs/appstore/raw/
-docs/appstore/out/
+# Рабочие материалы: отложенные наработки и всё для App Store (скрипты, кадры, тексты)
+docs/shelved/
+docs/appstore/
 
 # Sparkle (scripts/fetch-sparkle.sh), сборки для GitHub
 Vendor/
