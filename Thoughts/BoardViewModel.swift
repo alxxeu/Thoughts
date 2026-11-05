@@ -275,15 +275,16 @@ final class BoardViewModel {
     /// активного Space. Пишет и в заблокированный Space: панель только
     /// добавляет, ничего из его содержимого не показывая.
     @discardableResult
-    func addQuickCaptureCard(text: String) -> Card {
+    func addQuickCaptureCard(text: String, slot: Int? = nil) -> Card {
+        let targetSlot = slot ?? activeSlot
         let size = Self.quickCaptureCardSize
         let topInset = desktopOverlay.isEnabled ? Self.desktopOverlayTopInset : Self.topCreationLimit
         let canvasSize = lastCanvasSize == .zero
             ? (NSScreen.main?.visibleFrame.size ?? CGSize(width: 900, height: 600))
             : lastCanvasSize
-        let origin = Self.firstFreeOrigin(size: size, among: cards, canvasSize: canvasSize, topInset: topInset)
+        let origin = Self.firstFreeOrigin(size: size, among: cardsByWorkspace[targetSlot] ?? [], canvasSize: canvasSize, topInset: topInset)
         // Чек-листы — в стандартный `- [ ] `, как при наборе в карточке.
-        return addCard(at: origin, size: size, text: MarkdownFormatting.standardizingTaskMarkers(text, atLineStart: true))
+        return addCard(at: origin, size: size, slot: targetSlot, text: MarkdownFormatting.standardizingTaskMarkers(text, atLineStart: true))
     }
 
     /// Обходит канву рядами сверху-вниз, слева-направо с шагом
@@ -317,9 +318,13 @@ final class BoardViewModel {
     /// Архив удалённых карточек (30 дней) — см. CardArchive.
     @ObservationIgnored let archive = CardArchive()
 
-    func deleteCard(_ card: Card) {
-        archive.add([card], slot: activeSlot)
-        cards.removeAll { $0.id == card.id }
+    /// `toArchive: false` — служебное удаление (например, карточка курса при «Назад» в онбординге).
+    func deleteCard(_ card: Card, toArchive: Bool = true) {
+        if toArchive { archive.add([card], slot: activeSlot) }
+        // Явная анимация: переход исчезновения у CardView короткий, без неё он терялся при любой задержке кадра.
+        withAnimation(.easeOut(duration: 0.18)) {
+            cards.removeAll { $0.id == card.id }
+        }
         saveImmediately()
     }
 
@@ -555,7 +560,7 @@ final class BoardViewModel {
     /// сторона обязана получить согласие пользователя заранее.
     func clearActiveSpace() {
         archive.add(cards, slot: activeSlot)
-        cards = []
+        withAnimation(.easeOut(duration: 0.18)) { cards = [] }
         saveImmediately()
     }
 

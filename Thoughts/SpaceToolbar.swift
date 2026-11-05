@@ -50,6 +50,9 @@ struct SpaceToolbar: View {
     @State private var swipeRaw: CGFloat = 0
     /// Оттяжка точки (−1…1); после смены Space сбрасывается без анимации.
     @State private var dotPull: CGFloat = 0
+    /// Идёт свайп по панели (и ещё чуть после него): подсказки при наведении не показываем.
+    @State private var isSwiping = false
+    @State private var swipeEndTask: Task<Void, Never>?
     @State private var isShowingLockHint = false
     @State private var lockHintIconHover = false
     @State private var lockHintPopoverHover = false
@@ -75,9 +78,19 @@ struct SpaceToolbar: View {
     private func updateSwipe(_ raw: CGFloat, ended: Bool) {
         guard !isEditingToolbar, !isEditingWorkspaceName else { return }
         if !ended {
+            if !isSwiping { dismissToolbarTooltip() }
+            isSwiping = true
+            swipeEndTask?.cancel()
             swipeRaw = raw
             dotPull = SpaceBarSwipe.dotPull(forRaw: raw)
             return
+        }
+        // Панель ещё возвращается на место — подсказки возвращаются чуть позже.
+        swipeEndTask?.cancel()
+        swipeEndTask = Task { @MainActor in
+            try? await Task.sleep(for: .milliseconds(450))
+            guard !Task.isCancelled else { return }
+            isSwiping = false
         }
         let step = SpaceBarSwipe.step(forRaw: raw)
         withAnimation(SpaceBarSwipe.returnAnimation) { swipeRaw = 0 }
@@ -234,6 +247,10 @@ struct SpaceToolbar: View {
         }
         .onChange(of: viewModel.activeSlot) { _, _ in
             commitWorkspaceRename()
+        }
+        .onReceive(NotificationCenter.default.publisher(for: .customizeSpaceBar)) { _ in
+            guard !isLocked, !isFocusModeActive else { return }
+            withAnimation(.spring(response: 0.35, dampingFraction: 0.75)) { isEditingToolbar.toggle() }
         }
         .alert("AI Error", isPresented: Binding(
             get: { spaceAIErrorMessage != nil },
@@ -749,10 +766,10 @@ struct SpaceToolbar: View {
         }
 
         tooltipTask?.cancel()
-        if inside {
+        if inside, !isSwiping {
             tooltipTask = Task {
                 try? await Task.sleep(for: .seconds(0.45))
-                guard !Task.isCancelled else { return }
+                guard !Task.isCancelled, !isSwiping else { return }
                 withAnimation(.easeIn(duration: 0.1)) {
                     tooltipVisibleLabel = label
                 }

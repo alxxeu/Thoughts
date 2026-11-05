@@ -156,8 +156,8 @@ struct OnboardingView: View {
                 .frame(height: 140)
         case .finish:
             heading("You\u{2019}re all set.", onboardingViewModel.home == .desktop
-                    ? "Thoughts now lives on your desktop. A cheat sheet card is waiting for you \u{2014} delete it when you know it by heart."
-                    : "A cheat sheet card is waiting for you on the board \u{2014} delete it when you know it by heart.")
+                    ? "Thoughts now lives on your desktop. A cheat sheet card is waiting for you \u{2014} archive it when you know it by heart."
+                    : "A cheat sheet card is waiting for you on the board \u{2014} archive it when you know it by heart.")
             VStack(alignment: .leading, spacing: 8) {
                 chip("\u{2325}Tab", "All Spaces")
                 chip("\u{2325}1\u{2013}9", "Switch Space")
@@ -182,7 +182,7 @@ struct OnboardingView: View {
             taskRow(.create, "Create a card", "drag in the box")
             taskRow(.type, "Write something", "Markdown works")
             taskRow(.tag, "Add a color tag", "click the dot")
-            taskRow(.delete, "Delete it", "hold the \u{00D7}")
+            taskRow(.delete, "Archive it", "hold the \u{00D7}")
         }
     }
 
@@ -274,7 +274,7 @@ struct OnboardingView: View {
     private func goBack() {
         if isSandbox, let id = onboardingViewModel.sandboxCardID,
            let card = board.cards.first(where: { $0.id == id }) {
-            board.deleteCard(card)
+            board.deleteCard(card, toArchive: false)
         }
         onboardingViewModel.back()
     }

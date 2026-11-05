@@ -128,11 +128,16 @@ struct SpaceBarScrollCatcher: NSViewRepresentable {
             } else {
                 onScroll(total, false)
                 // Конец жеста может не прийти (системный жест, меню-бар в fullscreen забрал
-                // события): тогда по тишине в 0.3 с считаем жест законченным, иначе панель
-                // остаётся сдвинутой, а Space не меняется.
-                let work = DispatchWorkItem { [weak self] in self?.finish() }
+                // события): по долгой тишине жест ОТМЕНЯЕТСЯ (панель возвращается, Space не
+                // меняется), иначе она остаётся сдвинутой. Переключает только дотянутый жест, который
+                // человек закончил сам: если пальцы лежат неподвижно, событий нет, и засчитывать
+                // такую паузу как конец нельзя.
+                let work = DispatchWorkItem { [weak self] in
+                    self?.total = 0
+                    self?.finish()
+                }
                 idleFinish = work
-                DispatchQueue.main.asyncAfter(deadline: .now() + 0.3, execute: work)
+                DispatchQueue.main.asyncAfter(deadline: .now() + 1.5, execute: work)
             }
         }
 

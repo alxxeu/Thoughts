@@ -69,8 +69,19 @@ final class CardArchive {
         if items.count != before { save() }
     }
 
+    /// Запись — в фоне (последовательная очередь): синхронная запись на главном потоке сбивала
+    /// анимацию исчезновения карточки при удалении.
+    private static let writeQueue = DispatchQueue(label: "thoughts.archive.write", qos: .utility)
+
+    /// Ждёт окончания фоновой записи (для тестов и завершения приложения).
+    func flush() { Self.writeQueue.sync {} }
+
     private func save() {
-        guard let fileURL, let data = try? JSONEncoder().encode(items) else { return }
-        try? data.write(to: fileURL, options: .atomic)
+        guard let fileURL else { return }
+        let snapshot = items
+        Self.writeQueue.async {
+            guard let data = try? JSONEncoder().encode(snapshot) else { return }
+            try? data.write(to: fileURL, options: .atomic)
+        }
     }
 }

@@ -150,6 +150,11 @@ struct ThoughtsApp: App {
                     get: { viewModel.desktopOverlay.isEnabled },
                     set: { viewModel.desktopOverlay.isEnabled = $0 }
                 ))
+
+                Button("Customize Space Bar\u{2026}") {
+                    NotificationCenter.default.post(name: .customizeSpaceBar, object: nil)
+                }
+                .disabled(viewModel.isActiveSpaceLocked || viewModel.desktopOverlay.isDesktopModeActive)
             }
             // Settings — сцена Window, системного пункта "Settings…" у неё нет:
             // ставим свой на место .appSettings. Барьер против побега из
@@ -245,7 +250,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         #endif
         NSApp.windows.first?.acceptsMouseMovedEvents = true
         maximizeOnFirstLaunch()
-        hideUnusedMenus()
         #if PLUGINS
         PluginsModel.shared.attachConverters()
         PluginsModel.shared.reload()
@@ -272,32 +276,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
     }
 
-    /// Help и Window в строке меню не нужны. SwiftUI собирает их сам и может
-    /// пересобрать при смене состояния, поэтому убираем при каждом добавлении.
-    private var menuObserver: Any?
-
-    private func hideUnusedMenus() {
-        func prune() {
-            guard let main = NSApp.mainMenu else { return }
-            for item in main.items where item.submenu === NSApp.helpMenu || item.submenu === NSApp.windowsMenu
-                || ["Help", "Window"].contains(item.title) {
-                main.removeItem(item)
-            }
-        }
-        DispatchQueue.main.async { prune() }
-        menuObserver = NotificationCenter.default.addObserver(
-            forName: NSMenu.didAddItemNotification, object: nil, queue: .main
-        ) { note in
-            guard let menu = note.object as? NSMenu, menu === NSApp.mainMenu else { return }
-            DispatchQueue.main.async { prune() }
-        }
-    }
-
     /// Текст сохраняется с задержкой (scheduleDebouncedSave) — без этого
     /// последние слова перед ⌘Q/выходом из системы терялись бы. С синком
     /// ещё и отправляем очередь в iCloud, но ждём не дольше 2 с.
     func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
         viewModel?.flushPendingSave()
+        viewModel?.archive.flush()
         guard CloudSyncSettings.shared.isEnabled else { return .terminateNow }
 
         var hasReplied = false

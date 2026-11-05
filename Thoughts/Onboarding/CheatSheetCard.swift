@@ -16,7 +16,7 @@ enum CheatSheetCard {
     - **\u{2325}D** \u{2014} show the desktop
     - **\u{2303}\u{2325}N** \u{2014} Quick Capture from any app
 
-    > Delete this card when you know it by heart.
+    > Archive this card when you know it by heart.
     """
 
     /// 6 × 7 клеток — в первое свободное место текущего Space, с жёлтым тегом.

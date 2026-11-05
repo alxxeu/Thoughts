@@ -408,7 +408,7 @@ struct CardView: View {
         }
         .overlay(alignment: .top) {
             if deleteHoldHint.isVisible {
-                HintLabel(text: "Hold \u{00D7} to delete", fontSize: 10, color: AnyShapeStyle(.primary), opacity: 0.5)
+                HintLabel(text: "Hold \u{00D7} to archive", fontSize: 10, color: AnyShapeStyle(.primary), opacity: 0.5)
                     .offset(y: -22)
             }
         }

@@ -29,7 +29,9 @@ struct CardArchiveTests {
     @Test func persistsToDisk() throws {
         let url = FileManager.default.temporaryDirectory.appendingPathComponent("archive-\(UUID()).json")
         defer { try? FileManager.default.removeItem(at: url) }
-        CardArchive(fileURL: url).add([card("kept")], slot: 2)
+        let archive = CardArchive(fileURL: url)
+        archive.add([card("kept")], slot: 2)
+        archive.flush()
         #expect(CardArchive(fileURL: url).items.map(\.record.text) == ["kept"])
     }
 

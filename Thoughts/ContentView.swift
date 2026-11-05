@@ -443,7 +443,7 @@ struct ContentView: View {
                             insertion: .opacity.combined(with: .scale(scale: 0.85, anchor: cardAnchor(displayPosition, displaySize)))
                                 .animation(.easeOut(duration: 0.08)),
                             removal: .opacity.combined(with: .scale(scale: 0.85, anchor: cardAnchor(displayPosition, displaySize)))
-                                .animation(.easeOut(duration: 0.05))
+                                .animation(.easeOut(duration: 0.15))
                         )
                     )
                     .onAppear {

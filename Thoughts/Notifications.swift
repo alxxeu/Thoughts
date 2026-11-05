@@ -17,6 +17,8 @@ extension Notification.Name {
     /// удаление происходит только после явного подтверждения в алерте,
     /// не по этому уведомлению напрямую.
     static let requestClearSpace = Notification.Name("RequestClearSpace")
+    /// View → Customize Space Bar…: включает/выключает правку иконок капсулы Space.
+    static let customizeSpaceBar = Notification.Name("CustomizeSpaceBar")
     /// Клик по пустому холсту или начало драга по нему — карточки снимают
     /// текстовое выделение/фокус, если он был у одной из них.
     static let clearTextSelection = Notification.Name("ClearTextSelection")
